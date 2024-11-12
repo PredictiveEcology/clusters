@@ -22,6 +22,7 @@
 #' print(st)
 #' getHostCombination(outs, Npops = 100)
 #'
+#' @export
 testMachine <- function(NcoresMax = parallel::detectCores(), N = 100, thinning = 5) {
   Ncores <- c(1, seq(floor(NcoresMax/thinning)) * thinning)
   coreTimes <- list(); systemTimes <- list(); estTotTime <- list(); optimisticTotTime <- list()
@@ -53,6 +54,7 @@ testMachine <- function(NcoresMax = parallel::detectCores(), N = 100, thinning =
 #' Map(out = outs, nam = names(outs), function(out, nam)
 #'     do.call(plotMachine, append(out, list(nam = nam))))
 #'
+#' @export
 plotMachine <- function(Ncores, coreTimes, estTotTime, optimisticTotTime, systemTimes,
                         N = 100, nam, detectedCores) {
   ncoresUsed <- "NCores used"
@@ -75,6 +77,7 @@ plotMachine <- function(Ncores, coreTimes, estTotTime, optimisticTotTime, system
   abline(lm(slowestCore ~ seqNcores))
 }
 
+#' @export
 getHostCombination <- function(outs, Npops = 100) {
 
   summ <- data.table(estToTime = do.call(c, lapply(outs, function(o) as.vector(unlist(o$estTotTime)))),
@@ -117,6 +120,7 @@ getHostCombination <- function(outs, Npops = 100) {
        cluster = rep(out$host, out$N))
 }
 
+#' @export
 makeHosts <- function(ips, ipbase = "10.20.0.") {
   paste0(ipbase, ips)
 }

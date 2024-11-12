@@ -22,6 +22,9 @@
 #' print(st)
 #' getHostCombination(outs, Npops = 100)
 #'
+#' @importFrom data.table as.data.table
+#' @importFrom parallelly makeClusterPSOCK
+#' @importFrom parallel detectCores stopCluster clusterApply
 #' @export
 testMachine <- function(NcoresMax = parallel::detectCores(), N = 100, thinning = 5) {
   Ncores <- c(1, seq(floor(NcoresMax/thinning)) * thinning)
@@ -78,6 +81,7 @@ plotMachine <- function(Ncores, coreTimes, estTotTime, optimisticTotTime, system
 }
 
 #' @export
+#' @importFrom data.table data.table setorderv
 getHostCombination <- function(outs, Npops = 100) {
 
   summ <- data.table(estToTime = do.call(c, lapply(outs, function(o) as.vector(unlist(o$estTotTime)))),

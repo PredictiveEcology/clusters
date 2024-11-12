@@ -1,22 +1,21 @@
 Package: clusters
 Type: Package
 Title: Utilities to manage, estimate speed, optimize use of parallel clusters
-Description: Miscellaneous utilities developed by the Predictive Ecology Group
-(<http://predictiveecology.org>).
+Description: Miscellaneous utilities developed by the Predictive Ecology Group (<http://predictiveecology.org>).
 URL:
   http://clusters.predictiveecology.org,
-https://github.com/PredictiveEcology/clusters
+  https://github.com/PredictiveEcology/clusters
 Date: 2024-11-12
 Version: 0.0.1
 Authors@R: c(
-  person("Eliot J B", "McIntire", email = "eliot.mcintire@nrcan-rncan.gc.ca",
-         role = c("aut", "cre"), comment=c(ORCID = "0000-0002-6914-8316")),
-  person("His Majesty the King in Right of Canada, as represented by the Minister of Natural Resources Canada",
-         role = "cph")
-)
+    person("Eliot J B", "McIntire", email = "eliot.mcintire@nrcan-rncan.gc.ca",
+           role = c("aut", "cre"), comment=c(ORCID = "0000-0002-6914-8316")),
+    person("His Majesty the King in Right of Canada, as represented by the Minister of Natural Resources Canada",
+           role = "cph")
+  )
 Depends:
   R (>= 4.2)
-  Imports:
+Imports:
   data.table,
   parallel,
   parallelly

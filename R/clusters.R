@@ -81,7 +81,7 @@ plotMachine <- function(Ncores, coreTimes, estTotTime, optimisticTotTime, system
 }
 
 #' @export
-#' @importFrom data.table data.table setorderv
+#' @importFrom data.table data.table setorderv rbindlist
 getHostCombination <- function(outs, Npops = 100) {
 
   summ <- data.table(estToTime = do.call(c, lapply(outs, function(o) as.vector(unlist(o$estTotTime)))),

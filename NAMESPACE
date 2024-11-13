@@ -3,6 +3,7 @@
 export(getHostCombination)
 export(makeHosts)
 export(plotMachine)
+export(runTests)
 export(testMachine)
 importFrom(data.table,as.data.table)
 importFrom(data.table,data.table)

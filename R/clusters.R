@@ -129,3 +129,23 @@ makeHosts <- function(ips, ipbase = "10.20.0.") {
   paste0(ipbase, ips)
 }
 
+
+#' Runs test on each machine in `hosts`
+#'
+#' @export
+#' @return a list; same as `getHostCombination` return.
+runTests <- function(hosts, repos, clustersBranch = "main", RscriptPath = "/usr/local/bin/Rscript") {
+  clTesting <- parallelly::makeClusterPSOCK(hosts,
+                                            rscript = c("nice", RscriptPath))
+  parallel::clusterExport(clTesting, c("pkgs"), envir = environment())
+  parallel::clusterEvalQ(clTesting, {
+    if (!require("Require")) install.packages("Require", repos = repos)
+    Require::Require(paste0("PredictiveEcology/clusters@", clustersBranch))
+  })
+
+  st <- system.time(outs <- parallel::clusterApply(clTesting, seq_along(clTesting), function(x)
+    testMachine(N = 1, NcoresMax = 10, thinning = 3)))
+  names(outs) <- hosts
+  print(st)
+  getHostCombination(outs, Npops = 100)
+}

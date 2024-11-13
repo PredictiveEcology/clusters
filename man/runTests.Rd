@@ -8,7 +8,8 @@ runTests(
   hosts,
   repos = c("predictiveecology.r-universe.dev", getOption("repos")),
   clustersBranch = "main",
-  RscriptPath = "/usr/local/bin/Rscript"
+  RscriptPath = "/usr/local/bin/Rscript",
+  Npops = 100
 )
 }
 \value{

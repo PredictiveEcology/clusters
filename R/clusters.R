@@ -135,7 +135,8 @@ makeHosts <- function(ips, ipbase = "10.20.0.") {
 #' @export
 #' @return a list; same as `getHostCombination` return.
 runTests <- function(hosts, repos = c("predictiveecology.r-universe.dev", getOption("repos")),
-                     clustersBranch = "main", RscriptPath = "/usr/local/bin/Rscript") {
+                     clustersBranch = "main", RscriptPath = "/usr/local/bin/Rscript",
+                     Npops = 100) {
   clTesting <- parallelly::makeClusterPSOCK(hosts,
                                             rscript = c("nice", RscriptPath))
   parallel::clusterExport(clTesting, c("clustersBranch", "repos"), envir = environment())
@@ -149,5 +150,5 @@ runTests <- function(hosts, repos = c("predictiveecology.r-universe.dev", getOpt
     testMachine(N = 1, NcoresMax = 10, thinning = 3)))
   names(outs) <- hosts
   print(st)
-  getHostCombination(outs, Npops = 100)
+  getHostCombination(outs, Npops = Npops)
 }

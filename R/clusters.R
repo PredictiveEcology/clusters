@@ -139,6 +139,7 @@ runTests <- function(hosts, repos = c("predictiveecology.r-universe.dev", getOpt
                      Npops = 100) {
   clTesting <- parallelly::makeClusterPSOCK(hosts,
                                             rscript = c("nice", RscriptPath))
+  on.exit(parallel::stopCluster(clTesting))
   parallel::clusterExport(clTesting, c("clustersBranch", "repos"), envir = environment())
   parallel::clusterEvalQ(clTesting, {
     if (!require("Require")) install.packages("Require", repos = repos)

@@ -137,7 +137,6 @@ makeHosts <- function(ips, ipbase = "10.20.0.") {
 runTests <- function(hosts, repos, clustersBranch = "main", RscriptPath = "/usr/local/bin/Rscript") {
   clTesting <- parallelly::makeClusterPSOCK(hosts,
                                             rscript = c("nice", RscriptPath))
-  parallel::clusterExport(clTesting, c("pkgs"), envir = environment())
   parallel::clusterEvalQ(clTesting, {
     if (!require("Require")) install.packages("Require", repos = repos)
     Require::Require(paste0("PredictiveEcology/clusters@", clustersBranch))

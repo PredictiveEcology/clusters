@@ -145,10 +145,14 @@ runTests <- function(hosts, repos = c("predictiveecology.r-universe.dev", getOpt
                                             rscript = c("nice", RscriptPath))
   on.exit(parallel::stopCluster(clTesting))
   parallel::clusterExport(clTesting, c("clustersBranch", "repos"), envir = environment())
+  browser()
   parallel::clusterEvalQ(clTesting, {
-    if (!require("Require")) install.packages("Require", repos = repos)
+    dir.create(Sys.getenv("R_LIBS_USER"), recursive = TRUE)
+    if (!require("Require")) {
+      out <- install.packages("Require", repos = repos, lib = Sys.getenv("R_LIBS_USER"))
+    }
     pkg <- paste0("PredictiveEcology/clusters@", clustersBranch)
-    Require::Require(pkg)
+    out <- Require::Require(pkg)
   })
 
   st <- system.time(outs <- parallel::clusterApply(clTesting, seq_along(clTesting), function(x)

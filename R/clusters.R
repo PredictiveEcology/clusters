@@ -145,6 +145,7 @@ runTests <- function(hosts, repos = c("predictiveecology.r-universe.dev", getOpt
                                             rscript = c("nice", RscriptPath))
   on.exit(parallel::stopCluster(clTesting))
   parallel::clusterExport(clTesting, c("clustersBranch", "repos"), envir = environment())
+  browser()
   parallel::clusterEvalQ(clTesting, {
     libP <- .libPaths()[1]
     if (!require("Require", lib.loc = libP)) {

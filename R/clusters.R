@@ -117,9 +117,13 @@ getHostCombination <- function(outs, Npops = 100) {
   outAll <- summ3[, .(slowestTime = max(predSecs)), by = "host"]
   setorderv(outAll, cols = "slowestTime")
   outAll[, standardized := slowestTime/min(slowestTime)]
-  outAll[, standardizedOnBC := slowestTime/min(slowestTime[grep("spades", host)])]
+
+  onBC <- grepl("spades|^bc", outAll$host)
+  if (any(onBC))
+    outAll[, standardizedOnBC := slowestTime/min(slowestTime[onBC])]
   out <- summ3[1:Npops,]
   out <- out[, list(N = .N, slowestTime = max(predSecs)), by = "host"]
+  out <- na.omit(out)
   list(bestCluster = out[], wholeCluster = outAll[],
        cluster = rep(out$host, out$N))
 }

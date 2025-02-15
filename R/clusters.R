@@ -117,9 +117,13 @@ getHostCombination <- function(outs, Npops = 100) {
   outAll <- summ3[, .(slowestTime = max(predSecs)), by = "host"]
   setorderv(outAll, cols = "slowestTime")
   outAll[, standardized := slowestTime/min(slowestTime)]
-  outAll[, standardizedOnBC := slowestTime/min(slowestTime[grep("spades", host)])]
+
+  onBC <- grepl("spades|^bc", outAll$host)
+  if (any(onBC))
+    outAll[, standardizedOnBC := slowestTime/min(slowestTime[onBC])]
   out <- summ3[1:Npops,]
   out <- out[, list(N = .N, slowestTime = max(predSecs)), by = "host"]
+  out <- na.omit(out)
   list(bestCluster = out[], wholeCluster = outAll[],
        cluster = rep(out$host, out$N))
 }
@@ -142,9 +146,15 @@ runTests <- function(hosts, repos = c("predictiveecology.r-universe.dev", getOpt
   on.exit(parallel::stopCluster(clTesting))
   parallel::clusterExport(clTesting, c("clustersBranch", "repos"), envir = environment())
   parallel::clusterEvalQ(clTesting, {
-    if (!require("Require")) install.packages("Require", repos = repos)
+    libP <- .libPaths()[1]
+    if (!require("Require", lib.loc = libP)) {
+      isWritable <- identical(file.info(.libPaths()[1])[["uname"]], Sys.info()[["user"]])
+      if (isWritable) # does it have any packages, i.e., is it writeable
+        libP <- tempfile()
+      out <- install.packages("Require", repos = repos, lib = libP)
+    }
     pkg <- paste0("PredictiveEcology/clusters@", clustersBranch)
-    Require::Require(pkg)
+    out <- try(Require::Require(pkg)) # can fail because git
   })
 
   st <- system.time(outs <- parallel::clusterApply(clTesting, seq_along(clTesting), function(x)

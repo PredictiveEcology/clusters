@@ -14,7 +14,8 @@ clusterSetup(
   logPath,
   libPath,
   objsNeeded,
-  pkgsNeeded
+  pkgsNeeded,
+  envir = parent.frame()
 )
 }
 \value{

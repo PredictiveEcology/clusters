@@ -1,0 +1,276 @@
+
+
+DEoptimIterative2 <- function(fn, lower, upper, control, ...,
+                              # FS_formula, covMinMax, tests, maxFireSpread, mutuallyExclusive,
+                              # doObjFunAssertions, Nreps, objFunCoresInternal, thresh, rep,
+                              .plots, figurePath, cachePath, runName = 1, .verbose = TRUE) {
+  DE <- list()
+  dots <- list(...)
+  itersToDo <- seq(control$itermax)
+  control$itermax <- 1L
+  for (iter in itersToDo) {
+
+    controlForCache <- controlForCache(control)
+
+    if (TRUE) {
+      browser()
+      DE[[iter]] <- Cache(
+        DEoptim(
+          fn,
+          lower = lower,
+          upper = upper,
+          control = control, ...
+          # FS_formula = FS_formula,
+          # covMinMax = covMinMax,
+          # tests = tests,
+          # maxFireSpread = maxFireSpread,
+          # mutuallyExclusive = mutuallyExclusive,
+          # doAssertions = doObjFunAssertions,
+          # Nreps = Nreps,
+          # plot.it = FALSE,
+          # objFunCoresInternal = objFunCoresInternal,
+          # thresh = thresh
+          ),
+        .cacheExtra = controlForCache,
+        # cacheId = cacheIds[iter],
+        .functionName = paste0("DEoptimForCache_", runName),
+        verbose = .verbose,
+        omitArgs = c("verbose", "control")
+      )
+      if (!isUpdated(DE[[iter]]))
+        message(paste(round(unname(DE[[iter]]$optim$bestmem), 4), collapse = " "))
+      message(cli::col_green("Iteration ", iter, " done!"))
+    } else {
+      # This is for testing --> it is fast
+      # fn <- function(par, x) {
+      #   -sum(dnorm(log = TRUE, x, mean = par[1], sd = par[2]))
+      # }
+      #
+      # st1 <- system.time(DE[[iter]] <- Cache(DEoptimForCache,
+      #                                        fn,
+      #                                        lower = lower,
+      #                                        upper = upper,
+      #                                        mutuallyExclusive = mutuallyExclusive,
+      #                                        controlForCache = controlForCache,
+      #                                        control = control,
+      #                                        omitArgs = c("verbose", "control"),
+      #                                        x = x1
+      # ))
+    }
+
+    control$initialpop <- DE[[iter]]$member$pop
+
+    rng <- 25; # do 25 iteration steps, i.e., 1:100, 25:125
+    dataRunToUse <- 150 # this will do the lm on this many items
+    numSegments <- (length(DE) - dataRunToUse) / rng + 1# (length(DE) - dataRunToUse + 1) / rng
+    pvals <- c(0,0)
+
+
+    # Do these here because we need them for both sections below
+    dfForGGplotSimple <- DEoptimToDataFrame(DE)
+    gg1 <- ggPlotFnSimple(dfForGGplotSimple)
+
+    if (numSegments > 1) {
+      isNewSegment <- numSegments %% 1 == 0
+      if (isNewSegment) {
+        pvals <- numeric(floor(numSegments))
+        iters <- list()
+        s <- list()
+        l <- list()
+        segmentSeq <- seq_len(floor(numSegments))
+        # if (!exists("dfForGGplotSimple", inherits = FALSE))
+        for (i in segmentSeq) {
+          col <- "black"
+          if (i == tail(segmentSeq, 2)[1]) col <- "blue"
+          if (i == tail(segmentSeq, 1)[1]) col <- "red"
+          iters[[i]] <- seq_len(dataRunToUse) + (i-1) * rng;
+          # message(cli::col_yellow(paste(range(iters), collapse = ":")));
+          a <- data.table(iter = seq_along(DE), val = sapply(DE, function(x) x$member$bestvalit))
+          l[[i]] <- lm(val ~ iter, data = a[iters[[i]]]);
+          s[[i]] <- summary(l[[i]]);
+          pvals[i] <- round(s[[i]]$coefficients[2, 4], 4)
+
+          newdat <- data.table(iter = iters[[i]])
+          set(newdat, NULL, "pred", predict(l[[i]], newdata = newdat))
+          int <- s[[i]]$coefficients[1, 1]
+          slop <- s[[i]]$coefficients[2, 1]
+          # gg1 <- gg1 + geom_line(data = newdat,
+          #                           aes(x = iter, y = pred), #, xend = tail(iter, 1), yend = tail(pred, 1)),
+          #                           col = col)
+          gg1 <- gg1 + geom_abline(intercept = int, slope = slop,
+                                   #                        aes(x = iter, y = pred), #, xend = tail(iter, 1), yend = tail(pred, 1)),
+                                   col = col)
+        }
+        pvalDT <- data.table(dataRange = sapply(segmentSeq, function(x) paste(range(iters[[x]]), collapse = ":")),
+                             pvals = pvals)
+        # Plots(gg1, types = .plots,
+        # filename = ggDEoptimFilename(figPath, rep, text = "objFun/"))
+        messageDF(pvalDT, colour = "yellow")
+      }
+    }
+    if (!isFALSE(figPath) && (isUpdated(DE[[iter]]))) { # i.e., should be a path
+      terms <- suppressMessages(termsInDEoptim(FS_formula, thresh, length(lower)))
+      nVars <- NCOL(DE[[iter]]$member$pop)
+      if (length(terms) != nVars )
+        terms <- c(terms, paste0("V", seq(nVars - length(terms))))
+      dfForGGplot <- visualizeDEoptimLines(DE, terms = terms)
+      dfForGGplotAllPoints <- visualizeDEoptimLines(DE, terms = terms, allPoints = TRUE)
+      dfForGGplotSimple <- DEoptimToDataFrame(DE)
+
+
+      withCallingHandlers({
+        Plots(gg1, types = .plots,
+              filename = ggDEoptimFilename(figPath, rep, text = "objFun/"))
+        #Plots(dfForGGplotSimple, ggPlotFnSimple, types = .plots,
+        #      filename = ggDEoptimFilename(figPath, rep, text = "objFun/"))
+        Plots(dfForGGplotAllPoints, ggPlotFnMeansAllPoints, types = .plots,
+              filename = ggDEoptimFilename(figPath, rep, text = "lines_mean_AllPoints/"));
+        Plots(dfForGGplot, ggPlotFnMeans, types = .plots,
+              filename = ggDEoptimFilename(figPath, rep, text = "lines_mean/"))
+        Plots(dfForGGplot, ggPlotFnDif, types = .plots, ,
+              filename = ggDEoptimFilename(figPath, rep, text = "lines_dif/"))
+        Plots(dfForGGplot, ggPlotFnVars, types = .plots, ,
+              filename = ggDEoptimFilename(figPath, rep, text = "lines_variance/"))
+        Plots(fn = visualizeDE, DE = DE[[iter]], cachePath = cachePath,
+              titles = terms, lower = lower, upper = upper, types = .plots,
+              filename = ggDEoptimFilename(figPath, rep = rep, iter = iter, text = "hists/", time = TRUE))
+      }, message = function(m) {
+        if (any(grepl("geom_smooth|SavingSaved", m$message)))
+          invokeRestart("muffleMessage")
+      })
+      reproducible::messageColoured(colour = "green",
+                                    "5 Figures saved to: ", dirname(ggDEoptimFilename("~", 1, text = "")),
+                                    verbose = .verbose)
+
+    }
+
+
+    # Break out if the last N segments are "non-significant slope at p == 0.1 i.e., conservative
+    if (all(tail(pvals, 2) > 0.1) && length(DE) > 349) {
+      break
+    }
+  }
+}
+
+
+controlSet <- function(control, ...) {
+  if (length(names(control)) < 20)
+    control <- do.call("DEoptim.control", control)
+  missingElements <- ...names() %in% names(control)
+  if (any(missingElements)) {
+    control <- modifyList2(control, list(...))
+
+    # control$itermax <- pmin(iterStep, itermax - iterStep * (iter - 1))
+    # control$storepopfrom <- control$itermax + 1
+    # control$reltol <- 0.1
+    # control$c <- .c
+    #
+  }
+  control
+
+}
+
+controlForCache <- function(controlArgs) {
+  controlArgs[c(
+    "VTR", "strategy", "NP", "CR", "F", "bs", # "trace",
+    "initialpop", "p", "c", "reltol",
+    "packages", "parVar", "foreachArgs"
+  )]
+}
+
+
+# @importFrom DEoptim DEoptim
+# DEoptimForCache <- function(...) {
+#   dots <- list(...)
+#   dots["controlForCache"] <- NULL
+#   do.call(DEoptim, dots)
+# }
+
+
+ggPlotFnMeans <- function(bmerged) {
+  ggplot(bmerged, aes(iter, value)) +
+    geom_point() +
+    geom_smooth(se = TRUE) +
+    # geom_ribbon(aes(ymin = lower95, ymax = upper95)) +
+    facet_wrap(facets = "variable", scales = "free")
+}
+
+ggPlotFnSimple <- function(bmerged) {
+  ggplot(bmerged, aes(iter, bestValue)) +
+    geom_point() +
+    geom_smooth(se = TRUE)
+}
+
+ggPlotFnDif <- function(bmerged) {
+  ggplot(bmerged, aes(iter, dif)) +
+    geom_point() +
+    geom_smooth(se = TRUE) +
+    # geom_ribbon(aes(ymin = lower95, ymax = upper95)) +
+    facet_wrap(facets = "variable", scales = "free")
+}
+
+ggPlotFnVars <- function(bmerged) {
+  ggplot(bmerged, aes(iter, var)) +
+    geom_point() +
+    geom_smooth(se = TRUE) +
+    # geom_ribbon(aes(ymin = lower95, ymax = upper95)) +
+    facet_wrap(facets = "variable", scales = "free")
+}
+
+
+ggPlotFnMeansAllPoints <- function(b) {
+  ggplot(b, aes(iter, value)) +
+    # geom_point() +
+    geom_jitter(size = 0.05, width = 0.2, col = "grey") +
+    geom_smooth(se = TRUE) +
+    # geom_ribbon(aes(ymin = lower95, ymax = upper95)) +
+    facet_wrap(facets = "variable", scales = "free")
+}
+
+
+
+ggDEoptimFilename <- function(visualizeDEoptim, rep, iter = NULL, text = "DE_hists_", time = FALSE) {
+  file.path(visualizeDEoptim,
+            "fireSense_SpreadFit",
+            paste0(text, "rep", paddedFloatToChar(rep, padL = 3),
+                   ifelse(is.null(iter), "", paste0("_iter", iter)), "_", Sys.getpid(),
+                   ifelse(isTRUE(time), paste0("_", as.character(round(Sys.time(), 0))), ""), ".png"))
+}
+
+
+#' Make histograms of `DEoptim` object `pars`
+#'
+#' @param DE An object from a `DEoptim` call
+#' @param cachePath A `cacheRepo` to pass to `showCache` and
+#'        `loadFromCache` if `DE` is missing.
+#'
+#' @export
+#' @importFrom data.table as.data.table
+#' @importFrom graphics hist par
+#' @importFrom reproducible loadFromCache showCache
+#' @importFrom utils tail
+visualizeDE <- function(DE, cachePath, titles, lower, upper) {
+  if (missing(DE)) {
+    if (missing(cachePath)) {
+      stop("Must provide either DE or cachePath")
+    }
+    message("DE not supplied; visualizing the most recent added to Cache")
+    sc <- showCache(userTags = "DEoptim")
+    cacheID <- tail(sc$cacheId, 1)
+    DE <- reproducible::loadFromCache(cachePath, cacheId = cacheID)
+  }
+  if (is(DE, "list")) {
+    DE <- tail(DE, 1)[[1]]
+  }
+
+  cc <- as.data.table(DE$member$pop)
+  setnames(cc, titles)
+  suppressWarnings(bb <- melt(cc))
+  ff <- lapply(titles, function(p) {
+    ggplot(bb[variable == p], aes(value)) +
+      geom_histogram(bins = 15) + coord_cartesian(xlim = c(lower[p],upper[p])) +
+      ggtitle(p) + xlab(NULL) +
+      theme_minimal()
+  })
+  invisible(ggpubr::ggarrange(plotlist = ff))
+}

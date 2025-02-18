@@ -3,11 +3,12 @@
 #' This includes copying files over to unique(cores) machines, then loading all objects from disk in
 #' each of the parallel cores.
 #'
+#' @export
 #' @returns A list of items that can be passed to `DEoptim.control()`
 #'
 #'
 clusterSetup <- function(itermax = 500, trace = TRUE, strategy = 3, initialpop = NULL, NP = NULL,
-                         cores, logPath, libPath, objsNeeded, pkgsNeeded) {
+                         cores, logPath, libPath, objsNeeded, pkgsNeeded, envir = parent.frame()) {
 
   if (!all(requireNamespace("qs") && requireNamespace("reproducible") && requireNamespace("Require")))
     stop("Please install missing packages")
@@ -19,6 +20,8 @@ clusterSetup <- function(itermax = 500, trace = TRUE, strategy = 3, initialpop =
 
   if (!is.null(NP)) {
     control$NP <- NP
+  } else {
+    control$NP <- length(cores)
   }
 
   if (!is.null(cores)) {
@@ -44,9 +47,9 @@ clusterSetup <- function(itermax = 500, trace = TRUE, strategy = 3, initialpop =
     if (!identical("localhost", unique(cores))) {
       repos <- c("https://predictiveecology.r-universe.dev", getOption("repos"))
 
-      aa <- Require::pkgDep(unique(c("dqrng", "PredictiveEcology/SpaDES.tools@development",
-                                     "PredictiveEcology/fireSenseUtils@development", "qs",
-                                     "RCurl", neededPkgs)), recursive = TRUE)
+      # FireSense needed "dqrng", "SpaDES.tools", "fireSenseUtils", "PredictiveEcology/fireSenseUtils@development",
+
+      aa <- Require::pkgDep(unique(c("qs", "RCurl", pkgsNeeded)), recursive = TRUE)
       pkgsNeeded <- unique(Require::extractPkgName(unname(unlist(aa))))
 
       revtunnel <- ifelse(all(cores == "localhost"), FALSE, TRUE)
@@ -98,8 +101,8 @@ clusterSetup <- function(itermax = 500, trace = TRUE, strategy = 3, initialpop =
       parallel::clusterEvalQ(cl, {
         # If this is first time that packages need to be installed for this user on this machine
         #   there won't be a folder present that is writable
-        if (tryCatch(packageVersion("Require") < "1.0.1", error = function() TRUE))
-          install.packages("Require", lib = libPath)
+        if (tryCatch(packageVersion("Require") < "1.0.1", error = function(e) TRUE))
+           install.packages("Require", lib = libPath)
         library(Require, lib.loc = libPath)
         dir.create(dirname(logPath), recursive = TRUE)
         out <- Require::Install(pkgsNeeded, libPaths = libPath)
@@ -139,8 +142,8 @@ clusterSetup <- function(itermax = 500, trace = TRUE, strategy = 3, initialpop =
                                            # , rscript = c("nice", RscriptPath)
         )
       })
-
       on.exit(stopCluster(cl))
+
       message(
         "it took ", round(st[3], 2), "s to start ",
         paste(paste(names(table(cores))), "x", table(cores), collapse = ", "), " threads"
@@ -149,8 +152,8 @@ clusterSetup <- function(itermax = 500, trace = TRUE, strategy = 3, initialpop =
 
       stMoveObjects <- try({
         system.time({
-          objsToCopy <- mget(unlist(objsNeeded))
-          objsToCopy <- reproducible::.wrap(mget(unlist(objsNeeded)))
+          objsToCopy <- mget(unlist(objsNeeded), envir = envir)
+          objsToCopy <- reproducible::.wrap(objsToCopy)
           # objsToCopy <- lapply(objsToCopy, FUN = function(x) {
           #   if (inherits(x, "SpatRaster")) {
           #     x <- reproducible::.wrap(x)
@@ -204,11 +207,11 @@ clusterSetup <- function(itermax = 500, trace = TRUE, strategy = 3, initialpop =
       message("it took ", round(stMoveObjects[3], 2), "s to move objects to nodes")
       message("loading packages in cluster nodes")
 
-      clusterExport(cl, "neededPkgs", envir = environment())
+      clusterExport(cl, "pkgsNeeded", envir = environment())
       stPackages <- system.time(parallel::clusterEvalQ(
         cl,
         {
-          for (i in neededPkgs) {
+          for (i in pkgsNeeded) {
             library(i, character.only = TRUE)
           }
           message("loading ", i, " at ", Sys.time())
@@ -222,6 +225,7 @@ clusterSetup <- function(itermax = 500, trace = TRUE, strategy = 3, initialpop =
     }
   }
 
+  on.exit() # remove on.exit stopCluster because it ended successfully
 
   control
 }

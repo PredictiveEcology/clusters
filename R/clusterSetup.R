@@ -153,7 +153,16 @@ clusterSetup <- function(itermax = 500, trace = TRUE, strategy = 3, initialpop =
       stMoveObjects <- try({
         system.time({
           objsToCopy <- mget(unlist(objsNeeded), envir = envir)
+          FileBackendsToCopy <- Filenames(objsToCopy)
+          hasFilename <- nzchar(FileBackendsToCopy)
+          if (any(hasFilename)) {
+            objsToMem <- names(FileBackendsToCopy)[hasFilename]
+            objsToCopy[objsToMem] <-
+              lapply(objsToCopy[objsToMem],
+                     function(x) toMemory(x))
+          }
           objsToCopy <- reproducible::.wrap(objsToCopy)
+
           # objsToCopy <- lapply(objsToCopy, FUN = function(x) {
           #   if (inherits(x, "SpatRaster")) {
           #     x <- reproducible::.wrap(x)
@@ -179,7 +188,7 @@ clusterSetup <- function(itermax = 500, trace = TRUE, strategy = 3, initialpop =
           })
           out <- clusterEvalQ(cl, {
             out <- qs::qread(file = filenameForTransfer)
-            out <- reproducible::.unwrap(out)
+            out <- reproducible::.unwrap(out, cachePath = NULL)
             # out <- lapply(out, FUN = function(x) {
             #   if (inherits(x, "PackedSpatRaster")) {
             #     x <- terra::unwrap(x)

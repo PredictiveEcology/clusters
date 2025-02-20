@@ -13,7 +13,6 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
     controlForCache <- controlForCache(control)
 
     if (TRUE) {
-      browser()
       DE[[iter]] <- Cache(
         DEoptim(
           fn,

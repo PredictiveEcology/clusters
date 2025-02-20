@@ -107,6 +107,8 @@ clusterSetup <- function(itermax = 500, trace = TRUE, strategy = 3, initialpop =
         dir.create(dirname(logPath), recursive = TRUE)
         out <- Require::Install(pkgsNeeded, libPaths = libPath)
       })
+      dir.create(dirname(logPath), recursive = TRUE)
+
 
       GDALversions <- parallel::clusterEvalQ(cl, {
         .libPaths(libPath)

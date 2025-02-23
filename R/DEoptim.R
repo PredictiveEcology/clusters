@@ -45,9 +45,9 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
           # objFunCoresInternal = objFunCoresInternal,
           # thresh = thresh
         ),
-        .cacheExtra = list(controlForCache, runName),
+        .cacheExtra = list(controlForCache, runName, iter),
         # cacheId = cacheIds[iter],
-        .functionName = paste0("DEoptimForCache_", runName),
+        .functionName = paste0("DEoptimForCache_", runName, "_", iter),
         verbose = .verbose,
         omitArgs = c("verbose", "control")
       )
@@ -73,15 +73,9 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
     }
 
     control$initialpop <- DE[[iter]]$member$pop
-    # if (iter >= 23) browser()
-  # }
-  # if (FALSE){
-  #   browser()
 
-    rng <- 5
-    dataRunToUse <- 10
-    rng <- 25; # do 25 iteration steps, i.e., 1:100, 25:125
-    dataRunToUse <- 150 # this will do the lm on this many items
+    rng <- 5; # do X iteration steps, i.e., 1:100, 6:125
+    dataRunToUse <- 50 # this will do the lm on this many items
     numSegments <- (length(DE) - dataRunToUse) / rng + 1# (length(DE) - dataRunToUse + 1) / rng
     pvals <- c(0,0)
 
@@ -124,7 +118,7 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
         pvalDT <- data.table(dataRange = sapply(segmentSeq, function(x) paste(range(iters[[x]]), collapse = ":")),
                              pvals = pvals)
         # Plots(gg1, types = .plots,
-        # filename = ggDEoptimFilename(figurePath, rep, text = "objFun/"))
+        # filename = ggDEoptimFilename(figurePath, rep, subfolder = "", text = "objFun/"))
         messageDF(pvalDT, colour = "yellow")
       }
     }
@@ -143,17 +137,17 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
 
       withCallingHandlers({
         Plots(gg1, types = .plots,
-              filename = ggDEoptimFilename(figurePath, rep, text = "objFun/"))
+              filename = ggDEoptimFilename(figurePath, rep, subfolder = "", text = "objFun/"))
         #Plots(dfForGGplotSimple, ggPlotFnSimple, types = .plots,
-        #      filename = ggDEoptimFilename(figurePath, rep, text = "objFun/"))
+        #      filename = ggDEoptimFilename(figurePath, rep, subfolder = "", text = "objFun/"))
         Plots(dfForGGplotAllPoints, ggPlotFnMeansAllPoints, types = .plots,
-              filename = ggDEoptimFilename(figurePath, rep, text = "lines_mean_AllPoints/"));
+              filename = ggDEoptimFilename(figurePath, rep, subfolder = "", text = "lines_mean_AllPoints/"));
         Plots(dfForGGplot, ggPlotFnMeans, types = .plots,
-              filename = ggDEoptimFilename(figurePath, rep, text = "lines_mean/"))
+              filename = ggDEoptimFilename(figurePath, rep, subfolder = "", text = "lines_mean/"))
         Plots(dfForGGplot, ggPlotFnDif, types = .plots, ,
-              filename = ggDEoptimFilename(figurePath, rep, text = "lines_dif/"))
+              filename = ggDEoptimFilename(figurePath, rep, subfolder = "", text = "lines_dif/"))
         Plots(dfForGGplot, ggPlotFnVars, types = .plots, ,
-              filename = ggDEoptimFilename(figurePath, rep, text = "lines_variance/"))
+              filename = ggDEoptimFilename(figurePath, rep, subfolder = "", text = "lines_variance/"))
         Plots(fn = visualizeDE, DE = DE[[iter]], cachePath = cachePath,
               titles = terms, lower = lower, upper = upper, types = .plots,
               filename = ggDEoptimFilename(figurePath, rep = rep, iter = iter, text = "hists/", time = TRUE))
@@ -252,12 +246,16 @@ ggPlotFnMeansAllPoints <- function(b) {
 
 
 
-ggDEoptimFilename <- function(visualizeDEoptim, rep, iter = NULL, text = "DE_hists_", time = FALSE) {
+ggDEoptimFilename <- function(visualizeDEoptim, rep, iter = NULL, subfolder = "fireSense_SpreadFit",
+                              text = "DE_hists_", time = FALSE) {
+  if (is.numeric(rep))
+    rep <- paddedFloatToChar(rep, padL = 3)
   file.path(visualizeDEoptim,
-            "fireSense_SpreadFit",
-            paste0(text, "rep", paddedFloatToChar(rep, padL = 3),
+            subfolder,
+            paste0(text, rep,
                    ifelse(is.null(iter), "", paste0("_iter", iter)), "_", Sys.getpid(),
-                   ifelse(isTRUE(time), paste0("_", as.character(round(Sys.time(), 0))), ""), ".png"))
+                   ifelse(isTRUE(time), paste0("_", as.character(round(Sys.time(), 0))), ""), ".png")) |>
+    normalizePath(winslash = "/", mustWork = FALSE)
 }
 
 
@@ -421,10 +419,12 @@ ggPlotFnMeansAllPoints <- function(b) {
 
 
 
-ggDEoptimFilename <- function(visualizeDEoptim, rep, iter = NULL, text = "DE_hists_", time = FALSE) {
-  file.path(visualizeDEoptim,
-            "fireSense_SpreadFit",
-            paste0(text, "rep", paddedFloatToChar(rep, padL = 3),
-                   ifelse(is.null(iter), "", paste0("_iter", iter)), "_", Sys.getpid(),
-                   ifelse(isTRUE(time), paste0("_", as.character(round(Sys.time(), 0))), ""), ".png"))
-}
+# ggDEoptimFilename <- function(visualizeDEoptim, rep, iter = NULL, text = "DE_hists_", time = FALSE) {
+#   if (is.numeric(rep))
+#     rep <- paddedFloatToChar(rep, padL = 3)
+#   file.path(visualizeDEoptim,
+#             "fireSense_SpreadFit",
+#             paste0(text, "rep", rep,
+#                    ifelse(is.null(iter), "", paste0("_iter", iter)), "_", Sys.getpid(),
+#                    ifelse(isTRUE(time), paste0("_", as.character(round(Sys.time(), 0))), ""), ".png"))
+# }

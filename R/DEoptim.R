@@ -119,7 +119,7 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
                              pvals = pvals)
         # Plots(gg1, types = .plots,
         # filename = ggDEoptimFilename(figurePath, rep, subfolder = "", text = "objFun/"))
-        messageDF(pvalDT, colour = "yellow")
+        reproducible::messageDF(pvalDT, colour = "yellow")
       }
     }
     if (!isFALSE(figurePath) && (isUpdated(DE[[iter]]))) { # i.e., should be a path

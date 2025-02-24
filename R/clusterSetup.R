@@ -45,15 +45,17 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
     ## Make cluster with just one worker per machine --> don't need to do these steps
     #     multiple times per machine, if not all 'localhost'
     revtunnel <- FALSE
-    if (!identical("localhost", unique(cores))) {
+    allLocalhost <- identical("localhost", unique(cores))
+    # if (!identical("localhost", unique(cores))) {
+    aa <- Require::pkgDep(unique(c("qs", "RCurl", pkgsNeeded)), recursive = TRUE)
+    pkgsNeeded <- unique(Require::extractPkgName(unname(unlist(aa))))
+
+    if (!allLocalhost) {
       repos <- c("https://predictiveecology.r-universe.dev", getOption("repos"))
 
       # FireSense needed "dqrng", "SpaDES.tools", "fireSenseUtils", "PredictiveEcology/fireSenseUtils@development",
 
-      aa <- Require::pkgDep(unique(c("qs", "RCurl", pkgsNeeded)), recursive = TRUE)
-      pkgsNeeded <- unique(Require::extractPkgName(unname(unlist(aa))))
-
-      revtunnel <- ifelse(all(cores == "localhost"), FALSE, TRUE)
+      revtunnel <- ifelse(allLocalhost, FALSE, TRUE)
 
       coresUnique <- setdiff(unique(cores), "localhost")
       message("copying packages to: ", paste(coresUnique, collapse = ", "))
@@ -103,138 +105,141 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
         # If this is first time that packages need to be installed for this user on this machine
         #   there won't be a folder present that is writable
         if (tryCatch(packageVersion("Require") < "1.0.1", error = function(e) TRUE))
-           install.packages("Require", lib = libPath)
+          install.packages("Require", lib = libPath)
         library(Require, lib.loc = libPath)
         dir.create(dirname(logPath), recursive = TRUE, showWarnings = FALSE)
         out <- Require::Install(pkgsNeeded, libPaths = libPath)
       })
-      dir.create(dirname(logPath), recursive = TRUE, showWarnings = FALSE)
-
-
       GDALversions <- parallel::clusterEvalQ(cl, {
         .libPaths(libPath)
         return(sf::sf_extSoftVersion()["GDAL"])
       })
-
       stopifnot(length(unique(sf::sf_extSoftVersion()["GDAL"], GDALversions)) == 1)
+
       parallel::stopCluster(cl)
+    }
 
-      ## Now make full cluster with one worker per core listed in "cores"
-      message("Starting ", paste(paste(names(table(cores))), "x", table(cores),
-                                 collapse = ", "), " clusters")
-      message("Starting main parallel cluster ...")
-      # sshCores <- paste0("ssh//", grep('localhost', cores, invert = TRUE, value = TRUE))
-      # nonsshCores <- grep('localhost', cores, value = TRUE)
-      # coresForMirai <- c(nonsshCores, sshCores)
+    dir.create(dirname(logPath), recursive = TRUE, showWarnings = FALSE)
 
-      st <- system.time({
-        # cl <- mirai::make_cluster(
-        #   length(coresForMirai),
-        #   # url = "tcp://localhost:5555",
-        #   remote = ssh_config(
-        #     remotes = coresForMirai,
-        #     # tunnel = TRUE,
-        #     timeout = 1,
-        #     rscript = RscriptPath
-        #   )
-        # )
+    ## Now make full cluster with one worker per core listed in "cores"
+    message("Starting ", paste(paste(names(table(cores))), "x", table(cores),
+                               collapse = ", "), " clusters")
+    message("Starting main parallel cluster ...")
+    # sshCores <- paste0("ssh//", grep('localhost', cores, invert = TRUE, value = TRUE))
+    # nonsshCores <- grep('localhost', cores, value = TRUE)
+    # coresForMirai <- c(nonsshCores, sshCores)
 
-        cl <- parallelly::makeClusterPSOCK(cores,
-                                           revtunnel = revtunnel,
-                                           outfile = logPath, rscript_libs = libPath
-                                           # , rscript = c("nice", RscriptPath)
-        )
-      })
-      on.exit(stopCluster(cl))
+    st <- system.time({
+      # cl <- mirai::make_cluster(
+      #   length(coresForMirai),
+      #   # url = "tcp://localhost:5555",
+      #   remote = ssh_config(
+      #     remotes = coresForMirai,
+      #     # tunnel = TRUE,
+      #     timeout = 1,
+      #     rscript = RscriptPath
+      #   )
+      # )
 
-      message(
-        "it took ", round(st[3], 2), "s to start ",
-        paste(paste(names(table(cores))), "x", table(cores), collapse = ", "), " threads"
+      cl <- parallelly::makeClusterPSOCK(cores,
+                                         revtunnel = revtunnel,
+                                         outfile = logPath, rscript_libs = libPath
+                                         # , rscript = c("nice", RscriptPath)
       )
-      message("Moving objects to each node in cluster")
+    })
+    on.exit(stopCluster(cl))
 
-      stMoveObjects <- try({
-        system.time({
-          objsToCopy <- mget(unlist(objsNeeded), envir = envir)
-          FileBackendsToCopy <- Filenames(objsToCopy)
-          hasFilename <- nzchar(FileBackendsToCopy)
-          if (any(hasFilename)) {
-            objsToMem <- names(FileBackendsToCopy)[hasFilename]
-            objsToCopy[objsToMem] <-
-              lapply(objsToCopy[objsToMem],
-                     function(x) toMemory(x))
-          }
-          objsToCopy <- reproducible::.wrap(objsToCopy)
+    message(
+      "it took ", round(st[3], 2), "s to start ",
+      paste(paste(names(table(cores))), "x", table(cores), collapse = ", "), " threads"
+    )
+    message("Moving objects to each node in cluster")
 
-          # objsToCopy <- lapply(objsToCopy, FUN = function(x) {
-          #   if (inherits(x, "SpatRaster")) {
-          #     x <- reproducible::.wrap(x)
-          #   } else {
-          #     x
-          #   }
-          #   x
-          # })
-          filenameForTransfer <- normalizePath(tempfile(fileext = ".qs"), mustWork = FALSE, winslash = "/")
-          dir.create(dirname(filenameForTransfer), recursive = TRUE, showWarnings = FALSE) # during development, this was deleted accidentally
-          qs::qsave(objsToCopy, file = filenameForTransfer)
-          stExport <- system.time({
-            outExp <- clusterExport(cl, varlist = "filenameForTransfer", envir = environment())
-          })
-          out11 <- clusterEvalQ(cl, {
-            dir.create(dirname(filenameForTransfer), recursive = TRUE, showWarnings = FALSE)
-          })
-          out <- lapply(setdiff(unique(cores), "localhost"), function(ip) {
+    stMoveObjects <- try({
+      system.time({
+        objsToCopy <- mget(unlist(objsNeeded), envir = envir)
+        FileBackendsToCopy <- Filenames(objsToCopy)
+        hasFilename <- nzchar(FileBackendsToCopy)
+        if (any(hasFilename)) {
+          objsToMem <- names(FileBackendsToCopy)[hasFilename]
+          objsToCopy[objsToMem] <-
+            lapply(objsToCopy[objsToMem],
+                   function(x) toMemory(x))
+        }
+        objsToCopy <- reproducible::.wrap(objsToCopy)
+
+        # objsToCopy <- lapply(objsToCopy, FUN = function(x) {
+        #   if (inherits(x, "SpatRaster")) {
+        #     x <- reproducible::.wrap(x)
+        #   } else {
+        #     x
+        #   }
+        #   x
+        # })
+        filenameForTransfer <- normalizePath(tempfile(fileext = ".qs"), mustWork = FALSE, winslash = "/")
+        dir.create(dirname(filenameForTransfer), recursive = TRUE, showWarnings = FALSE) # during development, this was deleted accidentally
+        qs::qsave(objsToCopy, file = filenameForTransfer)
+        stExport <- system.time({
+          outExp <- clusterExport(cl, varlist = "filenameForTransfer", envir = environment())
+        })
+        out11 <- clusterEvalQ(cl, {
+          dir.create(dirname(filenameForTransfer), recursive = TRUE, showWarnings = FALSE)
+        })
+        nonLocalhostCores <- setdiff(unique(cores), "localhost")
+        if (length(nonLocalhostCores))
+          out <- lapply(nonLocalhostCores, function(ip) {
             rsync <- Sys.which("rsync")
             st1 <- system.time(system(paste0(rsync, " -av ",
                                              filenameForTransfer, " ", ip, ":",
                                              filenameForTransfer)))
           })
-          out <- clusterEvalQ(cl, {
-            out <- qs::qread(file = filenameForTransfer)
-            out <- reproducible::.unwrap(out, cachePath = NULL)
-            # out <- lapply(out, FUN = function(x) {
-            #   if (inherits(x, "PackedSpatRaster")) {
-            #     x <- terra::unwrap(x)
-            #   } else {
-            #     x
-            #   }
-            #   x
-            # })
-            list2env(out, envir = .GlobalEnv)
-          })
-          # Delete the file
-          out <- clusterEvalQ(cl, {
-            if (dir.exists(dirname(filenameForTransfer))) {
-              try(unlink(dirname(filenameForTransfer), recursive = TRUE), silent = TRUE)
-            }
-          })
+        out <- clusterEvalQ(cl, {
+          out <- qs::qread(file = filenameForTransfer)
+          out <- reproducible::.unwrap(out, cachePath = NULL)
+          # out <- lapply(out, FUN = function(x) {
+          #   if (inherits(x, "PackedSpatRaster")) {
+          #     x <- terra::unwrap(x)
+          #   } else {
+          #     x
+          #   }
+          #   x
+          # })
+          list2env(out, envir = .GlobalEnv)
+        })
+        # Delete the file
+        notDups <- !duplicated(cores)
+        out <- clusterEvalQ(cl[notDups], {
+          if (dir.exists(dirname(filenameForTransfer))) {
+            try(unlink(dirname(filenameForTransfer), recursive = TRUE), silent = TRUE)
+          }
         })
       })
+    })
 
-      if (is(stMoveObjects, "try-error")) {
-        message("The attempt to move objects to cluster using rsync and qs failed; trying clusterExport")
-        stMoveObjects <- system.time(clusterExport(cl, objsNeeded, envir = environment()))
-        list2env(mget(unlist(objsNeeded), envir = environment()), envir = .GlobalEnv)
-      }
-      message("it took ", round(stMoveObjects[3], 2), "s to move objects to nodes")
-      message("loading packages in cluster nodes")
-
-      clusterExport(cl, "pkgsNeeded", envir = environment())
-      stPackages <- system.time(parallel::clusterEvalQ(
-        cl,
-        {
-          for (i in pkgsNeeded) {
-            library(i, character.only = TRUE)
-          }
-          message("loading ", i, " at ", Sys.time())
-        }
-      ))
-      message("it took ", round(stPackages[3], 2), "s to load packages")
-
-      control$cluster <- cl
-    } else {
-      list2env(mget(unlist(objsNeeded), envir = envir), envir = .GlobalEnv)
+    if (is(stMoveObjects, "try-error")) {
+      message("The attempt to move objects to cluster using rsync and qs failed; trying clusterExport")
+      stMoveObjects <- system.time(clusterExport(cl, objsNeeded, envir = environment()))
+      list2env(mget(unlist(objsNeeded), envir = environment()), envir = .GlobalEnv)
     }
+    message("it took ", round(stMoveObjects[3], 2), "s to move objects to nodes")
+
+    message("loading packages in cluster nodes")
+
+    clusterExport(cl, "pkgsNeeded", envir = environment())
+    stPackages <- system.time(parallel::clusterEvalQ(
+      cl,
+      {
+        for (i in pkgsNeeded) {
+          library(i, character.only = TRUE)
+        }
+        message("loading ", i, " at ", Sys.time())
+      }
+    ))
+    message("it took ", round(stPackages[3], 2), "s to load packages")
+
+    control$cluster <- cl
+    if (identical(cores, "localhost"))
+      list2env(mget(unlist(objsNeeded), envir = envir), envir = .GlobalEnv)
   }
 
   on.exit() # remove on.exit stopCluster because it ended successfully

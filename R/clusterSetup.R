@@ -7,7 +7,8 @@
 #' @returns A list of items that can be passed to `DEoptim.control()`
 #'
 #'
-clusterSetup <- function(itermax = 500, trace = TRUE, strategy = 3, initialpop = NULL, NP = NULL,
+clusterSetup <- function(messagePrefix = "DEoptim_",
+                         itermax = 500, trace = TRUE, strategy = 3, initialpop = NULL, NP = NULL,
                          cores, logPath, libPath, objsNeeded, pkgsNeeded, envir = parent.frame()) {
 
   if (!all(requireNamespace("qs") && requireNamespace("reproducible") && requireNamespace("Require")))
@@ -28,13 +29,13 @@ clusterSetup <- function(itermax = 500, trace = TRUE, strategy = 3, initialpop =
     logPath <- file.path(
       logPath,
       paste0(
-        "fireSense_SpreadFit_", format(Sys.time(), "%Y-%m-%d_%H%M%S"),
+        messagePrefix, format(Sys.time(), "%Y-%m-%d_%H%M%S"),
         "_pid", Sys.getpid(), ".log"
       )
     )
     message(paste0(
       "Starting parallel model fitting for ",
-      "fireSense_SpreadFit. Log: ", logPath
+      messagePrefix, ". Log: ", logPath
     ))
 
     # Make sure logPath can be written in the workers -- need to create the dir
@@ -104,9 +105,11 @@ clusterSetup <- function(itermax = 500, trace = TRUE, strategy = 3, initialpop =
         if (tryCatch(packageVersion("Require") < "1.0.1", error = function(e) TRUE))
            install.packages("Require", lib = libPath)
         library(Require, lib.loc = libPath)
-        dir.create(dirname(logPath), recursive = TRUE)
+        dir.create(dirname(logPath), recursive = TRUE, showWarnings = FALSE)
         out <- Require::Install(pkgsNeeded, libPaths = libPath)
       })
+      dir.create(dirname(logPath), recursive = TRUE, showWarnings = FALSE)
+
 
       GDALversions <- parallel::clusterEvalQ(cl, {
         .libPaths(libPath)
@@ -230,7 +233,7 @@ clusterSetup <- function(itermax = 500, trace = TRUE, strategy = 3, initialpop =
 
       control$cluster <- cl
     } else {
-      list2env(mget(unlist(objsNeeded), envir = environment()), envir = .GlobalEnv)
+      list2env(mget(unlist(objsNeeded), envir = envir), envir = .GlobalEnv)
     }
   }
 

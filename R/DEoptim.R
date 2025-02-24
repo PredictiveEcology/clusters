@@ -152,7 +152,7 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
               titles = terms, lower = lower, upper = upper, types = .plots,
               filename = ggDEoptimFilename(figurePath, rep = rep, subfolder = "", iter = iter, text = "hists/", time = TRUE))
       }, message = function(m) {
-        if (any(grepl("geom_smooth|SavingSaved", m$message)))
+        if (any(grepl("geom_smooth|Saving", m$message)))
           invokeRestart("muffleMessage")
       })
       reproducible::messageColoured(colour = "green",

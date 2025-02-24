@@ -224,7 +224,7 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
 
       control$cluster <- cl
     } else {
-      list2env(mget(unlist(objsNeeded), envir = environment()), envir = .GlobalEnv)
+      list2env(mget(unlist(objsNeeded), envir = envir), envir = .GlobalEnv)
     }
   }
 

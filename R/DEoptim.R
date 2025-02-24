@@ -150,7 +150,7 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
               filename = ggDEoptimFilename(figurePath, rep, subfolder = "", text = "lines_variance/"))
         Plots(fn = visualizeDE, DE = DE[[iter]], cachePath = cachePath,
               titles = terms, lower = lower, upper = upper, types = .plots,
-              filename = ggDEoptimFilename(figurePath, rep = rep, iter = iter, text = "hists/", time = TRUE))
+              filename = ggDEoptimFilename(figurePath, rep = rep, subfolder = "", iter = iter, text = "hists/", time = TRUE))
       }, message = function(m) {
         if (any(grepl("geom_smooth|SavingSaved", m$message)))
           invokeRestart("muffleMessage")

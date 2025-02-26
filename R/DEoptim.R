@@ -135,29 +135,31 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
       dfForGGplotSimple <- DEoptimToDataFrame(DE)
 
 
+      texts <- c("objFun/", "lines_mean_AllPoints/", "lines_mean/", "lines_dif/", "lines_variance/", "hists/")
       withCallingHandlers({
         Plots(gg1, types = .plots,
-              filename = ggDEoptimFilename(figurePath, rep, subfolder = "", text = "objFun/"))
-        #Plots(dfForGGplotSimple, ggPlotFnSimple, types = .plots,
-        #      filename = ggDEoptimFilename(figurePath, rep, subfolder = "", text = "objFun/"))
+              filename = ggDEoptimFilename(figurePath, rep, subfolder = "", text = texts[1]))
         Plots(dfForGGplotAllPoints, ggPlotFnMeansAllPoints, types = .plots,
-              filename = ggDEoptimFilename(figurePath, rep, subfolder = "", text = "lines_mean_AllPoints/"));
+              filename = ggDEoptimFilename(figurePath, rep, subfolder = "", text = texts[2]));
         Plots(dfForGGplot, ggPlotFnMeans, types = .plots,
-              filename = ggDEoptimFilename(figurePath, rep, subfolder = "", text = "lines_mean/"))
+              filename = ggDEoptimFilename(figurePath, rep, subfolder = "", text = texts[3]))
         Plots(dfForGGplot, ggPlotFnDif, types = .plots, ,
-              filename = ggDEoptimFilename(figurePath, rep, subfolder = "", text = "lines_dif/"))
+              filename = ggDEoptimFilename(figurePath, rep, subfolder = "", text = texts[4]))
         Plots(dfForGGplot, ggPlotFnVars, types = .plots, ,
-              filename = ggDEoptimFilename(figurePath, rep, subfolder = "", text = "lines_variance/"))
+              filename = ggDEoptimFilename(figurePath, rep, subfolder = "", text = texts[5]))
         Plots(fn = visualizeDE, DE = DE[[iter]], cachePath = cachePath,
               titles = terms, lower = lower, upper = upper, types = .plots,
-              filename = ggDEoptimFilename(figurePath, rep = rep, subfolder = "", iter = iter, text = "hists/", time = TRUE))
+              filename = ggDEoptimFilename(figurePath, rep = rep, subfolder = "", iter = iter, text = texts[6], time = TRUE))
       }, message = function(m) {
         if (any(grepl("geom_smooth|Saving", m$message)))
           invokeRestart("muffleMessage")
+        messageVerbose(gsub("Saved figure to: ", "Saved: ", m$message))
+        invokeRestart("muffleMessage")
       })
-      reproducible::messageColoured(colour = "green",
-                                    "5 Figures saved to: ", dirname(ggDEoptimFilename("~", 1, text = "")),
-                                    verbose = .verbose)
+      # reproducible::messageColoured(colour = "green",
+      #                               paste0(length(texts), " figures saved to: ",
+      #                               dirname(ggDEoptimFilename(figurePath, rep, subfolder = "", text = texts))),
+      #                               verbose = .verbose)
 
     }
 

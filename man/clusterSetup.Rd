@@ -5,6 +5,7 @@
 \title{Setup a cluster for DEoptim}
 \usage{
 clusterSetup(
+  messagePrefix = "DEoptim_",
   itermax = 500,
   trace = TRUE,
   strategy = 3,

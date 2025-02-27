@@ -430,3 +430,42 @@ ggPlotFnMeansAllPoints <- function(b) {
 #                    ifelse(is.null(iter), "", paste0("_iter", iter)), "_", Sys.getpid(),
 #                    ifelse(isTRUE(time), paste0("_", as.character(round(Sys.time(), 0))), ""), ".png"))
 # }
+
+#' Remove duplicate figures, keeping most recent duplicate only
+#'
+#' This is for cleaning up cases where an interrupted optimization
+#' is leading to multiple files for the same .runName. This will remove
+#' duplicates, keeping only the most recent.
+#'
+#' @return For side effects: removed files
+#' @export
+#' @param path A folder in which to search for duplicates
+#' @param regex The regular expression to search for, to identify the files. This
+#'   must have 1 set of parentheses (), as only the content between the () will be
+#'   used for duplicate assessment, i.e., remove anything in the file that shouldn't
+#'   be used.
+#' @param delete Logical. Default `FALSE`, which will only list the files that
+#'   will be deleted. If `TRUE`, then the identified files will
+#'   be deleted
+rmIncompleteDups <- function(path, regex = "^(.+)\\_[[:digit:]]{6,8}\\_.*\\.png",
+                             delete = FALSE) {
+  d <- dir(path, recursive = TRUE, full.names = TRUE);
+  e <- file.info(d)
+  ord <- order(e$mtime, decreasing = TRUE)
+  fls <- d[ord]
+  fls2 <- gsub(regex, "\\1", fls)
+  dups <- duplicated(fls2)
+  fls3 <- unique(fls[dups])
+  if (isTRUE(delete))
+    unlink(fls3)
+  if (length(fls3)) {
+    filesToDelete <- paste(fls3, collapse = "\n")
+    if (isTRUE(delete))
+      message("removed: ", filesToDelete)
+    else
+      message("would be removed: ", filesToDelete)
+  }
+  else
+    message("None to remove")
+  invisible(fls3)
+}

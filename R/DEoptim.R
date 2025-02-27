@@ -153,7 +153,7 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
       }, message = function(m) {
         if (any(grepl("geom_smooth|Saving", m$message)))
           invokeRestart("muffleMessage")
-        messageVerbose(gsub("Saved figure to: ", "Saved: ", m$message))
+        reproducible::messageColoured(colour = "green", gsub("Saved figure to: ", "Saved: ", m$message))
         invokeRestart("muffleMessage")
       })
       # reproducible::messageColoured(colour = "green",

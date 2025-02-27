@@ -447,7 +447,7 @@ ggPlotFnMeansAllPoints <- function(b) {
 #' @param delete Logical. Default `FALSE`, which will only list the files that
 #'   will be deleted. If `TRUE`, then the identified files will
 #'   be deleted
-rmIncompleteDups <- function(path, regex = "^(.+)\\_[[:digit:]]{6,8}\\_.*\\.png",
+rmIncompleteDups <- function(path, regex = "^(.+)\\_[[:digit:]]{6,8}.*\\.png",
                              delete = FALSE) {
   d <- dir(path, recursive = TRUE, full.names = TRUE);
   e <- file.info(d)

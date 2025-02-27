@@ -6,7 +6,7 @@
 \usage{
 rmIncompleteDups(
   path,
-  regex = "^(.+)\\\\_[[:digit:]]{6,8}\\\\_.*\\\\.png",
+  regex = "^(.+)\\\\_[[:digit:]]{6,8}.*\\\\.png",
   delete = FALSE
 )
 }

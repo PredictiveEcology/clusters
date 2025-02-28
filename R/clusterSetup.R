@@ -246,3 +246,117 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
 
   control
 }
+
+
+
+
+#'
+#' This is for cleaning up cases where an interrupted optimization
+#' is leading to multiple files for the same .runName. This will remove
+#' duplicates, keeping only the most recent.
+#'
+#' @return For side effects: removed files
+#' @export
+#' @param path A folder in which to search for duplicates
+#' @param pattern The regular expression to search for, to identify the files. This
+#'   must have 1 set of parentheses (), as only the content between the () will be
+#'   used for duplicate assessment, i.e., remove anything in the file that shouldn't
+#'   be used.
+#' @param delete Logical. Default `FALSE`, which will only list the files that
+#'   will be deleted. If `TRUE`, then the identified files will
+#'   be deleted
+rmIncompleteDups <- function(path, pattern = "^(.+)\\_[[:digit:]]{6,8}.*\\.png",
+                             delete = FALSE) {
+  d <- dir(path, recursive = TRUE, full.names = TRUE);
+  e <- file.info(d)
+  ord <- order(e$mtime, decreasing = TRUE)
+  fls <- d[ord]
+  fls2 <- gsub(pattern, "\\1", fls)
+  dups <- duplicated(fls2)
+  fls3 <- unique(fls[dups])
+  if (isTRUE(delete))
+    unlink(fls3)
+  if (length(fls3)) {
+    filesToDelete <- paste(fls3, collapse = "\n")
+    if (isTRUE(delete))
+      message("removed: ", filesToDelete)
+    else
+      message("would be removed: ", filesToDelete)
+  }
+  else
+    message("None to remove")
+  invisible(fls3)
+}
+
+
+#' Assess the machine resources used
+#'
+#' Uses `vmstat` (must be installed; it is by default on linux).
+#'
+#' @return Returns the outputs from `vmstat`
+#' @export
+#' @param machines Character vector of the name(s) of the PSOCK resource to
+#'   query, e.g., `"n168"`
+#' @param resources Column extracted in vmstat. Defaults to `"us"` or "user CPU"
+resourcesUsed <- function(machines = "localhost", resource = "us") {
+  #if (!identical("localhost", machines)) {
+  cl <- suppressMessages(parallelly::makeClusterPSOCK(machines))
+  on.exit(parallel::stopCluster(cl))
+  out <- parallel::clusterEvalQ(cl, {
+    a <- system("vmstat -y", intern = TRUE)[-1]
+    a <- gsub("^ +", "", a)
+    asplit <- strsplit(a, " +")
+    wh <- which(asplit[[1]] == "us")
+    out <- as.numeric(asplit[[2]][wh])
+  })
+  #}
+  names(out) <- machines
+  unlist(out)
+}
+
+#' Remove duplicate figures, keeping most recent duplicate only
+#'
+#' This is for cleaning up cases where an interrupted optimization
+#' is leading to multiple files for the same .runName. This will remove
+#' duplicates, keeping only the most recent.
+#'
+#' @return For side effects: removed files
+#' @export
+#' @param path A folder in which to search for duplicates
+#' @param pattern The regular expression to search for, to identify the files. This
+#'   must have 1 set of parentheses (), as only the content between the () will be
+#'   used for duplicate assessment, i.e., remove anything in the file that shouldn't
+#'   be used.
+#' @param delete Logical. Default `FALSE`, which will only list the files that
+#'   will be deleted. If `TRUE`, then the identified files will
+#'   be deleted
+dirNew <- function(path, secsAgo = Inf, after = Sys.time() - secsAgo,
+                   pattern = "^(.+)\\_[[:digit:]]{6,8}.*\\.png") {
+  d <- dir(path, recursive = TRUE, full.names = TRUE);
+  e <- file.info(d)
+  ord <- order(e$mtime, decreasing = TRUE)
+  newer <- e$mtime >= after
+  fls <- d[newer]
+  # fls <- d[ord]
+  fls2 <- grep(pattern, fls, value = TRUE)
+  fls2
+}
+
+
+#' Tabulate the filenames into groups based on `pattern`
+#'
+#' Using a regular expression, with a single `(.+)` identifying the parts of
+#' the filenames to keep, and therefore to base the `table` on. Everything
+#' before
+#'
+#' @return Tabulation of the files, based on the pattern.
+#' @export
+#' @param files A vector of full filenames
+#' @param pattern The regular expression to base the `table` on. It should have
+#'   one and only one parenthesis i.e., `(.+)`, which will be the basis of
+#'   the `table`. Everything outside of the `(.+)` will be removed
+tableFiles <- function(files, pattern = "^.+hists/(.+)\\_iter.+\\_[[:digit:]]{6,8}.*\\.png") {
+  # dd <- dirNew(path, secsAgo, pattern = "hist.+MPB\\_4")
+  files <- sort(files)
+  table(gsub("^.+hists/(.+)\\_iter.+\\_[[:digit:]]{6,8}.*\\.png", "\\1", files))
+}

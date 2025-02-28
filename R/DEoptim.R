@@ -27,6 +27,10 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
 
     controlForCache <- controlForCache(control)
 
+    if (FALSE) { # for interactive use
+      fn(p = apply(cbind(lower, upper), 1, mean),
+         quotedSpread = list(...)$quotedSpread, objFunInner = objFunInner)
+    }
     if (TRUE) {
       DE[[iter]] <- Cache(
         DEoptim(
@@ -93,33 +97,41 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
         l <- list()
         segmentSeq <- seq_len(floor(numSegments))
         # if (!exists("dfForGGplotSimple", inherits = FALSE))
-        for (i in segmentSeq) {
-          col <- "black"
-          if (i == tail(segmentSeq, 2)[1]) col <- "blue"
-          if (i == tail(segmentSeq, 1)[1]) col <- "red"
-          iters[[i]] <- seq_len(dataRunToUse) + (i-1) * rng;
-          # message(cli::col_yellow(paste(range(iters), collapse = ":")));
-          a <- data.table(iter = seq_along(DE), val = sapply(DE, function(x) x$member$bestvalit))
-          l[[i]] <- lm(val ~ iter, data = a[iters[[i]]]);
-          s[[i]] <- summary(l[[i]]);
-          pvals[i] <- round(s[[i]]$coefficients[2, 4], 4)
+        DEoutBestValit <- sapply(DE, function(x) x$member$bestvalit)
+        if (!all(is.infinite(DEoutBestValit))) {
 
-          newdat <- data.table(iter = iters[[i]])
-          set(newdat, NULL, "pred", predict(l[[i]], newdata = newdat))
-          int <- s[[i]]$coefficients[1, 1]
-          slop <- s[[i]]$coefficients[2, 1]
-          # gg1 <- gg1 + geom_line(data = newdat,
-          #                           aes(x = iter, y = pred), #, xend = tail(iter, 1), yend = tail(pred, 1)),
-          #                           col = col)
-          gg1 <- gg1 + geom_abline(intercept = int, slope = slop,
-                                   #                        aes(x = iter, y = pred), #, xend = tail(iter, 1), yend = tail(pred, 1)),
-                                   col = col)
+          for (i in segmentSeq) {
+            col <- "black"
+            if (i == tail(segmentSeq, 2)[1]) col <- "blue"
+            if (i == tail(segmentSeq, 1)[1]) col <- "red"
+            iters[[i]] <- seq_len(dataRunToUse) + (i-1) * rng;
+            # message(cli::col_yellow(paste(range(iters), collapse = ":")));
+            a <- data.table(iter = seq_along(DE), val = DEoutBestValit)
+            lmOut <- try(lm(val ~ iter, data = a[iters[[i]]]))
+            if (!is(lmOut, "try-error")) {
+              next
+              s[[i]] <- summary(l[[i]]);
+              pvals[i] <- round(s[[i]]$coefficients[2, 4], 4)
+
+              newdat <- data.table(iter = iters[[i]])
+              set(newdat, NULL, "pred", predict(l[[i]], newdata = newdat))
+              int <- s[[i]]$coefficients[1, 1]
+              slop <- s[[i]]$coefficients[2, 1]
+              # gg1 <- gg1 + geom_line(data = newdat,
+              #                           aes(x = iter, y = pred), #, xend = tail(iter, 1), yend = tail(pred, 1)),
+              #                           col = col)
+              gg1 <- gg1 + geom_abline(intercept = int, slope = slop,
+                                       #                        aes(x = iter, y = pred), #, xend = tail(iter, 1), yend = tail(pred, 1)),
+                                       col = col)
+            }
+          }
+          pvalDT <- data.table(dataRange = sapply(segmentSeq, function(x) paste(range(iters[[x]]), collapse = ":")),
+                               pvals = pvals)
+          # Plots(gg1, types = .plots,
+          # filename = ggDEoptimFilename(figurePath, rep, subfolder = "", text = "objFun/"))
+          reproducible::messageDF(pvalDT, colour = "yellow")
         }
-        pvalDT <- data.table(dataRange = sapply(segmentSeq, function(x) paste(range(iters[[x]]), collapse = ":")),
-                             pvals = pvals)
-        # Plots(gg1, types = .plots,
-        # filename = ggDEoptimFilename(figurePath, rep, subfolder = "", text = "objFun/"))
-        reproducible::messageDF(pvalDT, colour = "yellow")
+
       }
     }
     if (!isFALSE(figurePath) && (isUpdated(DE[[iter]]))) { # i.e., should be a path
@@ -431,41 +443,3 @@ ggPlotFnMeansAllPoints <- function(b) {
 #                    ifelse(isTRUE(time), paste0("_", as.character(round(Sys.time(), 0))), ""), ".png"))
 # }
 
-#' Remove duplicate figures, keeping most recent duplicate only
-#'
-#' This is for cleaning up cases where an interrupted optimization
-#' is leading to multiple files for the same .runName. This will remove
-#' duplicates, keeping only the most recent.
-#'
-#' @return For side effects: removed files
-#' @export
-#' @param path A folder in which to search for duplicates
-#' @param regex The regular expression to search for, to identify the files. This
-#'   must have 1 set of parentheses (), as only the content between the () will be
-#'   used for duplicate assessment, i.e., remove anything in the file that shouldn't
-#'   be used.
-#' @param delete Logical. Default `FALSE`, which will only list the files that
-#'   will be deleted. If `TRUE`, then the identified files will
-#'   be deleted
-rmIncompleteDups <- function(path, regex = "^(.+)\\_[[:digit:]]{6,8}.*\\.png",
-                             delete = FALSE) {
-  d <- dir(path, recursive = TRUE, full.names = TRUE);
-  e <- file.info(d)
-  ord <- order(e$mtime, decreasing = TRUE)
-  fls <- d[ord]
-  fls2 <- gsub(regex, "\\1", fls)
-  dups <- duplicated(fls2)
-  fls3 <- unique(fls[dups])
-  if (isTRUE(delete))
-    unlink(fls3)
-  if (length(fls3)) {
-    filesToDelete <- paste(fls3, collapse = "\n")
-    if (isTRUE(delete))
-      message("removed: ", filesToDelete)
-    else
-      message("would be removed: ", filesToDelete)
-  }
-  else
-    message("None to remove")
-  invisible(fls3)
-}

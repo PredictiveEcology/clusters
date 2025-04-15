@@ -181,6 +181,7 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
       break
     }
   }
+  DE
 }
 
 

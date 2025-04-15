@@ -8,7 +8,7 @@ duplicates, keeping only the most recent.}
 \usage{
 rmIncompleteDups(
   path,
-  pattern = "^(.+)\\\\_[[:digit:]]{6,8}.*\\\\.png",
+  pattern = "^(.+)\\\\_[[:digit:]]{5,8}.*\\\\.png",
   delete = FALSE
 )
 }

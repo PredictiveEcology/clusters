@@ -265,7 +265,7 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
 #' @param delete Logical. Default `FALSE`, which will only list the files that
 #'   will be deleted. If `TRUE`, then the identified files will
 #'   be deleted
-rmIncompleteDups <- function(path, pattern = "^(.+)\\_[[:digit:]]{6,8}.*\\.png",
+rmIncompleteDups <- function(path, pattern = "^(.+)\\_[[:digit:]]{5,8}.*\\.png",
                              delete = FALSE) {
   d <- dir(path, recursive = TRUE, full.names = TRUE);
   e <- file.info(d)
@@ -358,5 +358,31 @@ dirNew <- function(path, secsAgo = Inf, after = Sys.time() - secsAgo,
 tableFiles <- function(files, pattern = "^.+hists/(.+)\\_iter.+\\_[[:digit:]]{6,8}.*\\.png") {
   # dd <- dirNew(path, secsAgo, pattern = "hist.+MPB\\_4")
   files <- sort(files)
-  table(gsub("^.+hists/(.+)\\_iter.+\\_[[:digit:]]{6,8}.*\\.png", "\\1", files))
+  table(gsub(pattern, "\\1", files))
+}
+
+
+#' Summary -- wrapper around `dirNew` and `tableFiles`
+#'
+#' Convenient wrapper.
+#'
+#' @return Tabulation of the files, based on the pattern.
+#' @export
+#' @inheritParams tableFiles
+#' @inheritParams dirNew
+summaryOutputFolder <- function(path, pattern = "^.+hists/(.+)\\_iter.+\\_[[:digit:]]{6,8}.*\\.png") {
+  dd <- clusters::dirNew(path, pattern = pattern)
+  fi <- file.info(dd) |> as.data.table() # |> sort(by = "mtime")
+  ordFi <- order(fi$mtime)
+  setorderv(fi, "mtime")
+  dt <- difftime( Sys.time(), fi$mtime[1], units = "hours") #/ NROW(dd)
+  print(dt)
+  print(paste(NROW(dd)/as.numeric(dt), "runs per hour"))
+  tf <- sort(tableFiles(dd, pattern = pattern))
+  tf <- tf[order(names(tf))]
+  dt2 <- difftime(Sys.time(), fi$mtime, units = "mins")
+  ddNew <- dd[ordFi][dt2 < 20]
+  tfNew <- tableFiles(ddNew, pattern = pattern)
+  print(tfNew)
+  tf
 }

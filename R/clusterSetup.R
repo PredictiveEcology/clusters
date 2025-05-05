@@ -75,7 +75,8 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
       #   )
       # )
       st <- system.time({
-        cl <- parallelly::makeClusterPSOCK(coresUnique, revtunnel = revtunnel, rscript_libs = libPath
+        cl <- parallelly::makeClusterPSOCK(coresUnique, revtunnel = revtunnel, rscript_libs = libPath,
+                                           renice = -15
                                            # , rscript = c("nice", RscriptPath)
         )
       })
@@ -147,7 +148,10 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
                                          # , rscript = c("nice", RscriptPath)
       )
     })
-    on.exit(stopCluster(cl))
+
+    # These lines are equivalent:
+    reproducible:::on.exit2(stopCluster(cl))
+    # do.call(base::on.exit, list(stopCluster(cl), TRUE, TRUE), envir = envir)
 
     message(
       "it took ", round(st[3], 2), "s to start ",
@@ -196,14 +200,6 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
         out <- clusterEvalQ(cl, {
           out <- qs::qread(file = filenameForTransfer)
           out <- reproducible::.unwrap(out, cachePath = NULL)
-          # out <- lapply(out, FUN = function(x) {
-          #   if (inherits(x, "PackedSpatRaster")) {
-          #     x <- terra::unwrap(x)
-          #   } else {
-          #     x
-          #   }
-          #   x
-          # })
           list2env(out, envir = .GlobalEnv)
         })
         # Delete the file

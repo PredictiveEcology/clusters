@@ -32,6 +32,10 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
          quotedSpread = list(...)$quotedSpread, objFunInner = objFunInner)
     }
     if (TRUE) {
+      if (Require:::isRstudio()) {
+       #  debug(fn)
+        fn(par = apply(do.call(rbind, list(lower, upper)), 2, function(x) runif(1, min = x[1], max = x[2])), plot.it = TRUE, ... )
+      }
       DE[[iter]] <- Cache(
         DEoptim(
           fn,

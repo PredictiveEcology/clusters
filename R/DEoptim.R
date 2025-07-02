@@ -42,7 +42,7 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
           lower = lower,
           upper = upper,
           control = control, ...
-          # FS_formula = FS_formula,
+          # formulaToFit = formulaToFit,
           # covMinMax = covMinMax,
           # tests = tests,
           # maxFireSpread = maxFireSpread,
@@ -97,8 +97,8 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
       if (isNewSegment) {
         pvals <- numeric(floor(numSegments))
         iters <- list()
-        s <- list()
-        l <- list()
+        summ <- list()
+        # l <- list()
         segmentSeq <- seq_len(floor(numSegments))
         # if (!exists("dfForGGplotSimple", inherits = FALSE))
         DEoutBestValit <- sapply(DE, function(x) x$member$bestvalit)
@@ -113,14 +113,14 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
             a <- data.table(iter = seq_along(DE), val = DEoutBestValit)
             lmOut <- try(lm(val ~ iter, data = a[iters[[i]]]))
             if (!is(lmOut, "try-error")) {
-              next
-              s[[i]] <- summary(l[[i]]);
-              pvals[i] <- round(s[[i]]$coefficients[2, 4], 4)
+              # next
+              summ[[i]] <- summary(lmOut);
+              pvals[i] <- round(summ[[i]]$coefficients[2, 4], 4)
 
               newdat <- data.table(iter = iters[[i]])
-              set(newdat, NULL, "pred", predict(l[[i]], newdata = newdat))
-              int <- s[[i]]$coefficients[1, 1]
-              slop <- s[[i]]$coefficients[2, 1]
+              set(newdat, NULL, "pred", predict(lmOut, newdata = newdat))
+              int <- summ[[i]]$coefficients[1, 1]
+              slop <- summ[[i]]$coefficients[2, 1]
               # gg1 <- gg1 + geom_line(data = newdat,
               #                           aes(x = iter, y = pred), #, xend = tail(iter, 1), yend = tail(pred, 1)),
               #                           col = col)
@@ -131,16 +131,14 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
           }
           pvalDT <- data.table(dataRange = sapply(segmentSeq, function(x) paste(range(iters[[x]]), collapse = ":")),
                                pvals = pvals)
-          # Plots(gg1, types = .plots,
-          # filename = ggDEoptimFilename(figurePath, rep, subfolder = "", text = "objFun/"))
           reproducible::messageDF(pvalDT, colour = "yellow")
         }
 
       }
     }
     if (!isFALSE(figurePath) && (isUpdated(DE[[iter]]))) { # i.e., should be a path
-      if (exists("FS_formula"))
-        terms <- suppressMessages(termsInDEoptim(FS_formula, thresh, length(lower)))
+      if (!is.null(dots$formulaToFit))
+        terms <- suppressMessages(termsInDEoptim(dots$formulaToFit, dots$thresh, length(lower)))
       else
         terms <- names(lower)
       nVars <- NCOL(DE[[iter]]$member$pop)
@@ -154,13 +152,13 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
       texts <- c("objFun/", "lines_mean_AllPoints/", "lines_mean/", "lines_dif/", "lines_variance/", "hists/")
       withCallingHandlers({
         Plots(gg1, types = .plots,
-              filename = ggDEoptimFilename(figurePath, rep, subfolder = "", text = texts[1]))
+              filename = ggDEoptimFilename(figurePath, dots$rep, subfolder = "", text = texts[1]))
         Plots(dfForGGplotAllPoints, ggPlotFnMeansAllPoints, types = .plots,
-              filename = ggDEoptimFilename(figurePath, rep, subfolder = "", text = texts[2]));
+              filename = ggDEoptimFilename(figurePath, dots$rep, subfolder = "", text = texts[2]));
         Plots(dfForGGplot, ggPlotFnMeans, types = .plots,
-              filename = ggDEoptimFilename(figurePath, rep, subfolder = "", text = texts[3]))
+              filename = ggDEoptimFilename(figurePath, dots$rep, subfolder = "", text = texts[3]))
         Plots(dfForGGplot, ggPlotFnDif, types = .plots, ,
-              filename = ggDEoptimFilename(figurePath, rep, subfolder = "", text = texts[4]))
+              filename = ggDEoptimFilename(figurePath, dots$rep, subfolder = "", text = texts[4]))
         Plots(dfForGGplot, ggPlotFnVars, types = .plots, ,
               filename = ggDEoptimFilename(figurePath, rep, subfolder = "", text = texts[5]))
         Plots(fn = visualizeDE, DE = DE[[iter]], cachePath = cachePath,

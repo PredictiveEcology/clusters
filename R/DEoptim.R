@@ -22,6 +22,16 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
 
   opts <- options("reproducible.showSimilar" = FALSE)
   on.exit(options(opts), add = TRUE)
+
+  cacheIds <- lapply(seq(itersToDo), function(x) NULL)
+  if (FALSE) {
+    prevRun <- 1
+    sc1 <- showCache(userTags = "DEoptimForCache_1_", after = "2025-05-01 16:40:00", before = "2025-05-05 08:17:00")
+    sc2 <- sc1[tagKey == "function"] |> setorderv(cols = "createdDate", order = 1L)
+    prevRunCacheIds <- sc2$cacheId
+    cacheIds <- c(as.list(prevRunCacheIds), lapply(1:500, function(x) NULL))
+  }
+
   for (iter in itersToDo) {
 
     controlForCache <- controlForCache(control)
@@ -53,7 +63,7 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
           # thresh = thresh
         ),
         .cacheExtra = list(controlForCache, runName, iter),
-        # cacheId = cacheIds[iter],
+        cacheId = cacheIds[[iter]],
         .functionName = paste0("DEoptimForCache_", runName, "_", iter),
         verbose = .verbose,
         omitArgs = c("verbose", "control")
@@ -161,10 +171,10 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
         Plots(dfForGGplot, ggPlotFnDif, types = .plots, ,
               filename = ggDEoptimFilename(figurePath, dots$rep, subfolder = "", text = texts[4]))
         Plots(dfForGGplot, ggPlotFnVars, types = .plots, ,
-              filename = ggDEoptimFilename(figurePath, rep, subfolder = "", text = texts[5]))
-        Plots(fn = visualizeDE, DE = DE[[iter]], cachePath = cachePath,
-              titles = terms, lower = lower, upper = upper, types = .plots,
-              filename = ggDEoptimFilename(figurePath, rep = rep, subfolder = "", iter = iter, text = texts[6], time = TRUE))
+              filename = ggDEoptimFilename(figurePath, dots$rep, subfolder = "", text = texts[5]))
+        Plots(visualizeDE(DE = DE[[iter]], cachePath = cachePath,
+              titles = terms, lower = lower, upper = upper), types = .plots,
+              filename = ggDEoptimFilename(figurePath, rep = dots$rep, subfolder = "", iter = iter, text = texts[6], time = TRUE))
       }, message = function(m) {
         if (any(grepl("geom_smooth|Saving", m$message)))
           invokeRestart("muffleMessage")

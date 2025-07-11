@@ -249,9 +249,10 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
     # message("it took ", round(stPackages[3], 2), "s to load packages")
 
     control$cluster <- cl
-    if (identical(cores, "localhost"))
-      list2env(mget(unlist(objsNeeded), envir = envir), envir = .GlobalEnv)
   }
+  if (identical(cores, "localhost") || is.null(cores))
+    list2env(mget(unlist(objsNeeded), envir = envir), envir = .GlobalEnv)
+
 
   on.exit() # remove on.exit stopCluster because it ended successfully
 

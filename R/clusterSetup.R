@@ -76,7 +76,7 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
       # )
       st <- system.time({
         cl <- parallelly::makeClusterPSOCK(coresUnique, revtunnel = revtunnel, rscript_libs = libPath,
-                                           renice = -15
+                                           renice = 20
                                            # , rscript = c("nice", RscriptPath)
         )
       })
@@ -144,7 +144,8 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
 
       cl <- parallelly::makeClusterPSOCK(cores,
                                          revtunnel = revtunnel,
-                                         outfile = logPath, rscript_libs = libPath
+                                         outfile = logPath, rscript_libs = libPath,
+                                         renice = 20
                                          # , rscript = c("nice", RscriptPath)
       )
     })
@@ -296,7 +297,7 @@ rmIncompleteDups <- function(path, pattern = "^(.+)\\_[[:digit:]]{5,8}.*\\.png",
 #' @param resources Column extracted in vmstat. Defaults to `"us"` or "user CPU"
 resourcesUsed <- function(machines = "localhost", resource = "us") {
   #if (!identical("localhost", machines)) {
-  cl <- suppressMessages(parallelly::makeClusterPSOCK(machines))
+  cl <- suppressMessages(parallelly::makeClusterPSOCK(machines, renice = 20))
   on.exit(parallel::stopCluster(cl))
   out <- parallel::clusterEvalQ(cl, {
     a <- system("vmstat -y", intern = TRUE)[-1]

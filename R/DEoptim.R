@@ -1,18 +1,17 @@
 
 
 DEoptimIterative2 <- function(fn, lower, upper, control, ...,
-                              # FS_formula, covMinMax, tests, maxFireSpread, mutuallyExclusive,
+                              # formulaToFit, covMinMax, tests, maxFireSpread, mutuallyExclusive,
                               # doObjFunAssertions, Nreps, objFunCoresInternal, thresh, rep,
                               .plots, figurePath, cachePath, runName = 1, .verbose = TRUE) {
   DE <- list()
   dots <- list(...)
   itersToDo <- seq(control$itermax)
   control$itermax <- 1L
-  if (is.null(list(...)$rep)) {
-    rep <- runName
+  if (is.null(dots$rep)) {
+    dots$rep <- runName
   }
 
-  control$cluster
   a <- list(VTR = -Inf, strategy = 3L, NP = NA, itermax = 1, CR = 0.5,
             F = 0.8, bs = FALSE, trace = 1, initialpop = NULL, storepopfrom = 2,
             storepopfreq = 1, p = 0.2, c = 0.5, reltol = 0.1, steptol = 500,
@@ -82,8 +81,10 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
 
     control$initialpop <- DE[[iter]]$member$pop
 
-    rng <- 5; # do X iteration steps, i.e., 1:100, 6:125
-    dataRunToUse <- 50 # this will do the lm on this many items
+    # if (iter > 499) browser()
+    # if (Require:::isRstudio()) if (iter > 200) browser()
+    rng <- 25; # how often to do this: i.e., num new iterations per fit, i.e., 1:100, 26:125
+    dataRunToUse <- 125 # this will do the lm on this many items
     numSegments <- (length(DE) - dataRunToUse) / rng + 1# (length(DE) - dataRunToUse + 1) / rng
     pvals <- c(0,0)
 

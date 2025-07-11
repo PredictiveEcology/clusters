@@ -105,8 +105,8 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
       parallel::clusterEvalQ(cl, {
         # If this is first time that packages need to be installed for this user on this machine
         #   there won't be a folder present that is writable
-        if (tryCatch(packageVersion("Require") < "1.0.1", error = function(e) TRUE))
-          install.packages("Require", lib = libPath)
+        if (tryCatch(packageVersion("Require") < "1.0.1.9000", error = function(e) TRUE))
+          install.packages("Require", lib = libPath, repos = unique(c("predictiveecology.r-universe.dev", getOption("repos"))))
         library(Require, lib.loc = libPath)
         dir.create(dirname(logPath), recursive = TRUE, showWarnings = FALSE)
         out <- Require::Install(pkgsNeeded, libPaths = libPath)

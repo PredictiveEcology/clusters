@@ -5,8 +5,8 @@ Description: Miscellaneous utilities developed by the Predictive Ecology Group (
 URL:
     http://clusters.predictiveecology.org,
     https://github.com/PredictiveEcology/clusters
-Date: 2025-04-15
-Version: 0.0.12
+Date: 2025-07-11
+Version: 0.0.13
 Authors@R: c(
       person("Eliot J B", "McIntire", email = "eliot.mcintire@nrcan-rncan.gc.ca",
              role = c("aut", "cre"), comment=c(ORCID = "0000-0002-6914-8316")),
@@ -21,7 +21,7 @@ Imports:
     parallelly
 Suggests:
     knitr,
-    reproducible,
+    reproducible (>= 2.1.2.9045),
     Require,
     roxygen2,
     qs,

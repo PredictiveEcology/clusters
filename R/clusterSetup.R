@@ -154,6 +154,20 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
     reproducible:::on.exit2(stopCluster(cl))
     # do.call(base::on.exit, list(stopCluster(cl), TRUE, TRUE), envir = envir)
 
+    message("loading packages in cluster nodes")
+
+    clusterExport(cl, "pkgsNeeded", envir = environment())
+    stPackages <- system.time(parallel::clusterEvalQ(
+      cl,
+      {
+        for (i in pkgsNeeded) {
+          library(i, character.only = TRUE)
+        }
+        message("loading ", i, " at ", Sys.time())
+      }
+    ))
+    message("it took ", round(stPackages[3], 2), "s to load packages")
+
     message(
       "it took ", round(st[3], 2), "s to start ",
       paste(paste(names(table(cores))), "x", table(cores), collapse = ", "), " threads"
@@ -220,19 +234,19 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
     }
     message("it took ", round(stMoveObjects[3], 2), "s to move objects to nodes")
 
-    message("loading packages in cluster nodes")
-
-    clusterExport(cl, "pkgsNeeded", envir = environment())
-    stPackages <- system.time(parallel::clusterEvalQ(
-      cl,
-      {
-        for (i in pkgsNeeded) {
-          library(i, character.only = TRUE)
-        }
-        message("loading ", i, " at ", Sys.time())
-      }
-    ))
-    message("it took ", round(stPackages[3], 2), "s to load packages")
+    # message("loading packages in cluster nodes")
+    #
+    # clusterExport(cl, "pkgsNeeded", envir = environment())
+    # stPackages <- system.time(parallel::clusterEvalQ(
+    #   cl,
+    #   {
+    #     for (i in pkgsNeeded) {
+    #       library(i, character.only = TRUE)
+    #     }
+    #     message("loading ", i, " at ", Sys.time())
+    #   }
+    # ))
+    # message("it took ", round(stPackages[3], 2), "s to load packages")
 
     control$cluster <- cl
     if (identical(cores, "localhost"))

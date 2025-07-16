@@ -11,6 +11,46 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
                          itermax = 500, trace = TRUE, strategy = 3, initialpop = NULL, NP = NULL,
                          cores, logPath, libPath, objsNeeded, pkgsNeeded, envir = parent.frame()) {
 
+  if (identical(sort(unique(cores)), sort(cores))) {
+    sshLines <- readLines("~/.ssh/config")
+    whLocalhost <- gsub("Host (.+) #.+", "\\1", grep(Sys.info()["nodename"], sshLines, value = T))
+    cores <- gsub(whLocalhost, "localhost", cores)
+
+    coresUnique <- unique(unlist(cores))
+    clInitial <- parallelly::makeClusterPSOCK(coresUnique)
+    on.exit(try(parallel::stopCluster(clInitial), silent = TRUE), add = TRUE)
+    numActiveThreads <- function (pattern = "--slave", minCPU = 50) {
+      if (!identical(.Platform$OS.type, "windows")) {
+        a0 <- system("ps -ef", intern = TRUE)[-1]
+        a4 <- grep(pattern, a0, value = TRUE)
+        a5 <- gsub("^.*[[:digit:]]* [[:digit:]]* ([[:digit:]]{1,3}) .*$",
+                   "\\1", a4)
+        sum(as.numeric(a5) > minCPU)
+      }
+      else {
+        message("Does not work on Windows")
+      }
+    }
+    parallel::clusterExport(clInitial, varlist = "numActiveThreads")
+    names(clInitial) <- coresUnique
+    cores <- parallel::clusterEvalQ(clInitial, {
+      ncores = parallel::detectCores()
+      active = numActiveThreads("")
+      canUse = ncores - active
+      data.frame(ncores = ncores, active = active, canUse = canUse)})
+    coreState <- data.table::rbindlist(cores, idcol = "name")
+    coreState[, prop := canUse/sum(canUse)]
+    nCoresNeeded <- 100
+    if (sum(coreState$canUse) < 300) stop("There are too few cores to use in this cluster")
+    vec <- floor(coreState$prop * nCoresNeeded)
+    while(sum(vec) < nCoresNeeded) {
+      wm <- which.min(vec/coreState$canUse)
+      vec[wm] <- vec[wm] + 1
+    }
+    cores <- rep(coreState$name, vec)
+    parallel::stopCluster(clInitial)
+
+  }
   if (!all(requireNamespace("qs") && requireNamespace("reproducible") && requireNamespace("Require")))
     stop("Please install missing packages")
   control <- list(itermax = itermax, trace = trace, strategy = strategy)
@@ -80,7 +120,7 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
                                            # , rscript = c("nice", RscriptPath)
         )
       })
-      clusterExport(cl, list("libPath", "logPath", "repos", "pkgsNeeded"),
+      parallel::clusterExport(cl, list("libPath", "logPath", "repos", "pkgsNeeded"),
                     envir = environment())
 
       # Missing `dqrng` and `sitmo`
@@ -151,12 +191,12 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
     })
 
     # These lines are equivalent:
-    reproducible:::on.exit2(stopCluster(cl))
+    reproducible:::on.exit2(parallel::stopCluster(cl))
     # do.call(base::on.exit, list(stopCluster(cl), TRUE, TRUE), envir = envir)
 
     message("loading packages in cluster nodes")
 
-    clusterExport(cl, "pkgsNeeded", envir = environment())
+    parallel::clusterExport(cl, "pkgsNeeded", envir = environment())
     stPackages <- system.time(parallel::clusterEvalQ(
       cl,
       {
@@ -199,9 +239,9 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
         dir.create(dirname(filenameForTransfer), recursive = TRUE, showWarnings = FALSE) # during development, this was deleted accidentally
         qs::qsave(objsToCopy, file = filenameForTransfer)
         stExport <- system.time({
-          outExp <- clusterExport(cl, varlist = "filenameForTransfer", envir = environment())
+          outExp <- parallel::clusterExport(cl, varlist = "filenameForTransfer", envir = environment())
         })
-        out11 <- clusterEvalQ(cl, {
+        out11 <- parallel::clusterEvalQ(cl, {
           dir.create(dirname(filenameForTransfer), recursive = TRUE, showWarnings = FALSE)
         })
         nonLocalhostCores <- setdiff(unique(cores), "localhost")
@@ -212,14 +252,14 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
                                              filenameForTransfer, " ", ip, ":",
                                              filenameForTransfer)))
           })
-        out <- clusterEvalQ(cl, {
+        out <- parallel::clusterEvalQ(cl, {
           out <- qs::qread(file = filenameForTransfer)
           out <- reproducible::.unwrap(out, cachePath = NULL)
           list2env(out, envir = .GlobalEnv)
         })
         # Delete the file
         notDups <- !duplicated(cores)
-        out <- clusterEvalQ(cl[notDups], {
+        out <- parallel::clusterEvalQ(cl[notDups], {
           if (dir.exists(dirname(filenameForTransfer))) {
             try(unlink(dirname(filenameForTransfer), recursive = TRUE), silent = TRUE)
           }
@@ -229,7 +269,7 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
 
     if (is(stMoveObjects, "try-error")) {
       message("The attempt to move objects to cluster using rsync and qs failed; trying clusterExport")
-      stMoveObjects <- system.time(clusterExport(cl, objsNeeded, envir = environment()))
+      stMoveObjects <- system.time(parallel::clusterExport(cl, objsNeeded, envir = environment()))
       list2env(mget(unlist(objsNeeded), envir = environment()), envir = .GlobalEnv)
     }
     message("it took ", round(stMoveObjects[3], 2), "s to move objects to nodes")

@@ -27,6 +27,9 @@ Suggests:
     qs,
     rmarkdown,
     testthat
+Remotes:
+    PredictiveEcology/reproducible@AI,
+    PredictiveEcology/Require@development
 Encoding: UTF-8
 Language: en-CA
 License: GPL-3

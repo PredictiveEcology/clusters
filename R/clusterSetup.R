@@ -12,10 +12,19 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
                          cores, logPath, libPath, objsNeeded, pkgsNeeded, envir = parent.frame()) {
 
   if (identical(sort(unique(cores)), sort(cores))) {
-    sshLines <- readLines("~/.ssh/config")
-    whLocalhost <- gsub("Host (.+) #.+", "\\1", grep(Sys.info()["nodename"], sshLines, value = T))
-    cores <- gsub(whLocalhost, "localhost", cores)
 
+    # Convert local machine from its ssh name to "localhost"
+    # This looks at .ssh/config, assumes that Host is used, with # comment character naming nodename
+    #  e.g., "Host coco # A159576 n18 # Eliot Degradation"
+    #  This should just skip and leave `cores` unchanged if that structure doesn't exist
+    cores <- changeNodenameToLocalhost(cores)
+
+    if (FALSE) { # this is for NRCan network; extracts names of all nodes in the .ssh/config file
+      cores <-
+      gsub("^Host (.+) #.+", "\\1", grep("^Host", sshLines, value = TRUE)) |>
+        gsub(pattern = "(Host )|(f$)", replacement = "", x = _) |> unique() |>
+        grep(pattern = "(^(n|bc\\**|rbc)[[:digit:]])|(jump)|\\*|remote|pfc|[[:digit:]]+", invert = TRUE, value = T)
+    }
     coresUnique <- unique(unlist(cores))
     clInitial <- parallelly::makeClusterPSOCK(coresUnique)
     on.exit(try(parallel::stopCluster(clInitial), silent = TRUE), add = TRUE)
@@ -437,4 +446,16 @@ summaryOutputFolder <- function(path, pattern = "^.+hists/(.+)\\_iter.+\\_[[:dig
   tfNew <- tableFiles(ddNew, pattern = pattern)
   print(tfNew)
   tf
+}
+
+
+
+changeNodenameToLocalhost <- function(cores) {
+  sshLines <- readLines("~/.ssh/config")
+  hasSelf <- grep(Sys.info()["nodename"], sshLines, value = T)
+  onlyHost <- grep("^Host ", hasSelf, value = TRUE)
+  whLocalhost <- gsub("^Host (\\w+).*", "\\1", onlyHost)
+  if (length(whLocalhost))
+    cores <- gsub(paste(whLocalhost, collapse = "|"), "localhost", cores)
+  cores
 }

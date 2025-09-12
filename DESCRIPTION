@@ -5,7 +5,7 @@ Description: Miscellaneous utilities developed by the Predictive Ecology Group (
 URL:
     http://clusters.predictiveecology.org,
     https://github.com/PredictiveEcology/clusters
-Date: 2025-07-15
+Date: 2025-09-12
 Version: 0.0.15
 Authors@R: c(
       person("Eliot J B", "McIntire", email = "eliot.mcintire@nrcan-rncan.gc.ca",
@@ -18,20 +18,23 @@ Depends:
 Imports:
     data.table,
     parallel,
-    parallelly
+    parallelly,
+    reproducible (>= 2.1.2.9045),
+    Require
 Suggests:
     knitr,
-    reproducible (>= 2.1.2.9045),
-    Require,
     roxygen2,
     qs,
     rmarkdown,
     testthat
+Remotes:
+    PredictiveEcology/reproducible@AI,
+    PredictiveEcology/Require@development
 Encoding: UTF-8
 Language: en-CA
 License: GPL-3
 VignetteBuilder: knitr, rmarkdown
-BugReports: https://github.com/PredictiveEcology/pemisc/issues
+BugReports: https://github.com/PredictiveEcology/clusters/issues
 ByteCompile: yes
 RoxygenNote: 7.3.2
 Roxygen: list(markdown = TRUE)

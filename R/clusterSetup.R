@@ -21,7 +21,7 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
 
     if (FALSE) { # this is for NRCan network; extracts names of all nodes in the .ssh/config file
       cores <-
-      gsub("^Host (.+) #.+", "\\1", grep("^Host", sshLines, value = TRUE)) |>
+        gsub("^Host (.+) #.+", "\\1", grep("^Host", sshLines, value = TRUE)) |>
         gsub(pattern = "(Host )|(f$)", replacement = "", x = _) |> unique() |>
         grep(pattern = "(^(n|bc\\**|rbc)[[:digit:]])|(jump)|\\*|remote|pfc|[[:digit:]]+", invert = TRUE, value = T)
     }

@@ -28,18 +28,18 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
     coresUnique <- unique(unlist(cores))
     clInitial <- parallelly::makeClusterPSOCK(coresUnique)
     on.exit(try(parallel::stopCluster(clInitial), silent = TRUE), add = TRUE)
-    numActiveThreads <- function (pattern = "--slave", minCPU = 50) {
-      if (!identical(.Platform$OS.type, "windows")) {
-        a0 <- system("ps -ef", intern = TRUE)[-1]
-        a4 <- grep(pattern, a0, value = TRUE)
-        a5 <- gsub("^.*[[:digit:]]* [[:digit:]]* ([[:digit:]]{1,3}) .*$",
-                   "\\1", a4)
-        sum(as.numeric(a5) > minCPU)
-      }
-      else {
-        message("Does not work on Windows")
-      }
-    }
+    # numActiveThreads <- function (pattern = "", minCPU = 50) {
+    #   if (!identical(.Platform$OS.type, "windows")) {
+    #     a0 <- system("ps -ef", intern = TRUE)[-1]
+    #     a4 <- grep(pattern, a0, value = TRUE)
+    #     a5 <- gsub("^.*[[:digit:]]* [[:digit:]]* ([[:digit:]]{1,3}) .*$",
+    #                "\\1", a4)
+    #     sum(as.numeric(a5) > minCPU)
+    #   }
+    #   else {
+    #     message("Does not work on Windows")
+    #   }
+    # }
     parallel::clusterExport(clInitial, varlist = "numActiveThreads")
     names(clInitial) <- coresUnique
     cores <- parallel::clusterEvalQ(clInitial, {
@@ -458,4 +458,43 @@ changeNodenameToLocalhost <- function(cores) {
   if (length(whLocalhost))
     cores <- gsub(paste(whLocalhost, collapse = "|"), "localhost", cores)
   cores
+}
+
+
+#' Estimate the number of active threads currently being used
+#'
+#' This only works on non-linux operating systems, as it uses `ps`
+#'
+#' @param pattern An optional search pattern to look for when identifying threads
+#'   that are active. If left at default, then all threads that are active will count.
+#' @param minCPU The minimum CPU (in percent , i.e.,0 to 100) that a thread must
+#'   be using for it to count as actively being used.
+#' @export
+#' @return An integer representing the current number of threads that are being used
+#'   as a CPU% greater than `minCPU`. This can be used, e.g., with
+#'   `parallelly::availableCores()` to estimate the number of cores that are available
+#'   to be used.
+#' @note
+#' This does not address memory or disk use issues.
+#' @examples
+#'
+#' # This will show the active number, updated every 0.5 seconds
+#' cat("Number Active CPUs right now:\n");
+#' while(TRUE) {
+#'   numAC <- clusters::numActiveThreads();
+#'   cat("\r"); cat(numAC); cat("  ");
+#'   Sys.sleep(0.5)
+#' }
+#'
+numActiveThreads <- function (pattern = "", minCPU = 50) {
+  if (!identical(.Platform$OS.type, "windows")) {
+    a0 <- system("ps -ef", intern = TRUE)[-1]
+    a4 <- grep(pattern, a0, value = TRUE)
+    a5 <- gsub("^.*[[:digit:]]* [[:digit:]]* ([[:digit:]]{1,3}) .*$",
+               "\\1", a4)
+    sum(as.numeric(a5) > minCPU)
+  }
+  else {
+    message("Does not work on Windows")
+  }
 }

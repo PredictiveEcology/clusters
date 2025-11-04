@@ -9,7 +9,8 @@
 #'
 clusterSetup <- function(messagePrefix = "DEoptim_",
                          itermax = 500, trace = TRUE, strategy = 3, initialpop = NULL, NP = NULL,
-                         cores, logPath, libPath, objsNeeded, pkgsNeeded, envir = parent.frame()) {
+                         cores, logPath, libPath, objsNeeded, pkgsNeeded,
+                         nCoresNeeded = 100, envir = parent.frame()) {
 
   if (identical(sort(unique(cores)), sort(cores))) {
 
@@ -20,6 +21,7 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
     cores <- changeNodenameToLocalhost(cores)
 
     if (FALSE) { # this is for NRCan network; extracts names of all nodes in the .ssh/config file
+      sshLines <- readLines("~/.ssh/config")
       cores <-
         gsub("^Host (.+) #.+", "\\1", grep("^Host", sshLines, value = TRUE)) |>
         gsub(pattern = "(Host )|(f$)", replacement = "", x = _) |> unique() |>
@@ -49,8 +51,8 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
       data.frame(ncores = ncores, active = active, canUse = canUse)})
     coreState <- data.table::rbindlist(cores, idcol = "name")
     coreState[, prop := canUse/sum(canUse)]
-    nCoresNeeded <- 100
-    if (sum(coreState$canUse) < 300) stop("There are too few cores to use in this cluster")
+    # nCoresNeeded <- 100
+    if (sum(coreState$canUse) < nCoresNeeded) stop("There are too few cores to use in this cluster")
     vec <- floor(coreState$prop * nCoresNeeded)
     while(sum(vec) < nCoresNeeded) {
       wm <- which.min(vec/coreState$canUse)

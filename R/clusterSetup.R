@@ -494,7 +494,9 @@ numActiveThreads <- function (pattern = "", minCPU = 50) {
     a4 <- grep(pattern, a0, value = TRUE)
     a5 <- gsub("^.*[[:digit:]]* [[:digit:]]* ([[:digit:]]{1,3}) .*$",
                "\\1", a4)
-    sum(as.numeric(a5) > minCPU)
+    # account for multithreading e.g., 1000% CPU use with "1 core"
+    # left is sum of percents, right is sum of cores using at least minCPU
+    ceiling(max(sum(as.numeric(a5)) / 100, sum(as.numeric(a5) > minCPU)))
   }
   else {
     message("Does not work on Windows")

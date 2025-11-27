@@ -12,55 +12,57 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
                          cores, logPath, libPath, objsNeeded, pkgsNeeded,
                          nCoresNeeded = 100, envir = parent.frame()) {
 
-  if (identical(sort(unique(cores)), sort(cores))) {
+  if (!is.null(cores)) {
+    if (identical(sort(unique(cores)), sort(cores))) {
 
-    # Convert local machine from its ssh name to "localhost"
-    # This looks at .ssh/config, assumes that Host is used, with # comment character naming nodename
-    #  e.g., "Host coco # A159576 n18 # Eliot Degradation"
-    #  This should just skip and leave `cores` unchanged if that structure doesn't exist
-    cores <- changeNodenameToLocalhost(cores)
+      # Convert local machine from its ssh name to "localhost"
+      # This looks at .ssh/config, assumes that Host is used, with # comment character naming nodename
+      #  e.g., "Host coco # A159576 n18 # Eliot Degradation"
+      #  This should just skip and leave `cores` unchanged if that structure doesn't exist
+      cores <- changeNodenameToLocalhost(cores)
 
-    if (FALSE) { # this is for NRCan network; extracts names of all nodes in the .ssh/config file
-      sshLines <- readLines("~/.ssh/config")
-      cores <-
-        gsub("^Host (.+) #.+", "\\1", grep("^Host", sshLines, value = TRUE)) |>
-        gsub(pattern = "(Host )|(f$)", replacement = "", x = _) |> unique() |>
-        grep(pattern = "(^(n|bc\\**|rbc)[[:digit:]])|(jump)|\\*|remote|pfc|[[:digit:]]+", invert = TRUE, value = T)
+      if (FALSE) { # this is for NRCan network; extracts names of all nodes in the .ssh/config file
+        sshLines <- readLines("~/.ssh/config")
+        cores <-
+          gsub("^Host (.+) #.+", "\\1", grep("^Host", sshLines, value = TRUE)) |>
+          gsub(pattern = "(Host )|(f$)", replacement = "", x = _) |> unique() |>
+          grep(pattern = "(^(n|bc\\**|rbc)[[:digit:]])|(jump)|\\*|remote|pfc|[[:digit:]]+", invert = TRUE, value = T)
+      }
+      coresUnique <- unique(unlist(cores))
+      clInitial <- parallelly::makeClusterPSOCK(coresUnique)
+      on.exit(try(parallel::stopCluster(clInitial), silent = TRUE), add = TRUE)
+      # numActiveThreads <- function (pattern = "", minCPU = 50) {
+      #   if (!identical(.Platform$OS.type, "windows")) {
+      #     a0 <- system("ps -ef", intern = TRUE)[-1]
+      #     a4 <- grep(pattern, a0, value = TRUE)
+      #     a5 <- gsub("^.*[[:digit:]]* [[:digit:]]* ([[:digit:]]{1,3}) .*$",
+      #                "\\1", a4)
+      #     sum(as.numeric(a5) > minCPU)
+      #   }
+      #   else {
+      #     message("Does not work on Windows")
+      #   }
+      # }
+      parallel::clusterExport(clInitial, varlist = "numActiveThreads")
+      names(clInitial) <- coresUnique
+      cores <- parallel::clusterEvalQ(clInitial, {
+        ncores = parallel::detectCores()
+        active = numActiveThreads("")
+        canUse = ncores - active
+        data.frame(ncores = ncores, active = active, canUse = canUse)})
+      coreState <- data.table::rbindlist(cores, idcol = "name")
+      coreState[, prop := canUse/sum(canUse)]
+      # nCoresNeeded <- 100
+      if (sum(coreState$canUse) < nCoresNeeded) stop("There are too few cores to use in this cluster")
+      vec <- floor(coreState$prop * nCoresNeeded)
+      while(sum(vec) < nCoresNeeded) {
+        wm <- which.min(vec/coreState$canUse)
+        vec[wm] <- vec[wm] + 1
+      }
+      cores <- rep(coreState$name, vec)
+      parallel::stopCluster(clInitial)
+
     }
-    coresUnique <- unique(unlist(cores))
-    clInitial <- parallelly::makeClusterPSOCK(coresUnique)
-    on.exit(try(parallel::stopCluster(clInitial), silent = TRUE), add = TRUE)
-    # numActiveThreads <- function (pattern = "", minCPU = 50) {
-    #   if (!identical(.Platform$OS.type, "windows")) {
-    #     a0 <- system("ps -ef", intern = TRUE)[-1]
-    #     a4 <- grep(pattern, a0, value = TRUE)
-    #     a5 <- gsub("^.*[[:digit:]]* [[:digit:]]* ([[:digit:]]{1,3}) .*$",
-    #                "\\1", a4)
-    #     sum(as.numeric(a5) > minCPU)
-    #   }
-    #   else {
-    #     message("Does not work on Windows")
-    #   }
-    # }
-    parallel::clusterExport(clInitial, varlist = "numActiveThreads")
-    names(clInitial) <- coresUnique
-    cores <- parallel::clusterEvalQ(clInitial, {
-      ncores = parallel::detectCores()
-      active = numActiveThreads("")
-      canUse = ncores - active
-      data.frame(ncores = ncores, active = active, canUse = canUse)})
-    coreState <- data.table::rbindlist(cores, idcol = "name")
-    coreState[, prop := canUse/sum(canUse)]
-    # nCoresNeeded <- 100
-    if (sum(coreState$canUse) < nCoresNeeded) stop("There are too few cores to use in this cluster")
-    vec <- floor(coreState$prop * nCoresNeeded)
-    while(sum(vec) < nCoresNeeded) {
-      wm <- which.min(vec/coreState$canUse)
-      vec[wm] <- vec[wm] + 1
-    }
-    cores <- rep(coreState$name, vec)
-    parallel::stopCluster(clInitial)
-
   }
   if (!all(requireNamespace("qs") && requireNamespace("reproducible") && requireNamespace("Require")))
     stop("Please install missing packages")
@@ -100,6 +102,8 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
     # if (!identical("localhost", unique(cores))) {
     aa <- Require::pkgDep(unique(c("qs", "RCurl", pkgsNeeded)), recursive = TRUE)
     pkgsNeeded <- unique(Require::extractPkgName(unname(unlist(aa))))
+    pkgsNeeded <- setdiff(pkgsNeeded, "rgdal")
+
 
     if (!allLocalhost) {
       repos <- c("https://predictiveecology.r-universe.dev", getOption("repos"))
@@ -135,7 +139,8 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
                     envir = environment())
 
       # Missing `dqrng` and `sitmo`
-      Require::Install(pkgsNeeded, libPaths = libPath)
+      if (NROW(pkgsNeeded))
+        Require::Install(pkgsNeeded, libPaths = libPath)
 
       parallel::clusterEvalQ(cl, {
         # If this is first time that packages need to be installed for this user on this machine
@@ -160,7 +165,8 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
           install.packages("Require", lib = libPath, repos = unique(c("predictiveecology.r-universe.dev", getOption("repos"))))
         library(Require, lib.loc = libPath)
         dir.create(dirname(logPath), recursive = TRUE, showWarnings = FALSE)
-        out <- Require::Install(pkgsNeeded, libPaths = libPath)
+        if (NROW(pkgsNeeded))
+          out <- Require::Install(pkgsNeeded, libPaths = libPath)
       })
       GDALversions <- parallel::clusterEvalQ(cl, {
         .libPaths(libPath)
@@ -200,7 +206,6 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
                                          # , rscript = c("nice", RscriptPath)
       )
     })
-
     # These lines are equivalent:
     reproducible:::on.exit2(parallel::stopCluster(cl))
     # do.call(base::on.exit, list(stopCluster(cl), TRUE, TRUE), envir = envir)
@@ -301,7 +306,7 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
 
     control$cluster <- cl
   }
-  if (identical(cores, "localhost") || is.null(cores))
+  if (any(cores == "localhost") || is.null(cores))
     list2env(mget(unlist(objsNeeded), envir = envir), envir = .GlobalEnv)
 
 

@@ -37,8 +37,8 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
     controlForCache <- controlForCache(control)
 
     if (FALSE) { # for interactive use
-      fn(p = apply(cbind(lower, upper), 1, mean),
-         quotedSpread = list(...)$quotedSpread, objFunInner = objFunInner)
+      fn(apply(cbind(lower, upper), 1, mean),
+         quotedSpread = list(...)$quotedSpread, objFunInner = objFunInner, ...)
     }
     if (TRUE) {
       if (Require:::isRstudio() && FALSE) {

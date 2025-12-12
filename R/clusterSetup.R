@@ -52,6 +52,21 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
         data.frame(ncores = ncores, active = active, canUse = canUse)})
       coreState <- data.table::rbindlist(cores, idcol = "name")
       coreState[, prop := canUse/sum(canUse)]
+
+      rversion <- parallel::clusterEvalQ(clInitial, {
+        as.character(getRversion())
+      })
+      names(rversion) <- sapply(clInitial, function(x) x$host)
+
+      Rversions <- unique(unlist(rversion))
+      haveDifferentRversions <- length(Rversions) > 1
+
+      if (haveDifferentRversions) {
+        dtForCores <- data.table(machine = names(rversion), Rversion = rversion)
+        messageDF(dtForCores)
+        stop("Please make all machines have the same R version")
+      }
+
       # nCoresNeeded <- 100
       if (sum(coreState$canUse) < nCoresNeeded) stop("There are too few cores to use in this cluster")
       vec <- floor(coreState$prop * nCoresNeeded)
@@ -170,7 +185,7 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
       })
       GDALversions <- parallel::clusterEvalQ(cl, {
         .libPaths(libPath)
-        return(sf::sf_extSoftVersion()["GDAL"])
+        return(try(sf::sf_extSoftVersion()["GDAL"]))
       })
       stopifnot(length(unique(sf::sf_extSoftVersion()["GDAL"], GDALversions)) == 1)
 

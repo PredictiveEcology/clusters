@@ -25,3 +25,14 @@ This only works on non-linux operating systems, as it uses \code{ps}
 \note{
 This does not address memory or disk use issues.
 }
+\examples{
+
+# This will show the active number, updated every 0.5 seconds
+cat("Number Active CPUs right now:\n");
+while(TRUE) {
+  numAC <- clusters::numActiveThreads();
+  cat("\r"); cat(numAC); cat("  ");
+  Sys.sleep(0.5)
+}
+
+}

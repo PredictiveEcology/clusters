@@ -16,6 +16,7 @@ clusterSetup(
   libPath,
   objsNeeded,
   pkgsNeeded,
+  nCoresNeeded = 100,
   envir = parent.frame()
 )
 }

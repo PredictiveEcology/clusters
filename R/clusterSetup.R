@@ -13,6 +13,16 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
                          nCoresNeeded = 100, envir = parent.frame()) {
 
   if (!is.null(cores)) {
+    
+    
+    # Global range for ssh ports so there are not errors 
+    #  e.g., Warning: remote port forwarding failed for listen port 11173
+    global_range <- 20000:40000
+    block_size <- 300
+    # Random block for this master
+    start <- sample(global_range, 1)
+    port_block <- seq(start, length.out = block_size)
+    
     if (identical(sort(unique(cores)), sort(cores))) {
 
       # Convert local machine from its ssh name to "localhost"
@@ -29,20 +39,20 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
           grep(pattern = "(^(n|bc\\**|rbc)[[:digit:]])|(jump)|\\*|remote|pfc|[[:digit:]]+", invert = TRUE, value = T)
       }
       coresUnique <- unique(unlist(cores))
-      clInitial <- parallelly::makeClusterPSOCK(coresUnique)
+      # clInitial <- parallelly::makeClusterPSOCK(coresUnique)
+      clInitial <- parallelly::makeClusterPSOCK(
+        coresUnique,
+        port = port_block,
+        revtunnel = TRUE,
+        rshopts = c("-o", "ExitOnForwardFailure=yes"),
+        tries = 5L,
+        delay = 5,
+        renice = 20, 
+        rscript_libs = libPath
+      )
+        
+        
       on.exit(try(parallel::stopCluster(clInitial), silent = TRUE), add = TRUE)
-      # numActiveThreads <- function (pattern = "", minCPU = 50) {
-      #   if (!identical(.Platform$OS.type, "windows")) {
-      #     a0 <- system("ps -ef", intern = TRUE)[-1]
-      #     a4 <- grep(pattern, a0, value = TRUE)
-      #     a5 <- gsub("^.*[[:digit:]]* [[:digit:]]* ([[:digit:]]{1,3}) .*$",
-      #                "\\1", a4)
-      #     sum(as.numeric(a5) > minCPU)
-      #   }
-      #   else {
-      #     message("Does not work on Windows")
-      #   }
-      # }
       parallel::clusterExport(clInitial, varlist = "numActiveThreads")
       names(clInitial) <- coresUnique
       cores <- parallel::clusterEvalQ(clInitial, {
@@ -76,7 +86,7 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
       }
       cores <- rep(coreState$name, vec)
       parallel::stopCluster(clInitial)
-
+      Sys.sleep(2) 
     }
   }
   if (!all(requireNamespace("qs") && requireNamespace("reproducible") && requireNamespace("Require")))
@@ -107,14 +117,11 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
     ))
 
     # Make sure logPath can be written in the workers -- need to create the dir
-
     if (is.numeric(cores)) cores <- rep("localhost", cores)
-
     ## Make cluster with just one worker per machine --> don't need to do these steps
     #     multiple times per machine, if not all 'localhost'
     revtunnel <- FALSE
     allLocalhost <- identical("localhost", unique(cores))
-    # if (!identical("localhost", unique(cores))) {
     aa <- Require::pkgDep(unique(c("qs", "RCurl", pkgsNeeded)), recursive = TRUE)
     pkgsNeeded <- unique(Require::extractPkgName(unname(unlist(aa))))
     pkgsNeeded <- setdiff(pkgsNeeded, "rgdal")
@@ -122,28 +129,10 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
 
     if (!allLocalhost) {
       repos <- c("https://predictiveecology.r-universe.dev", getOption("repos"))
-
-      # FireSense needed "dqrng", "SpaDES.tools", "fireSenseUtils", "PredictiveEcology/fireSenseUtils@development",
-
       revtunnel <- ifelse(allLocalhost, FALSE, TRUE)
-
       coresUnique <- setdiff(unique(cores), "localhost")
       message("copying packages to: ", paste(coresUnique, collapse = ", "))
 
-      # RscriptPath = "/usr/local/bin/Rscript"
-
-      # st <- system.time(
-      #   cl <- mirai::make_cluster(
-      #     n = length(coresUnique),
-      #     url = "tcp://localhost:5563",
-      #     remote = mirai::ssh_config(
-      #       remotes = paste0("ssh://", coresUnique),
-      #       tunnel = TRUE,
-      #       timeout = 1,
-      #       rscript = RscriptPath
-      #     )
-      #   )
-      # )
       st <- system.time({
         cl <- parallelly::makeClusterPSOCK(coresUnique, revtunnel = revtunnel, rscript_libs = libPath,
                                            renice = 20

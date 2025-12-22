@@ -3,6 +3,7 @@
 export(clusterSetup)
 export(dirNew)
 export(getHostCombination)
+export(makeClusterPSOCK)
 export(makeHosts)
 export(monitorCluster)
 export(numActiveThreads)

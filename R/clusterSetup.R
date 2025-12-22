@@ -17,11 +17,11 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
     
     # Global range for ssh ports so there are not errors 
     #  e.g., Warning: remote port forwarding failed for listen port 11173
-    global_range <- 20000:40000
-    block_size <- 300
-    # Random block for this master
-    start <- sample(global_range, 1)
-    port_block <- seq(start, length.out = block_size)
+    # global_range <- 20000:40000
+    # block_size <- 300
+    # # Random block for this master
+    # start <- sample(global_range, 1)
+    # port_block <- seq(start, length.out = block_size)
     
     if (identical(sort(unique(cores)), sort(cores))) {
 
@@ -40,14 +40,14 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
       }
       coresUnique <- unique(unlist(cores))
       # clInitial <- parallelly::makeClusterPSOCK(coresUnique)
-      clInitial <- parallelly::makeClusterPSOCK(
+      clInitial <- makeClusterPSOCK(
         coresUnique,
-        port = port_block,
-        revtunnel = TRUE,
-        rshopts = c("-o", "ExitOnForwardFailure=yes"),
-        tries = 5L,
-        delay = 5,
-        renice = 20, 
+        # port = port_block,
+        # revtunnel = TRUE,
+        # rshopts = c("-o", "ExitOnForwardFailure=yes"),
+        # tries = 5L,
+        # delay = 5,
+        # renice = 20, 
         rscript_libs = libPath
       )
         
@@ -134,19 +134,31 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
       message("copying packages to: ", paste(coresUnique, collapse = ", "))
 
       st <- system.time({
-        cl <- parallelly::makeClusterPSOCK(coresUnique, revtunnel = revtunnel, rscript_libs = libPath,
-                                           renice = 20
-                                           # , rscript = c("nice", RscriptPath)
+        clSecond <- makeClusterPSOCK(
+          coresUnique,
+          # port = port_block,
+          # revtunnel = TRUE,
+          # rshopts = c("-o", "ExitOnForwardFailure=yes"),
+          # tries = 5L,
+           #delay = 5, 
+          # renice = 20, 
+          rscript_libs = libPath
         )
+        on.exit(try(parallel::stopCluster(clSecond), silent = TRUE), add = TRUE)
+
+        # cl <- parallelly::makeClusterPSOCK(coresUnique, revtunnel = revtunnel, rscript_libs = libPath,
+        #                                    renice = 20
+        #                                    # , rscript = c("nice", RscriptPath)
+        # )
       })
-      parallel::clusterExport(cl, list("libPath", "logPath", "repos", "pkgsNeeded"),
+      parallel::clusterExport(clSecond, list("libPath", "logPath", "repos", "pkgsNeeded"),
                     envir = environment())
 
       # Missing `dqrng` and `sitmo`
       if (NROW(pkgsNeeded))
         Require::Install(pkgsNeeded, libPaths = libPath)
 
-      parallel::clusterEvalQ(cl, {
+      parallel::clusterEvalQ(clSecond, {
         # If this is first time that packages need to be installed for this user on this machine
         #   there won't be a folder present that is writable
         if (!dir.exists(libPath)) {
@@ -162,7 +174,7 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
                       " ", ip, ":", libPath))
       })
 
-      parallel::clusterEvalQ(cl, {
+      parallel::clusterEvalQ(clSecond, {
         # If this is first time that packages need to be installed for this user on this machine
         #   there won't be a folder present that is writable
         if (tryCatch(packageVersion("Require") < "1.0.1.9000", error = function(e) TRUE))
@@ -172,13 +184,14 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
         if (NROW(pkgsNeeded))
           out <- Require::Install(pkgsNeeded, libPaths = libPath)
       })
-      GDALversions <- parallel::clusterEvalQ(cl, {
+      GDALversions <- parallel::clusterEvalQ(clSecond, {
         .libPaths(libPath)
         return(try(sf::sf_extSoftVersion()["GDAL"]))
       })
       stopifnot(length(unique(sf::sf_extSoftVersion()["GDAL"], GDALversions)) == 1)
 
-      parallel::stopCluster(cl)
+      parallel::stopCluster(clSecond)
+      Sys.sleep(2) 
     }
 
     dir.create(dirname(logPath), recursive = TRUE, showWarnings = FALSE)
@@ -187,38 +200,35 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
     message("Starting ", paste(paste(names(table(cores))), "x", table(cores),
                                collapse = ", "), " clusters")
     message("Starting main parallel cluster ...")
-    # sshCores <- paste0("ssh//", grep('localhost', cores, invert = TRUE, value = TRUE))
-    # nonsshCores <- grep('localhost', cores, value = TRUE)
-    # coresForMirai <- c(nonsshCores, sshCores)
-
+    
     st <- system.time({
-      # cl <- mirai::make_cluster(
-      #   length(coresForMirai),
-      #   # url = "tcp://localhost:5555",
-      #   remote = ssh_config(
-      #     remotes = coresForMirai,
-      #     # tunnel = TRUE,
-      #     timeout = 1,
-      #     rscript = RscriptPath
-      #   )
-      # )
-
-      cl <- parallelly::makeClusterPSOCK(cores,
-                                         revtunnel = revtunnel,
-                                         outfile = logPath, rscript_libs = libPath,
-                                         renice = 20
-                                         # , rscript = c("nice", RscriptPath)
+      clThird <- makeClusterPSOCK(
+        cores,
+        # port = port_block,
+        # revtunnel = TRUE,
+        outfile = logPath,
+        # rshopts = c("-o", "ExitOnForwardFailure=yes"),
+        # tries = 5L,
+        # delay = 5, 
+        # renice = 20, 
+        rscript_libs = libPath
       )
+      # cl <- parallelly::makeClusterPSOCK(cores,
+      #                                    revtunnel = revtunnel,
+      #                                    outfile = logPath, rscript_libs = libPath,
+      #                                    renice = 20
+      #                                    # , rscript = c("nice", RscriptPath)
+      # )
     })
     # These lines are equivalent:
-    reproducible:::on.exit2(parallel::stopCluster(cl))
+    reproducible:::on.exit2(parallel::stopCluster(clThird))
     # do.call(base::on.exit, list(stopCluster(cl), TRUE, TRUE), envir = envir)
 
     message("loading packages in cluster nodes")
 
-    parallel::clusterExport(cl, "pkgsNeeded", envir = environment())
+    parallel::clusterExport(clThird, "pkgsNeeded", envir = environment())
     stPackages <- system.time(parallel::clusterEvalQ(
-      cl,
+      clThird,
       {
         for (i in pkgsNeeded) {
           library(i, character.only = TRUE)
@@ -246,22 +256,13 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
                    function(x) toMemory(x))
         }
         objsToCopy <- reproducible::.wrap(objsToCopy)
-
-        # objsToCopy <- lapply(objsToCopy, FUN = function(x) {
-        #   if (inherits(x, "SpatRaster")) {
-        #     x <- reproducible::.wrap(x)
-        #   } else {
-        #     x
-        #   }
-        #   x
-        # })
         filenameForTransfer <- normalizePath(tempfile(fileext = ".qs"), mustWork = FALSE, winslash = "/")
         dir.create(dirname(filenameForTransfer), recursive = TRUE, showWarnings = FALSE) # during development, this was deleted accidentally
         qs::qsave(objsToCopy, file = filenameForTransfer)
         stExport <- system.time({
-          outExp <- parallel::clusterExport(cl, varlist = "filenameForTransfer", envir = environment())
+          outExp <- parallel::clusterExport(clThird, varlist = "filenameForTransfer", envir = environment())
         })
-        out11 <- parallel::clusterEvalQ(cl, {
+        out11 <- parallel::clusterEvalQ(clThird, {
           dir.create(dirname(filenameForTransfer), recursive = TRUE, showWarnings = FALSE)
         })
         nonLocalhostCores <- setdiff(unique(cores), "localhost")
@@ -272,14 +273,14 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
                                              filenameForTransfer, " ", ip, ":",
                                              filenameForTransfer)))
           })
-        out <- parallel::clusterEvalQ(cl, {
+        out <- parallel::clusterEvalQ(clThird, {
           out <- qs::qread(file = filenameForTransfer)
           out <- reproducible::.unwrap(out, cachePath = NULL)
           list2env(out, envir = .GlobalEnv)
         })
         # Delete the file
         notDups <- !duplicated(cores)
-        out <- parallel::clusterEvalQ(cl[notDups], {
+        out <- parallel::clusterEvalQ(clThird[notDups], {
           if (dir.exists(dirname(filenameForTransfer))) {
             try(unlink(dirname(filenameForTransfer), recursive = TRUE), silent = TRUE)
           }
@@ -289,33 +290,15 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
 
     if (is(stMoveObjects, "try-error")) {
       message("The attempt to move objects to cluster using rsync and qs failed; trying clusterExport")
-      stMoveObjects <- system.time(parallel::clusterExport(cl, objsNeeded, envir = environment()))
+      stMoveObjects <- system.time(parallel::clusterExport(clThird, objsNeeded, envir = environment()))
       list2env(mget(unlist(objsNeeded), envir = environment()), envir = .GlobalEnv)
     }
     message("it took ", round(stMoveObjects[3], 2), "s to move objects to nodes")
-
-    # message("loading packages in cluster nodes")
-    #
-    # clusterExport(cl, "pkgsNeeded", envir = environment())
-    # stPackages <- system.time(parallel::clusterEvalQ(
-    #   cl,
-    #   {
-    #     for (i in pkgsNeeded) {
-    #       library(i, character.only = TRUE)
-    #     }
-    #     message("loading ", i, " at ", Sys.time())
-    #   }
-    # ))
-    # message("it took ", round(stPackages[3], 2), "s to load packages")
-
-    control$cluster <- cl
+    control$cluster <- clThird
   }
   if (any(cores == "localhost") || is.null(cores))
     list2env(mget(unlist(objsNeeded), envir = envir), envir = .GlobalEnv)
-
-
   on.exit() # remove on.exit stopCluster because it ended successfully
-
   control
 }
 
@@ -372,7 +355,7 @@ rmIncompleteDups <- function(path, pattern = "^(.+)\\_[[:digit:]]{5,8}.*\\.png",
 #' @param resources Column extracted in vmstat. Defaults to `"us"` or "user CPU"
 resourcesUsed <- function(machines = "localhost", resource = "us") {
   #if (!identical("localhost", machines)) {
-  cl <- suppressMessages(parallelly::makeClusterPSOCK(machines, renice = 20))
+  cl <- suppressMessages(makeClusterPSOCK(machines))
   on.exit(parallel::stopCluster(cl))
   out <- parallel::clusterEvalQ(cl, {
     a <- system("vmstat -y", intern = TRUE)[-1]
@@ -511,3 +494,54 @@ numActiveThreads <- function (pattern = "", minCPU = 50) {
     message("Does not work on Windows")
   }
 }
+
+
+
+
+
+#' Lightweight wrapper for parallelly::makeClusterPSOCK
+#'
+#' @inheritParams parallelly::makeClusterPSOCK
+#' @param port Optional port or port block start.
+#' @param outfile Optional log file path.
+#' @param rscript_libs Optional library paths for workers.
+#' @param ... Additional arguments passed to parallelly::makeClusterPSOCK.
+#'
+#' @export
+makeClusterPSOCK <- function(
+    workers,
+    outfile = NULL,
+    rscript_libs = NULL,
+    ...,
+    # Hardcoded defaults LAST for easy override
+    port = NULL,
+    rshopts = c("-o", "ExitOnForwardFailure=yes"),
+    tries = 5L,
+    delay = 5,
+    renice = 20,
+    revtunnel = TRUE
+) {
+  # workers <- rep("localhost", cores)
+  if (is.null(port)) {
+    global_range <- 20000:40000
+    block_size <- 300
+    # Random block for this master
+    start <- sample(global_range, 1)
+    port <- seq(start, length.out = block_size)
+  }
+  
+  
+  parallelly::makeClusterPSOCK(
+    workers        = workers,
+    port           = port,
+    outfile        = outfile,
+    rscript_libs   = rscript_libs,
+    ...,
+    rshopts        = rshopts,
+    tries          = tries,
+    delay          = delay,
+    renice         = renice,
+    revtunnel      = revtunnel
+  )
+}
+

@@ -62,7 +62,7 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
           # objFunCoresInternal = objFunCoresInternal,
           # thresh = thresh
         ),
-        .cacheExtra = list(controlForCache, runName, iter),
+        .cacheExtra = list(controlForCache, 1, iter),
         cacheId = cacheIds[[iter]],
         .functionName = paste0("DEoptimForCache_", runName, "_", iter),
         verbose = .verbose,
@@ -94,7 +94,7 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
     # if (iter > 499) browser()
     # if (Require:::isRstudio()) if (iter > 200) browser()
     rng <- 25; # how often to do this: i.e., num new iterations per fit, i.e., 1:100, 26:125
-    dataRunToUse <- 125 # this will do the lm on this many items
+    dataRunToUse <- 200 # this will do the lm on this many items
     numSegments <- (length(DE) - dataRunToUse) / rng + 1# (length(DE) - dataRunToUse + 1) / rng
     pvals <- c(0,0)
 

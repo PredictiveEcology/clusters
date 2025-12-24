@@ -331,6 +331,7 @@ plan_psock_min <- function(
       rscript_envs = rscript_envs,
       rscript_startup = startup_lines,
       rshopts = rshopts,
+      outfile = logPath,
       revtunnel = TRUE,
       setup_strategy = ifelse(isRstudio(), "sequential", "parallel"),
       connectTimeout = 2 * 60,

@@ -12,7 +12,7 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
                          cores, logPath, libPath, objsNeeded, pkgsNeeded,
                          nCoresNeeded = 100, envir = parent.frame()) {
 
-  # if (!all(requireNamespace("qs") && requireNamespace("reproducible") && requireNamespace("Require")))
+  # if (!all(requireNamespace("qs2") && requireNamespace("reproducible") && requireNamespace("Require")))
   #   stop("Please install missing packages")
   logPath <- file.path(
     logPath,
@@ -139,7 +139,7 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
     #     multiple times per machine, if not all 'localhost'
     # revtunnel <- FALSE
     # allLocalhost <- identical("localhost", unique(cores))
-    # aa <- Require::pkgDep(unique(c("qs", "RCurl", pkgsNeeded)), recursive = TRUE)
+    # aa <- Require::pkgDep(unique(c("qs2", "RCurl", pkgsNeeded)), recursive = TRUE)
     # pkgsNeeded <- unique(Require::extractPkgName(unname(unlist(aa))))
     # pkgsNeeded <- setdiff(pkgsNeeded, "rgdal")
     # 
@@ -260,25 +260,34 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
                    function(x) toMemory(x))
         }
         objsToCopy <- reproducible::.wrap(objsToCopy)
-        filenameForTransfer <- normalizePath(tempfile(fileext = ".qs"), mustWork = FALSE, winslash = "/")
+        filenameForTransfer <- normalizePath(tempfile(fileext = ".qs2"), mustWork = FALSE, winslash = "/")
         dir.create(dirname(filenameForTransfer), recursive = TRUE, showWarnings = FALSE) # during development, this was deleted accidentally
-        qs::qsave(objsToCopy, file = filenameForTransfer)
+        qs2::qs_save(objsToCopy, file = filenameForTransfer)
         stExport <- system.time({
           outExp <- parallel::clusterExport(clThird, varlist = "filenameForTransfer", envir = environment())
         })
         out11 <- parallel::clusterEvalQ(clThird, {
-          dir.create(dirname(filenameForTransfer), recursive = TRUE, showWarnings = FALSE)
+          therePath <- file.path("/tmp/fireSense_SpreadFit", basename(filenameForTransfer))
+          dir.create(dirname(therePath), recursive = TRUE, showWarnings = FALSE)
+          therePath
         })
-        nonLocalhostCores <- setdiff(unique(cores), "localhost")
-        if (length(nonLocalhostCores))
-          out <- lapply(nonLocalhostCores, function(ip) {
+        dfThere <- data.table(nonLocalhostCores = cores, therePath = unlist(out11))
+        dfThere <- unique(dfThere, on = c("nonLocalhostCores", "therePath"))
+        dfThere <- dfThere[ !nonLocalhostCores %in% "localhost", ]
+        # nonLocalhostCores <- setdiff(unique(cores), "localhost")
+        
+        if (NROW(dfThere))
+          out <- Map(ip = dfThere$nonLocalhostCores, therePath = dfThere$therePath, 
+                     function(ip, therePath) {
             rsync <- Sys.which("rsync")
             st1 <- system.time(system(paste0(rsync, " -av ",
                                              filenameForTransfer, " ", ip, ":",
-                                             filenameForTransfer)))
+                                             therePath)))
           })
         out <- parallel::clusterEvalQ(clThird, {
-          out <- qs::qread(file = filenameForTransfer)
+          out <- try(qs2::qs_read(file = therePath), silent = TRUE)
+          if (is(out, "try-error"))
+            out <- try(qs2::qs_read(file = filenameForTransfer), silent = TRUE)
           out <- reproducible::.unwrap(out, cachePath = NULL)
           list2env(out, envir = .GlobalEnv)
         })
@@ -288,12 +297,15 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
           if (dir.exists(dirname(filenameForTransfer))) {
             try(unlink(dirname(filenameForTransfer), recursive = TRUE), silent = TRUE)
           }
+          if (dir.exists(dirname(therePath))) {
+            try(unlink(dirname(therePath), recursive = TRUE), silent = TRUE)
+          }
         })
       })
     })
     
     if (is(stMoveObjects, "try-error")) {
-      message("The attempt to move objects to cluster using rsync and qs failed; trying clusterExport")
+      message("The attempt to move objects to cluster using rsync and qs2 failed; trying clusterExport")
       stMoveObjects <- system.time(parallel::clusterExport(clThird, objsNeeded, envir = environment()))
       list2env(mget(unlist(objsNeeded), envir = environment()), envir = .GlobalEnv)
     }

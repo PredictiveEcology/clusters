@@ -114,8 +114,14 @@ monitorCluster <- function(cl, cores, pad = 2, interval = 1) {
 
   # --- Column widths --------------------------------------------------------
   # Fetch total RAM once (it does not change between ticks).
+  # Inline the /proc/meminfo read so workers need no updated clusters install.
   total_list <- parallel::clusterEvalQ(cl, {
-    tryCatch(clusters::ramUsageGB()$total_gb, error = function(e) NA_real_)
+    tryCatch({
+      lines <- readLines("/proc/meminfo", warn = FALSE)
+      ln <- grep("^MemTotal:\\s", lines, value = TRUE)
+      if (!length(ln)) NA_real_
+      else round(as.numeric(sub("^MemTotal:\\s+(\\d+).*", "\\1", ln[[1L]])) / 1048576, 1)
+    }, error = function(e) NA_real_)
   })
   total_ram <- setNames(unlist(total_list, use.names = FALSE), cores)
 
@@ -161,9 +167,17 @@ monitorCluster <- function(cl, cores, pad = 2, interval = 1) {
       })
       threads <- setNames(unlist(thread_list, use.names = FALSE), cores)
 
-      # Used RAM
+      # Used RAM (inlined so workers need no updated clusters install)
       ram_list <- parallel::clusterEvalQ(cl, {
-        tryCatch(clusters::ramUsageGB()$used_gb, error = function(e) NA_real_)
+        tryCatch({
+          lines <- readLines("/proc/meminfo", warn = FALSE)
+          get_kb <- function(key) {
+            ln <- grep(paste0("^", key, ":\\s"), lines, value = TRUE)
+            if (!length(ln)) return(NA_real_)
+            as.numeric(sub(paste0("^", key, ":\\s+(\\d+).*"), "\\1", ln[[1L]]))
+          }
+          round((get_kb("MemTotal") - get_kb("MemAvailable")) / 1048576, 1)
+        }, error = function(e) NA_real_)
       })
       used_ram <- setNames(unlist(ram_list, use.names = FALSE), cores)
 

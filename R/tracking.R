@@ -137,7 +137,7 @@ monitorCluster <- function(cl, cores, pad = 2, interval = 1) {
 
   # --- Rendering helpers ----------------------------------------------------
   header <- paste(
-    mapply(function(nm, w) sprintf("%-*s%s", w, nm, strrep(" ", pad)),
+    mapply(function(nm, w) sprintf("%*s%s", w, nm, strrep(" ", pad)),
            cores, col_widths),
     collapse = ""
   )

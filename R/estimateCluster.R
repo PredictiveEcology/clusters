@@ -122,6 +122,7 @@ plan_psock_min <- function(
  # Deal with other package stuff
   revtunnel <- FALSE
   allLocalhost <- identical("localhost", unique(hosts))
+  pkgsTopLevel <- pkgsNeeded
   aa <- Require::pkgDep(unique(c("qs", "RCurl", pkgsNeeded)), recursive = TRUE)
   pkgsNeeded <- unique(Require::extractPkgName(unname(unlist(aa))))
   pkgsNeeded <- setdiff(pkgsNeeded, "rgdal")
@@ -169,9 +170,21 @@ plan_psock_min <- function(
     message("Setting up packages on the cluster...")
     out <- lapply(setdiff(coresUnique, "localhost"), function(ip) {
       rsync <- Sys.which("rsync")
-      if (!nzchar(rsync)) stop()
-      system(paste0(rsync, " -aruv --update ", paste(file.path(master_libs[1], pkgsNeeded), collapse = " "),
-                    " ", ip, ":", master_libs[1]))
+      if (!nzchar(rsync))
+        stop("rsync not found on PATH; it is required to sync the project library to ", ip)
+      # NOTE: deliberately NOT `--update`. That flag skips files that are newer on
+      # the receiver, so a downgrade on the master would never propagate and a
+      # stale-but-newer remote copy would win. The master is the single source of
+      # truth for what the workers run, so mirror it exactly (`--delete` prunes
+      # files inside the synced package directories that the master no longer has).
+      st <- system2(rsync, c("-a", "--delete",
+                             shQuote(file.path(master_libs[1], pkgsNeeded)),
+                             shQuote(paste0(ip, ":", master_libs[1]))),
+                    stdout = FALSE, stderr = FALSE)
+      if (!identical(as.integer(st), 0L))
+        stop("rsync of the project library to '", ip, "' failed (exit ", st, "). ",
+             "Workers there would run a different library than the master.")
+      st
     })
     
     parallel::clusterEvalQ(cl_probe, {
@@ -185,11 +198,12 @@ plan_psock_min <- function(
       if (NROW(pkgsNeeded))
         out <- Require::Install(pkgsNeeded, libPaths = master_libs)
     })
-    GDALversions <- parallel::clusterEvalQ(cl_probe, {
-      .libPaths(master_libs)
-      return(try(sf::sf_extSoftVersion()["GDAL"]))
-    })
-    stopifnot(length(unique(sf::sf_extSoftVersion()["GDAL"], GDALversions)) == 1)
+    # Verify what was just synced: R version, package versions, GDAL, and -- the
+    # one that used to surface only as a dead worker mid-run -- whether the
+    # packages actually load on each host.
+    verifyClusterHosts(cl_probe, hosts = coresUnique, pkgs = pkgsTopLevel,
+                       libs = master_libs,
+                       action = getOption("clusters.onBadHost", "stop"))
     
     # parallel::stopCluster(cl_probe)
     # Sys.sleep(2) 
@@ -282,7 +296,17 @@ plan_psock_min <- function(
   #   )
   # }))
   
-  # 4) HT-aware allocation (unchanged)
+  # 4) HT-aware allocation, against cores that are actually still available.
+  #    freeCores() reads a trailing load average, so a cluster built moments ago
+  #    is under-represented in it; without this, concurrent builders double-book
+  #    the same cores. See ?reservations.
+  if (isTRUE(getOption("clusters.useReservations", TRUE))) {
+    nodes <- freeCoresLessReserved(nodes)
+    if (any(nodes$reserved > 0))
+      message("Cores reserved by other live cluster builds: ",
+              paste0(nodes$host[nodes$reserved > 0], "=", nodes$reserved[nodes$reserved > 0],
+                     collapse = ", "))
+  }
   alloc_df <- .ht_allocate_min(nodes, total = total, beta = beta)
   
   # Build workers vector using SSH aliases preserved in allocation$host
@@ -346,6 +370,23 @@ plan_psock_min <- function(
     
     on.exit()
     on.exitAny(stopCluster(cl), 3)
+
+    # Record what this build took, so a concurrent builder sizing its own cluster
+    # subtracts it instead of re-claiming the same cores from a stale load
+    # average. Released when this process ends -- liveReservations() drops
+    # entries whose owning pid is gone -- so a killed master cannot leak, but
+    # release explicitly too so a long-lived master frees cores promptly.
+    if (isTRUE(getOption("clusters.useReservations", TRUE))) {
+      resvId <- reserveCores(alloc_df)
+      # Tie the release to the lifetime of the cluster object: when it is garbage
+      # collected, or R exits, this reservation goes with it. liveReservations()
+      # additionally drops entries whose owning process is gone, so a master that
+      # is killed outright cannot leak one either.
+      token <- new.env(parent = emptyenv())
+      reg.finalizer(token, function(e) try(releaseCores(id = resvId), silent = TRUE),
+                    onexit = TRUE)
+      attr(cl, "reservationToken") <- token
+    }
     res$cluster <- cl
   }
   

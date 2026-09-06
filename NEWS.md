@@ -1,3 +1,32 @@
+# clusters 0.0.24
+
+## New features
+
+* `shipSystemLibs()` puts missing *system* shared libraries on a worker host
+  without root. The project library is rsynced to each host, but the system
+  libraries its compiled packages link against are not, so a host lacking one
+  dies at load -- `libtbb.so.12: cannot open shared object file`, and with it
+  RcppParallel and everything depending on it. The usual answer is
+  `sudo apt-get install` on every host, which is exactly what a shared research
+  cluster tends not to grant. It is not needed: a shared library is a file, so
+  this detects what is actually missing (`ldd` over the synced `.so` files),
+  resolves each soname on the master, copies only those into a user-writable
+  directory, and reports what it could not.
+  `plan_psock_min()` calls it automatically before host verification;
+  `options(clusters.shipSystemLibs = FALSE)` opts out.
+
+  Deliberately never shipped: the core runtime (`libc`, `libstdc++`, `libgcc_s`,
+  `libm`, `libpthread`, `libdl`, `librt`, and the loader). Those must be the
+  host's own. And nothing is shipped at all unless the host matches the master's
+  architecture and libc version.
+
+  The resulting directory is put on the workers' `LD_LIBRARY_PATH` by prefixing
+  the worker command (`env LD_LIBRARY_PATH=... Rscript`), **not** via
+  `parallelly`'s `rscript_envs`: that is implemented as
+  `Rscript -e 'Sys.setenv(...)'`, and glibc parses `LD_LIBRARY_PATH` once at
+  process startup, so setting it from inside R has no effect on later `dlopen()`.
+  Verified both ways on a real host.
+
 # clusters 0.0.23
 
 ## New features

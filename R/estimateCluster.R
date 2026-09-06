@@ -198,6 +198,36 @@ plan_psock_min <- function(
       if (NROW(pkgsNeeded))
         out <- Require::Install(pkgsNeeded, libPaths = master_libs)
     })
+    # A host can be missing a *system* library the synced packages link against
+    # (libtbb.so.12 for RcppParallel, say). That needs no root: ship the file to
+    # a user-writable directory and point LD_LIBRARY_PATH at it. Done before the
+    # verification below, which would otherwise reject the host for a fault that
+    # is one rsync away from fixed.
+    if (isTRUE(getOption("clusters.shipSystemLibs", TRUE))) {
+      shipped <- shipSystemLibs(cl_probe, hosts = coresUnique, libs = master_libs)
+      if (length(unlist(shipped$shipped))) {
+        # NOT rscript_envs: parallelly implements that as
+        # `Rscript -e 'Sys.setenv(...)'`, and glibc parses LD_LIBRARY_PATH once
+        # at process startup -- setting it from inside R does not move the
+        # loader's search path. It has to prefix the command instead.
+        # `rscript` is one value for every worker, so this needs the resolved
+        # directory to be the same on all of them (it is, when they share a
+        # home directory layout); otherwise say so rather than set it wrongly.
+        dests <- unique(shipped$destResolved)
+        existing <- unique(shipped$ldPath[nzchar(shipped$ldPath)])
+        if (length(dests) == 1L && length(existing) <= 1L) {
+          ldValue <- paste(c(dests, existing), collapse = ":")
+          rscript <- c("env", paste0("LD_LIBRARY_PATH=", ldValue), rscript)
+          message("Workers will run with LD_LIBRARY_PATH=", ldValue)
+        } else {
+          message("Shipped system libraries, but the hosts do not agree on a ",
+                  "single LD_LIBRARY_PATH (dirs: ", paste(dests, collapse = ", "),
+                  "); not setting it. Those hosts will be dropped by the ",
+                  "verification below.")
+        }
+      }
+    }
+
     # Verify what was just synced: R version, package versions, GDAL, and -- the
     # one that used to surface only as a dead worker mid-run -- whether the
     # packages actually load on each host.

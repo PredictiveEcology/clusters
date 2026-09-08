@@ -6,6 +6,13 @@
 \usage{
 testMachine(NcoresMax = parallel::detectCores(), N = 100, thinning = 5)
 }
+\arguments{
+\item{NcoresMax}{Integer; the largest worker count to time.}
+
+\item{N}{Integer; workload multiplier for the reported totals.}
+
+\item{thinning}{Integer; step between the worker counts that are timed.}
+}
 \description{
 Test machines
 }

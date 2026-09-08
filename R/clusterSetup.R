@@ -412,8 +412,8 @@ resourcesUsed <- function(machines = "localhost", resource = "us") {
 #' @param pattern The regular expression to search for, to identify the files. This
 #'   must have 1 set of parentheses (), as only the content between the () will be
 #'   used for duplicate assessment, i.e., remove anything in the file that shouldn't
-#'   be 
-used.dirNew <- function(path, secsAgo = Inf, after = Sys.time() - secsAgo,
+#'   be used.
+dirNew <- function(path, secsAgo = Inf, after = Sys.time() - secsAgo,
                    pattern = "^(.+)\\_[[:digit:]]{6,8}.*\\.png") {
   d <- dir(path, recursive = TRUE, full.names = TRUE);
   e <- file.info(d)

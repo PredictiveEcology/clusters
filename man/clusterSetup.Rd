@@ -20,6 +20,33 @@ clusterSetup(
   envir = parent.frame()
 )
 }
+\arguments{
+\item{messagePrefix}{Character prefix for this cluster's messages, so concurrent builds can be told apart in a shared log.}
+
+\item{itermax}{Integer; maximum DEoptim iterations. See \code{\link[DEoptim:DEoptim.control]{DEoptim::DEoptim.control()}}.}
+
+\item{trace}{Logical or integer passed to \code{DEoptim.control()}; how often to report progress.}
+
+\item{strategy}{Integer in \verb{[1, 10]}; the DEoptim strategy variant.}
+
+\item{initialpop}{Optional matrix of starting parameter sets, one row per population member.}
+
+\item{NP}{Integer; number of population members. Defaults to DEoptim's own rule when \code{NULL}.}
+
+\item{cores}{Character vector of host names, repeated once per worker wanted on that host, or a number for localhost only.}
+
+\item{logPath}{Path for worker output (\code{outfile} of the PSOCK cluster). Each host writes its own copy.}
+
+\item{libPath}{The project library. This is the master copy: it is mirrored to every host, and workers load from it.}
+
+\item{objsNeeded}{Character vector naming objects in \code{envir} to send to the workers.}
+
+\item{pkgsNeeded}{Character vector of packages the workers must be able to load. Hosts that cannot are reported by \code{\link[=verifyClusterHosts]{verifyClusterHosts()}}.}
+
+\item{nCoresNeeded}{Integer; how many workers to aim for across all hosts.}
+
+\item{envir}{Environment holding \code{objsNeeded}; defaults to the caller's.}
+}
 \value{
 A list of items that can be passed to \code{DEoptim.control()}
 }

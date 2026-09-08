@@ -12,6 +12,17 @@ runTests(
   Npops = 100
 )
 }
+\arguments{
+\item{hosts}{Character vector of host names to test.}
+
+\item{repos}{Repositories to install from on each host.}
+
+\item{clustersBranch}{Branch of this package to install on the hosts.}
+
+\item{RscriptPath}{Path to \code{Rscript} on the hosts.}
+
+\item{Npops}{Integer; population size the timings are scaled to.}
+}
 \value{
 a list; same as \code{getHostCombination} return.
 }

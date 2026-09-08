@@ -30,6 +30,8 @@ number of localhost workers (as a positive integer).}
 
 \item{port}{Optional port or port block start.}
 
+\item{rshopts}{Character vector of options passed to \code{ssh}. The defaults disable X11 forwarding and fail fast when a tunnel cannot be established.}
+
 \item{tries, delay}{Maximum number of attempts done to launch each node
 with \code{makeNode()} and the delay (in seconds) in-between attempts.
 If argument \code{port} specifies more than one port, e.g. \code{port = "random"}

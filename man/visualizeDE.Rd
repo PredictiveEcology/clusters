@@ -11,6 +11,12 @@ visualizeDE(DE, cachePath, titles, lower, upper)
 
 \item{cachePath}{A \code{cacheRepo} to pass to \code{showCache} and
 \code{loadFromCache} if \code{DE} is missing.}
+
+\item{titles}{Character vector of parameter names, one per histogram.}
+
+\item{lower}{Named numeric of lower bounds, used to fix each panel's x range.}
+
+\item{upper}{Named numeric of upper bounds, used to fix each panel's x range.}
 }
 \description{
 Make histograms of \code{DEoptim} object \code{pars}

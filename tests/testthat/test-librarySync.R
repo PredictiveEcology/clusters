@@ -63,3 +63,10 @@ test_that("shipping and verification are indexed by the probe's own host vector"
   expect_match(src, "verifyClusterHosts\\(cl_verify, hosts = hosts")
   expect_false(grepl("hosts = coresUnique", src))
 })
+
+test_that("probe-cluster teardown cannot mask the outcome, prefix needs one shipped dir, cores can be waited for", {
+  src <- paste(deparse(clusters:::plan_psock_min), collapse = "\n")
+  expect_equal(lengths(regmatches(src, gregexpr("try\\(parallel::stopCluster\\(cl_probe\\), silent = TRUE\\)", src))), 2L)
+  expect_false(grepl("length\\(existing\\) <= 1L", src))
+  expect_match(src, "clusters.waitForCores")
+})

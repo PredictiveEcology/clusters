@@ -113,7 +113,9 @@ plan_psock_min <- function(
     timeout = 30 * 24 * 60 * 60,
     autoStop = auto_stop
   )
-  on.exit(parallel::stopCluster(cl_probe), add = TRUE)
+  # try(): a probe node that has already gone (host OOM, dropped ssh) must not
+  # turn a normal exit -- or the real error -- into "invalid connection".
+  on.exit(try(parallel::stopCluster(cl_probe), silent = TRUE), add = TRUE)
   
   # Export packages list (minimal, no diagnostics)
   parallel::clusterExport(cl_probe, varlist = "pkgsNeeded", envir = environment())
@@ -224,10 +226,15 @@ plan_psock_min <- function(
         # `rscript` is one value for every worker, so this needs the resolved
         # directory to be the same on all of them (it is, when they share a
         # home directory layout); otherwise say so rather than set it wrongly.
+        # Only the shipped directory goes into the prefix. Each host's R wrapper
+        # (etc/ldpaths) appends whatever LD_LIBRARY_PATH the process started
+        # with to R's own, so an env-provided value is kept, not replaced; the
+        # hosts' pre-existing values need not agree and were never needed here
+        # (2026-09-08: they differed because kodama's Rscript is the system R,
+        # and the prefix was refused for that reason alone).
         dests <- unique(shipped$destResolved)
-        existing <- unique(shipped$ldPath[nzchar(shipped$ldPath)])
-        if (length(dests) == 1L && length(existing) <= 1L) {
-          ldValue <- paste(c(dests, existing), collapse = ":")
+        if (length(dests) == 1L) {
+          ldValue <- dests
           rscript <- c("env", paste0("LD_LIBRARY_PATH=", ldValue), rscript)
           ldPrefixed <- TRUE
           message("Workers will run with LD_LIBRARY_PATH=", ldValue)
@@ -315,7 +322,13 @@ plan_psock_min <- function(
   ## 1) Export the parameters that the workers will use
   parallel::clusterExport(cl_probe, varlist = c("load_memory", "fraction"), envir = environment())
   
-  ## 2) Run the capacity queries everywhere (same code on each worker)
+  ## 2) Run the capacity queries everywhere (same code on each worker).
+  ##    Repeated while other live builds hold every core, up to
+  ##    option clusters.waitForCores seconds (default 0: no waiting). A job that
+  ##    has just spent hours preparing its inputs should queue for cores, not
+  ##    die (2026-09-08: the sixth concurrent build found none free).
+  waitDeadline <- Sys.time() + getOption("clusters.waitForCores", 0)
+  repeat {
   caps <- parallel::clusterEvalQ(cl_probe, {
     maxC  <- parallelly::availableCores()
     freeC <- parallelly::freeCores(memory = load_memory, fraction = fraction)
@@ -373,6 +386,11 @@ plan_psock_min <- function(
     mapply(function(h, k) rep(h, k), alloc_df$host, alloc_df$assign, SIMPLIFY = FALSE),
     use.names = FALSE
   )
+  if (length(workers) > 0L || Sys.time() >= waitDeadline) break
+  message("No free cores on any host (held by other live cluster builds); ",
+          "waiting 60 s, until ", format(waitDeadline, "%Y-%m-%d %H:%M"), " at most")
+  Sys.sleep(60)
+  }
   
   rversion <- parallel::clusterEvalQ(cl_probe, {
     as.character(getRversion())
@@ -388,8 +406,9 @@ plan_psock_min <- function(
     stop("Please make all machines have the same R version")
   }
   
-  # Stop probe cluster and continue (unchanged)
-  parallel::stopCluster(cl_probe)
+  # Stop probe cluster and continue. try(): see the on.exit above (2026-09-08,
+  # a job died here with "invalid connection" after its work was done).
+  try(parallel::stopCluster(cl_probe), silent = TRUE)
   
   res <- list(
     probe = nodes,

@@ -1,6 +1,19 @@
-# clusters 0.0.28
+# clusters 0.0.29
 
 ## Bug fixes
+
+* The `LD_LIBRARY_PATH` prefix for shipped system libraries was refused whenever
+  the hosts' pre-existing values differed (kodama's Rscript is the system R).
+  Only the shipped directory is needed: each host's R wrapper appends the value
+  the process started with to R's own paths.
+* Stopping the probe cluster is wrapped in `try()`: a probe node that has gone
+  away turned a normal exit into "invalid connection", masking the outcome.
+
+## New features
+
+* Option `clusters.waitForCores` (seconds, default 0): when other live builds
+  hold every core, re-measure and wait up to that long instead of failing with
+  "Allocation yielded zero workers" after hours of input preparation.
 
 * System-library shipping and host verification were handed a host vector with
   `localhost` removed while the probe cluster has one worker per element of the

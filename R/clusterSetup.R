@@ -63,10 +63,17 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
           grep(pattern = "(^(n|bc\\**|rbc)[[:digit:]])|(jump)|\\*|remote|pfc|[[:digit:]]+", invert = TRUE, value = T)
       }
       coresUnique <- unique(unlist(cores))
+      # Forward what the workers must load and which library is the master.
+      # Without `pkgsNeeded` the per-host verification checked only the
+      # planner's three defaults, and the real packages first failed to load on
+      # the final cluster with no host named. Without `libPath` the planner took
+      # `.libPaths()[1]` as the master library -- an overlay or user library, not
+      # the project library -- and mirrored that to the hosts instead.
       plan <- plan_psock_min(
         hosts = coresUnique,
         total = nCoresNeeded,
-        
+        pkgsNeeded = pkgsNeeded,
+        libPath = libPath,
         logPath = logPath,
         build_final_cluster = TRUE
       )

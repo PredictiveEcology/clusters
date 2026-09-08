@@ -91,8 +91,6 @@ plotMachine <- function(Ncores, coreTimes, estTotTime, optimisticTotTime, system
   abline(lm(slowestCore ~ seqNcores))
 }
 
-#' @export
-#' @importFrom data.table data.table setorderv rbindlist
 #' Pick how many workers to run on each host
 #'
 #' Takes the per-host timings from [runTests()] and fits, for each host, a
@@ -107,6 +105,7 @@ plotMachine <- function(Ncores, coreTimes, estTotTime, optimisticTotTime, system
 #' @return A `data.table` with one row per host, giving the workers assigned and
 #'   the predicted time.
 #' @export
+#' @importFrom data.table data.table setorderv rbindlist
 getHostCombination <- function(outs, Npops = 100) {
 
   summ <- data.table(estToTime = do.call(c, lapply(outs, function(o) as.vector(unlist(o$estTotTime)))),

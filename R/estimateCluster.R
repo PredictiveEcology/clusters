@@ -113,7 +113,9 @@ plan_psock_min <- function(
     timeout = 30 * 24 * 60 * 60,
     autoStop = auto_stop
   )
-  on.exit(parallel::stopCluster(cl_probe), add = TRUE)
+  # try(): a probe node that has already gone (host OOM, dropped ssh) must not
+  # turn a normal exit -- or the real error -- into "invalid connection".
+  on.exit(try(parallel::stopCluster(cl_probe), silent = TRUE), add = TRUE)
   
   # Export packages list (minimal, no diagnostics)
   parallel::clusterExport(cl_probe, varlist = "pkgsNeeded", envir = environment())
@@ -121,15 +123,16 @@ plan_psock_min <- function(
   # 2) Install & load pkgsNeeded strictly into per-user library
  # Deal with other package stuff
   revtunnel <- FALSE
+  ldPrefixed <- FALSE
+  verifiedHosts <- hosts
   allLocalhost <- identical("localhost", unique(hosts))
+  # `pkgsNeeded` stays as given: what the workers must be able to load. Its
+  # dependency closure is not computed here any more -- the whole master
+  # library is mirrored below, so nothing can be missed the way `ps` (needed by
+  # Require) was on 2026-09-07 when only a computed subset was synced.
   pkgsTopLevel <- pkgsNeeded
-  aa <- Require::pkgDep(unique(c("qs", "RCurl", pkgsNeeded)), recursive = TRUE)
-  pkgsNeeded <- unique(Require::extractPkgName(unname(unlist(aa))))
-  pkgsNeeded <- setdiff(pkgsNeeded, "rgdal")
-  
-  
+
   if (!allLocalhost) {
-    repos <- c("https://predictiveecology.r-universe.dev", getOption("repos"))
     revtunnel <- ifelse(allLocalhost, FALSE, TRUE)
     coresUnique <- setdiff(unique(hosts), "localhost")
     message("copying packages to: ", paste(coresUnique, collapse = ", "))
@@ -152,12 +155,21 @@ plan_psock_min <- function(
     #   #                                    # , rscript = c("nice", RscriptPath)
     #   # )
     # })
-    parallel::clusterExport(cl_probe, list("master_libs", "logPath", "repos", "pkgsNeeded"),
+    parallel::clusterExport(cl_probe, list("master_libs", "logPath", "pkgsNeeded"),
                             envir = environment())
     
-    # Missing `dqrng` and `sitmo`
-    if (NROW(pkgsNeeded))
-      Require::Install(pkgsNeeded, libPaths = master_libs)
+    # The master library is mirrored to every host below and other jobs may be
+    # running from it right now. Installing into it here corrupts their
+    # lazy-load databases and hands rsync a moving target, so anything missing
+    # is reported, not installed: it belongs in project setup, before workers
+    # launch. Packages found only in another library on the master (base,
+    # recommended) are assumed present on hosts with the same R.
+    missingPkgs <- pkgsNeeded[!.libraryHas(pkgsNeeded, unique(c(master_libs, .libPaths())))]
+    if (length(missingPkgs))
+      stop("Not installed on the master (", master_libs[1], "): ",
+           paste(missingPkgs, collapse = ", "),
+           ". Install them as part of project setup before launching workers; ",
+           "this function does not install into a library that running workers share.")
     
     parallel::clusterEvalQ(cl_probe, {
       # If this is first time that packages need to be installed for this user on this machine
@@ -175,28 +187,25 @@ plan_psock_min <- function(
       # NOTE: deliberately NOT `--update`. That flag skips files that are newer on
       # the receiver, so a downgrade on the master would never propagate and a
       # stale-but-newer remote copy would win. The master is the single source of
-      # truth for what the workers run, so mirror it exactly (`--delete` prunes
-      # files inside the synced package directories that the master no longer has).
-      st <- system2(rsync, c("-a", "--delete",
-                             shQuote(file.path(master_libs[1], pkgsNeeded)),
-                             shQuote(paste0(ip, ":", master_libs[1]))),
-                    stdout = FALSE, stderr = FALSE)
-      if (!identical(as.integer(st), 0L))
-        stop("rsync of the project library to '", ip, "' failed (exit ", st, "). ",
+      # truth for what the workers run, so mirror the whole library exactly
+      # (`--delete` prunes what the master no longer has). Whole, not a computed
+      # subset: a subset cannot promise the invariant in the error below.
+      res <- .runWithRetry(rsync, c("-a", "--delete",
+                                    shQuote(paste0(master_libs[1], "/")),
+                                    shQuote(paste0(ip, ":", master_libs[1], "/"))))
+      if (!identical(res$status, 0L))
+        stop("rsync of the project library to '", ip, "' failed (exit ", res$status,
+             ") after ", res$tries, " attempt(s): ", res$log, ". ",
              "Workers there would run a different library than the master.")
-      st
+      res$status
     })
     
+    # Nothing is installed on the hosts either: the mirror above is complete, and
+    # a host that still cannot load a package is named by verifyClusterHosts()
+    # below rather than patched over the network mid-job.
     parallel::clusterEvalQ(cl_probe, {
-      # If this is first time that packages need to be installed for this user on this machine
-      #   there won't be a folder present that is writable
-      if (tryCatch(packageVersion("Require") < "1.0.1.9000", error = function(e) TRUE))
-        install.packages("Require", lib = master_libs[1], repos = unique(c("predictiveecology.r-universe.dev", getOption("repos"))))
-      library(Require, lib.loc = master_libs[1])
       if (!is.null(logPath) && is.character(logPath))
         dir.create(dirname(logPath), recursive = TRUE, showWarnings = FALSE)
-      if (NROW(pkgsNeeded))
-        out <- Require::Install(pkgsNeeded, libPaths = master_libs)
     })
     # A host can be missing a *system* library the synced packages link against
     # (libtbb.so.12 for RcppParallel, say). That needs no root: ship the file to
@@ -204,7 +213,11 @@ plan_psock_min <- function(
     # verification below, which would otherwise reject the host for a fault that
     # is one rsync away from fixed.
     if (isTRUE(getOption("clusters.shipSystemLibs", TRUE))) {
-      shipped <- shipSystemLibs(cl_probe, hosts = coresUnique, libs = master_libs)
+      # `hosts`, not `coresUnique`: cl_probe has one worker per element of `hosts`
+      # (localhost included) and results are matched to hosts by position. With
+      # the shorter vector everything shifted by one and the last host -- kodama,
+      # the one missing libtbb -- was never looked at (2026-09-08).
+      shipped <- shipSystemLibs(cl_probe, hosts = hosts, libs = master_libs)
       if (length(unlist(shipped$shipped))) {
         # NOT rscript_envs: parallelly implements that as
         # `Rscript -e 'Sys.setenv(...)'`, and glibc parses LD_LIBRARY_PATH once
@@ -213,11 +226,17 @@ plan_psock_min <- function(
         # `rscript` is one value for every worker, so this needs the resolved
         # directory to be the same on all of them (it is, when they share a
         # home directory layout); otherwise say so rather than set it wrongly.
+        # Only the shipped directory goes into the prefix. Each host's R wrapper
+        # (etc/ldpaths) appends whatever LD_LIBRARY_PATH the process started
+        # with to R's own, so an env-provided value is kept, not replaced; the
+        # hosts' pre-existing values need not agree and were never needed here
+        # (2026-09-08: they differed because kodama's Rscript is the system R,
+        # and the prefix was refused for that reason alone).
         dests <- unique(shipped$destResolved)
-        existing <- unique(shipped$ldPath[nzchar(shipped$ldPath)])
-        if (length(dests) == 1L && length(existing) <= 1L) {
-          ldValue <- paste(c(dests, existing), collapse = ":")
+        if (length(dests) == 1L) {
+          ldValue <- dests
           rscript <- c("env", paste0("LD_LIBRARY_PATH=", ldValue), rscript)
+          ldPrefixed <- TRUE
           message("Workers will run with LD_LIBRARY_PATH=", ldValue)
         } else {
           message("Shipped system libraries, but the hosts do not agree on a ",
@@ -230,10 +249,25 @@ plan_psock_min <- function(
 
     # Verify what was just synced: R version, package versions, GDAL, and -- the
     # one that used to surface only as a dead worker mid-run -- whether the
-    # packages actually load on each host.
-    verifyClusterHosts(cl_probe, hosts = coresUnique, pkgs = pkgsTopLevel,
-                       libs = master_libs,
-                       action = getOption("clusters.onBadHost", "stop"))
+    # packages actually load on each host. The probe was launched before any
+    # system library was shipped and glibc reads LD_LIBRARY_PATH only at process
+    # start, so once a prefix is set the check must run on workers launched the
+    # way the final ones will be; on the probe, a host such as kodama fails
+    # forever however many libraries it has been given.
+    cl_verify <- cl_probe
+    if (isTRUE(ldPrefixed)) {
+      cl_verify <- makeClusterPSOCK(
+        workers = hosts, rscript = rscript, homogeneous = FALSE,
+        rscript_libs = master_libs, rscript_envs = rscript_envs,
+        rscript_startup = startup_lines, rshopts = rshopts, revtunnel = TRUE,
+        setup_strategy = ifelse(isRstudio(), "sequential", "parallel"),
+        connectTimeout = 2 * 60, timeout = 30 * 24 * 60 * 60, autoStop = auto_stop)
+      on.exit(try(parallel::stopCluster(cl_verify), silent = TRUE), add = TRUE)
+    }
+    # Same alignment rule as above: one worker per element of `hosts`.
+    verifiedHosts <- verifyClusterHosts(cl_verify, hosts = hosts, pkgs = pkgsTopLevel,
+                                        libs = master_libs,
+                                        action = getOption("clusters.onBadHost", "stop"))
     
     # parallel::stopCluster(cl_probe)
     # Sys.sleep(2) 
@@ -288,7 +322,13 @@ plan_psock_min <- function(
   ## 1) Export the parameters that the workers will use
   parallel::clusterExport(cl_probe, varlist = c("load_memory", "fraction"), envir = environment())
   
-  ## 2) Run the capacity queries everywhere (same code on each worker)
+  ## 2) Run the capacity queries everywhere (same code on each worker).
+  ##    Repeated while other live builds hold every core, up to
+  ##    option clusters.waitForCores seconds (default 0: no waiting). A job that
+  ##    has just spent hours preparing its inputs should queue for cores, not
+  ##    die (2026-09-08: the sixth concurrent build found none free).
+  waitDeadline <- Sys.time() + getOption("clusters.waitForCores", 0)
+  repeat {
   caps <- parallel::clusterEvalQ(cl_probe, {
     maxC  <- parallelly::availableCores()
     freeC <- parallelly::freeCores(memory = load_memory, fraction = fraction)
@@ -313,6 +353,8 @@ plan_psock_min <- function(
       stringsAsFactors = FALSE
     )
   }, labels, caps))
+  # Hosts that failed verification (action = "drop") must not be allocated.
+  if (!allLocalhost) nodes <- nodes[nodes$host %in% verifiedHosts, , drop = FALSE]
   
   # nodes <- do.call(rbind, lapply(stats_list, function(x) {
   #   data.frame(
@@ -344,6 +386,11 @@ plan_psock_min <- function(
     mapply(function(h, k) rep(h, k), alloc_df$host, alloc_df$assign, SIMPLIFY = FALSE),
     use.names = FALSE
   )
+  if (length(workers) > 0L || Sys.time() >= waitDeadline) break
+  message("No free cores on any host (held by other live cluster builds); ",
+          "waiting 60 s, until ", format(waitDeadline, "%Y-%m-%d %H:%M"), " at most")
+  Sys.sleep(60)
+  }
   
   rversion <- parallel::clusterEvalQ(cl_probe, {
     as.character(getRversion())
@@ -359,8 +406,9 @@ plan_psock_min <- function(
     stop("Please make all machines have the same R version")
   }
   
-  # Stop probe cluster and continue (unchanged)
-  parallel::stopCluster(cl_probe)
+  # Stop probe cluster and continue. try(): see the on.exit above (2026-09-08,
+  # a job died here with "invalid connection" after its work was done).
+  try(parallel::stopCluster(cl_probe), silent = TRUE)
   
   res <- list(
     probe = nodes,

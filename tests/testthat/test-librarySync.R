@@ -47,3 +47,9 @@ test_that(".runWithRetry keeps the command's stderr when every try fails", {
   expect_match(res$log, "link_stat")
 })
 
+
+test_that("clusterSetup() forwards what the workers need and which library is the master", {
+  src <- paste(deparse(clusters::clusterSetup), collapse = "\n")
+  expect_match(src, "pkgsNeeded = pkgsNeeded")
+  expect_match(src, "libPath = libPath")
+})

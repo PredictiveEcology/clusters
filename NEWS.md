@@ -1,7 +1,18 @@
-# clusters 0.0.26
+# clusters 0.0.27
 
 ## Bug fixes
 
+* `clusterSetup()` now forwards `pkgsNeeded` and `libPath` to
+  `plan_psock_min()`. Without them the per-host verification checked only the
+  planner's three default packages, and the planner took `.libPaths()[1]` as
+  the master library -- an overlay or user library when one is first -- and
+  mirrored that to the hosts instead of the project library, after which the
+  hosts could not find Require in it.
+* When system libraries were shipped, hosts are verified on workers launched
+  with the final `LD_LIBRARY_PATH` prefix. The probe predates the shipping and
+  glibc reads that variable only at process start, so verifying on the probe
+  failed such a host forever. Hosts dropped by verification (option
+  `clusters.onBadHost = "drop"`) no longer receive final workers.
 * The whole master library is mirrored to each host, not a computed dependency
   closure. The closure missed transitive dependencies (`ps`, needed by
   Require, on 2026-09-08), and the hosts then tried to install over the

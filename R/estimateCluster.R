@@ -121,6 +121,7 @@ plan_psock_min <- function(
   # 2) Install & load pkgsNeeded strictly into per-user library
  # Deal with other package stuff
   revtunnel <- FALSE
+  ldPrefixed <- FALSE
   allLocalhost <- identical("localhost", unique(hosts))
   # `pkgsNeeded` stays as given: what the workers must be able to load. Its
   # dependency closure is not computed here any more -- the whole master
@@ -223,6 +224,7 @@ plan_psock_min <- function(
         if (length(dests) == 1L && length(existing) <= 1L) {
           ldValue <- paste(c(dests, existing), collapse = ":")
           rscript <- c("env", paste0("LD_LIBRARY_PATH=", ldValue), rscript)
+          ldPrefixed <- TRUE
           message("Workers will run with LD_LIBRARY_PATH=", ldValue)
         } else {
           message("Shipped system libraries, but the hosts do not agree on a ",
@@ -235,10 +237,24 @@ plan_psock_min <- function(
 
     # Verify what was just synced: R version, package versions, GDAL, and -- the
     # one that used to surface only as a dead worker mid-run -- whether the
-    # packages actually load on each host.
-    verifyClusterHosts(cl_probe, hosts = coresUnique, pkgs = pkgsTopLevel,
-                       libs = master_libs,
-                       action = getOption("clusters.onBadHost", "stop"))
+    # packages actually load on each host. The probe was launched before any
+    # system library was shipped and glibc reads LD_LIBRARY_PATH only at process
+    # start, so once a prefix is set the check must run on workers launched the
+    # way the final ones will be; on the probe, a host such as kodama fails
+    # forever however many libraries it has been given.
+    cl_verify <- cl_probe
+    if (isTRUE(ldPrefixed)) {
+      cl_verify <- makeClusterPSOCK(
+        workers = coresUnique, rscript = rscript, homogeneous = FALSE,
+        rscript_libs = master_libs, rscript_envs = rscript_envs,
+        rscript_startup = startup_lines, rshopts = rshopts, revtunnel = TRUE,
+        setup_strategy = ifelse(isRstudio(), "sequential", "parallel"),
+        connectTimeout = 2 * 60, timeout = 30 * 24 * 60 * 60, autoStop = auto_stop)
+      on.exit(try(parallel::stopCluster(cl_verify), silent = TRUE), add = TRUE)
+    }
+    coresUnique <- verifyClusterHosts(cl_verify, hosts = coresUnique, pkgs = pkgsTopLevel,
+                                      libs = master_libs,
+                                      action = getOption("clusters.onBadHost", "stop"))
     
     # parallel::stopCluster(cl_probe)
     # Sys.sleep(2) 
@@ -318,6 +334,8 @@ plan_psock_min <- function(
       stringsAsFactors = FALSE
     )
   }, labels, caps))
+  # Hosts that failed verification (action = "drop") must not be allocated.
+  if (!allLocalhost) nodes <- nodes[nodes$host %in% coresUnique, , drop = FALSE]
   
   # nodes <- do.call(rbind, lapply(stats_list, function(x) {
   #   data.frame(

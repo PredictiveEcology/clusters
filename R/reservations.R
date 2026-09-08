@@ -55,12 +55,27 @@ reservationsPath <- function(path = getOption("clusters.reservationsPath")) {
   force(expr)
 }
 
+## Is this process still running? Wrong in either direction costs real work: a
+## dead owner reported alive holds cores hostage until someone notices, and a
+## live owner reported dead lets a second builder take cores that are in use.
+##
+## Both errors were live here. `/proc` exists on Linux but not on macOS, where
+## every pid therefore looked dead. And `tasklist` exits 0 whether or not the
+## filter matched -- it prints "No tasks are running which match" -- so on
+## Windows every pid looked alive, including this test's deliberately dead one.
 .pidAlive <- function(pid) {
   vapply(pid, function(p) {
     if (is.na(p)) return(FALSE)
-    if (.Platform$OS.type == "unix") dir.exists(file.path("/proc", p))
-    else !inherits(try(system2("tasklist", c("/FI", shQuote(paste0("PID eq ", p))),
-                               stdout = TRUE, stderr = FALSE), silent = TRUE), "try-error")
+    if (identical(.Platform$OS.type, "windows")) {
+      out <- try(suppressWarnings(system2("tasklist", c("/NH", "/FI", shQuote(paste0("PID eq ", p))),
+                                          stdout = TRUE, stderr = FALSE)), silent = TRUE)
+      if (inherits(out, "try-error") || !length(out)) return(FALSE)
+      ## The pid appears in the row only when the filter actually matched.
+      return(any(grepl(paste0("(^|[^0-9])", p, "([^0-9]|$)"), out)))
+    }
+    if (dir.exists("/proc")) return(dir.exists(file.path("/proc", p)))
+    ## macOS and the other BSDs: ask ps, whose exit status answers directly.
+    identical(suppressWarnings(system2("ps", c("-p", p), stdout = FALSE, stderr = FALSE)), 0L)
   }, logical(1))
 }
 

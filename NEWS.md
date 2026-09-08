@@ -21,6 +21,17 @@
 * CI: `R-CMD-check` and `test-coverage` call the shared reusable workflows in
   `PredictiveEcology/actions`, rather than carrying their own copies of the
   matrix and the system-dependency install.
+
+## Bug fixes
+
+* `.pidAlive()` was wrong on two platforms, so core reservations were too. It
+  read `/proc`, which macOS does not have, making every owner look dead there;
+  and on Windows it took `tasklist` exiting 0 as proof of life, though it exits
+  0 when its filter matches nothing, making every owner look alive. A dead
+  owner reported alive holds cores hostage; a live owner reported dead lets a
+  second builder take cores that are in use. Now `/proc` where it exists, `ps
+  -p` on the other Unixes, and the pid parsed out of `tasklist` output on
+  Windows -- with a test that runs on every platform.
 # clusters 0.0.29
 
 ## Bug fixes

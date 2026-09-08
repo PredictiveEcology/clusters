@@ -123,7 +123,10 @@ plan_psock_min <- function(
   revtunnel <- FALSE
   allLocalhost <- identical("localhost", unique(hosts))
   pkgsTopLevel <- pkgsNeeded
-  aa <- Require::pkgDep(unique(c("qs", "RCurl", pkgsNeeded)), recursive = TRUE)
+  # No `qs` here any more: it is archived on CRAN, nothing in this package or its
+  # callers uses it, and a package absent from the master library is a
+  # nonexistent rsync source -- "exit 23" for every job (2026-09-07).
+  aa <- Require::pkgDep(unique(c("RCurl", pkgsNeeded)), recursive = TRUE)
   pkgsNeeded <- unique(Require::extractPkgName(unname(unlist(aa))))
   pkgsNeeded <- setdiff(pkgsNeeded, "rgdal")
   
@@ -155,9 +158,19 @@ plan_psock_min <- function(
     parallel::clusterExport(cl_probe, list("master_libs", "logPath", "repos", "pkgsNeeded"),
                             envir = environment())
     
-    # Missing `dqrng` and `sitmo`
-    if (NROW(pkgsNeeded))
-      Require::Install(pkgsNeeded, libPaths = master_libs)
+    # The master library is mirrored to every host below and other jobs may be
+    # running from it right now. Installing into it here corrupts their
+    # lazy-load databases and hands rsync a moving target, so anything missing
+    # is reported, not installed: it belongs in project setup, before workers
+    # launch. Packages found only in another library on the master (base,
+    # recommended) are assumed present on hosts with the same R.
+    missingPkgs <- pkgsNeeded[!.libraryHas(pkgsNeeded, unique(c(master_libs, .libPaths())))]
+    if (length(missingPkgs))
+      stop("Not installed on the master (", master_libs[1], "): ",
+           paste(missingPkgs, collapse = ", "),
+           ". Install them as part of project setup before launching workers; ",
+           "this function does not install into a library that running workers share.")
+    toSync <- pkgsNeeded[.libraryHas(pkgsNeeded, master_libs[1])]
     
     parallel::clusterEvalQ(cl_probe, {
       # If this is first time that packages need to be installed for this user on this machine
@@ -177,14 +190,14 @@ plan_psock_min <- function(
       # stale-but-newer remote copy would win. The master is the single source of
       # truth for what the workers run, so mirror it exactly (`--delete` prunes
       # files inside the synced package directories that the master no longer has).
-      st <- system2(rsync, c("-a", "--delete",
-                             shQuote(file.path(master_libs[1], pkgsNeeded)),
-                             shQuote(paste0(ip, ":", master_libs[1]))),
-                    stdout = FALSE, stderr = FALSE)
-      if (!identical(as.integer(st), 0L))
-        stop("rsync of the project library to '", ip, "' failed (exit ", st, "). ",
+      res <- .runWithRetry(rsync, c("-a", "--delete",
+                                    shQuote(file.path(master_libs[1], toSync)),
+                                    shQuote(paste0(ip, ":", master_libs[1]))))
+      if (!identical(res$status, 0L))
+        stop("rsync of the project library to '", ip, "' failed (exit ", res$status,
+             ") after ", res$tries, " attempt(s): ", res$log, ". ",
              "Workers there would run a different library than the master.")
-      st
+      res$status
     })
     
     parallel::clusterEvalQ(cl_probe, {

@@ -1,3 +1,19 @@
+# clusters 0.0.25
+
+## Bug fixes
+
+* `plan_psock_min()` no longer installs into the master library. That library
+  is mirrored to every host and other jobs may be running from it at that
+  moment; installing into it corrupts their lazy-load databases and hands
+  rsync a moving target. Anything missing is now reported with a clear
+  message -- it belongs in project setup, before workers launch.
+* The archived `qs` is no longer hard-coded into the worker package list.
+  Nothing here or in the callers uses it, and a package absent from the master
+  library was a nonexistent rsync source: every DEoptim job spent ~20 minutes
+  failing to install it and then died with "rsync ... failed (exit 23)".
+* rsync to a host is retried up to three times and its stderr is kept and
+  reported, instead of being discarded.
+
 # clusters 0.0.24
 
 ## New features

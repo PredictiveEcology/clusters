@@ -15,13 +15,23 @@ plotMachine(
   detectedCores
 )
 }
+\arguments{
+\item{Ncores}{Integer vector of worker counts that were timed.}
+
+\item{coreTimes}{List of per-core \code{range()} timings, one element per entry of \code{Ncores}.}
+
+\item{estTotTime}{List of estimated total times, one per entry of \code{Ncores}.}
+
+\item{optimisticTotTime}{List of best-case total times, one per entry of \code{Ncores}.}
+
+\item{systemTimes}{List of measured elapsed times, one per entry of \code{Ncores}.}
+
+\item{N}{Integer; the workload multiplier the times are scaled to.}
+
+\item{nam}{Character; host name, used in the plot title.}
+
+\item{detectedCores}{Integer; what the host reports as its core count, drawn as a reference line.}
+}
 \description{
 Plot the outputs from \code{testMachine}
-}
-\examples{
-
-par(mfrow = c(2,length(hosts)))
-Map(out = outs, nam = names(outs), function(out, nam)
-    do.call(plotMachine, append(out, list(nam = nam))))
-
 }

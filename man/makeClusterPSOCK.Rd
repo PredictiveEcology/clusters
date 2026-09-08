@@ -7,10 +7,11 @@
 makeClusterPSOCK(
   workers,
   outfile = NULL,
-  rscript_libs = NULL,
+  rscript_libs = .libPaths(),
   ...,
   port = NULL,
-  rshopts = c("-o", "ExitOnForwardFailure=yes"),
+  rshopts = c("-T", "-o", "ConnectTimeout=10", "-o", "ForwardX11=no", "-o",
+    "ExitOnForwardFailure=yes"),
   tries = 5L,
   delay = 5,
   renice = 20,
@@ -28,6 +29,8 @@ number of localhost workers (as a positive integer).}
 \item{...}{Additional arguments passed to parallelly::makeClusterPSOCK.}
 
 \item{port}{Optional port or port block start.}
+
+\item{rshopts}{Character vector of options passed to \code{ssh}. The defaults disable X11 forwarding and fail fast when a tunnel cannot be established.}
 
 \item{tries, delay}{Maximum number of attempts done to launch each node
 with \code{makeNode()} and the delay (in seconds) in-between attempts.

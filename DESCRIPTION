@@ -6,7 +6,7 @@ URL:
     http://clusters.predictiveecology.org,
     https://github.com/PredictiveEcology/clusters
 Date: 2026-09-05
-Version: 0.0.29
+Version: 0.0.30
 Authors@R: c(
       person("Eliot J B", "McIntire", email = "eliot.mcintire@nrcan-rncan.gc.ca",
              role = c("aut", "cre"), comment=c(ORCID = "0000-0002-6914-8316")),
@@ -16,18 +16,25 @@ Authors@R: c(
 Depends:
     R (>= 4.2)
 Imports:
+    cli,
     data.table,
+    DEoptim,
     filelock,
+    ggplot2,
+    graphics,
     parallel,
     parallelly,
+    qs2,
     reproducible (>= 2.1.2.9045),
     Require,
+    rstudioapi,
+    stats,
     tools,
     utils
 Suggests:
+    ggpubr,
     knitr,
     roxygen2,
-    qs,
     rmarkdown,
     sf,
     testthat,
@@ -43,4 +50,3 @@ BugReports: https://github.com/PredictiveEcology/clusters/issues
 ByteCompile: yes
 Roxygen: list(markdown = TRUE)
 Config/roxygen2/version: 8.1.0
-RoxygenNote: 7.3.3

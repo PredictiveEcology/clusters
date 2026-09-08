@@ -88,3 +88,14 @@ test_that("this is what stops two builders double-booking the same cores", {
     expect_lte(sum(first$assign) + sum(second$assign), sum(nodes$free_est))
   })
 })
+
+test_that(".pidAlive answers correctly on whatever platform is running the tests", {
+  ## Deliberately not skipped anywhere: this is the check that failed silently
+  ## on two platforms at once. /proc does not exist on macOS, where every pid
+  ## looked dead; tasklist exits 0 even when its filter matches nothing, so on
+  ## Windows every pid looked alive.
+  expect_true(clusters:::.pidAlive(Sys.getpid()))
+  expect_false(clusters:::.pidAlive(999999L))
+  expect_false(clusters:::.pidAlive(NA_integer_))
+  expect_equal(clusters:::.pidAlive(c(Sys.getpid(), 999999L)), c(TRUE, FALSE))
+})

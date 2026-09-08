@@ -1,0 +1,27 @@
+## Thin caller. The job itself lives in PredictiveEcology/actions, so the
+## runner matrix, the geospatial system dependencies and the R setup move once,
+## there, instead of ageing separately in this repository.
+##
+## Pinned at @main deliberately: a tag cannot change underneath us but can go
+## stale unnoticed, which is how a repo elsewhere in the org spent months on an
+## action version that apt-installed a package name retired before Noble.
+##
+## https://github.com/PredictiveEcology/actions/blob/main/.github/workflows/R-CMD-check.yaml
+
+name: R-CMD-check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  R-CMD-check:
+    uses: PredictiveEcology/actions/.github/workflows/R-CMD-check.yaml@main
+    secrets: inherit

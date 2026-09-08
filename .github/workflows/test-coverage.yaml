@@ -1,0 +1,26 @@
+## Thin caller; see R-CMD-check.yaml for why the shared workflow is used.
+##
+## The concurrency group includes github.ref so a pull-request run and a
+## branch-push run never share one, and pushes are never cancelled: covr takes
+## far longer than a check, and cancelling a merge's coverage run shows up as
+## spurious red.
+##
+## https://github.com/PredictiveEcology/actions/blob/main/.github/workflows/test-coverage.yaml
+
+name: test-coverage
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test-coverage:
+    uses: PredictiveEcology/actions/.github/workflows/test-coverage.yaml@main
+    secrets: inherit

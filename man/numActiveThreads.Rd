@@ -26,6 +26,8 @@ This only works on non-linux operating systems, as it uses \code{ps}
 This does not address memory or disk use issues.
 }
 \examples{
+\dontrun{
+## Runs until interrupted, so R CMD check must not execute it.
 
 # This will show the active number, updated every 0.5 seconds
 cat("Number Active CPUs right now:\n");
@@ -35,4 +37,5 @@ while(TRUE) {
   Sys.sleep(0.5)
 }
 
+}
 }

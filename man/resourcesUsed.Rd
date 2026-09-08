@@ -10,7 +10,7 @@ resourcesUsed(machines = "localhost", resource = "us")
 \item{machines}{Character vector of the name(s) of the PSOCK resource to
 query, e.g., \code{"n168"}}
 
-\item{resources}{Column extracted in vmstat. Defaults to \code{"us"} or "user CPU"}
+\item{resource}{Character; which \code{ps} field to report, e.g. \code{"us"} for user CPU.}
 }
 \value{
 Returns the outputs from \code{vmstat}

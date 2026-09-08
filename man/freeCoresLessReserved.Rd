@@ -9,6 +9,8 @@ freeCoresLessReserved(nodes, path = getOption("clusters.reservationsPath"))
 \arguments{
 \item{nodes}{A data.frame with \code{host} and \code{free_est}, as built by
 \code{\link[=plan_psock_min]{plan_psock_min()}} from its probe.}
+
+\item{path}{Path to the reservations ledger; defaults to \code{getOption("clusters.reservationsPath")}.}
 }
 \value{
 \code{nodes} with \code{free_est} reduced by every live reservation on that

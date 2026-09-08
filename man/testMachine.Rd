@@ -6,29 +6,13 @@
 \usage{
 testMachine(NcoresMax = parallel::detectCores(), N = 100, thinning = 5)
 }
+\arguments{
+\item{NcoresMax}{Integer; the largest worker count to time.}
+
+\item{N}{Integer; workload multiplier for the reported totals.}
+
+\item{thinning}{Integer; step between the worker counts that are timed.}
+}
 \description{
 Test machines
-}
-\examples{
-# example code
-hosts <- c("97", "106", "184", "189", "213", "217", "220")#, "102")
-hosts <- makeHosts(ipbase = "spades", hosts)
-hosts <- c(hosts, "132.156.148.105", "localhost")
-cl <- parallelly::makeClusterPSOCK(hosts,
-                                   rscript = c("nice", "/usr/local/bin/Rscript"))
-parallel::clusterExport(cl, c("testMachine", "pkgs"))
-parallel::clusterEvalQ(cl, {
-  if (!require("Require")) install.packages("Require",
-                                            repos = c("https://predictiveecology.r-universe.dev",
-                                                      getOption("repos")))
-  Require::Require(pkgs)
-})
-
-st <- system.time(outs <- parallel::clusterApply(cl, seq_along(cl), function(x)
-  testMachine(N = 1, NcoresMax = 10, thinning = 3)))
-
-names(outs) <- hosts
-print(st)
-getHostCombination(outs, Npops = 100)
-
 }

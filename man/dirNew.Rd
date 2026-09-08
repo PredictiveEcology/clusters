@@ -14,14 +14,14 @@ dirNew(
 \arguments{
 \item{path}{A folder in which to search for duplicates}
 
+\item{secsAgo}{Numeric; consider files modified within this many seconds. Ignored if \code{after} is given.}
+
+\item{after}{A time; consider files modified after it. Defaults to \code{secsAgo} before now.}
+
 \item{pattern}{The regular expression to search for, to identify the files. This
 must have 1 set of parentheses (), as only the content between the () will be
 used for duplicate assessment, i.e., remove anything in the file that shouldn't
 be used.}
-
-\item{delete}{Logical. Default \code{FALSE}, which will only list the files that
-will be deleted. If \code{TRUE}, then the identified files will
-be deleted}
 }
 \value{
 For side effects: removed files

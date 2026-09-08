@@ -1,162 +1,168 @@
-#' Watch active threads across PSOCK workers and track per-core peaks
+## One implementation of the /proc/meminfo read. It used to exist three times --
+## once as ramUsageGB() and twice inlined into monitorCluster()'s clusterEvalQ
+## calls, because a worker that lacks this package cannot call
+## `clusters::ramUsageGB()`. Shipping the function itself (see .bare) keeps that
+## property without the copies.
+#' @keywords internal
+.ramFromMeminfo <- function(path = "/proc/meminfo") {
+  na <- c(used = NA_real_, total = NA_real_)
+  if (!file.exists(path)) return(na)
+  lines <- readLines(path, warn = FALSE)
+  kb <- function(key) {
+    ln <- grep(paste0("^", key, ":[[:space:]]"), lines, value = TRUE)
+    if (!length(ln)) return(NA_real_)
+    as.numeric(sub(paste0("^", key, ":[[:space:]]+([0-9]+).*"), "\\1", ln[[1L]]))
+  }
+  total <- kb("MemTotal")
+  avail <- kb("MemAvailable")
+  if (is.na(total) || is.na(avail)) return(na)
+  c(used = round((total - avail) / 1048576, 1), total = round(total / 1048576, 1))
+}
+
+## Re-home a function in the global environment so it serialises to a worker
+## standalone, carrying no reference to this package's namespace. That is what
+## lets a host report memory and threads without `clusters` installed on it.
+#' @keywords internal
+.bare <- function(f) {
+  environment(f) <- globalenv()
+  f
+}
+
+## Ask every worker for one numeric, in worker order, never shrinking or
+## reordering the result. clusterCall returns one element per worker, and the
+## caller matches those to `cores` by position, so a worker that errors must
+## still occupy its slot.
+#' @keywords internal
+.probeWorkers <- function(cl, fun, pick) {
+  probe <- .bare(function(g, pick) tryCatch(as.numeric(g()[[pick]]), error = function(e) NA_real_))
+  out <- parallel::clusterCall(cl, probe, .bare(fun), pick)
+  vapply(out, function(x) if (length(x) == 1L) as.numeric(x) else NA_real_, numeric(1))
+}
+
+#' Format one host's memory as `used/totalGB`
+#' @keywords internal
+.fmtRam <- function(used, total) {
+  if (is.na(used) || is.na(total)) return("?/?GB")
+  sprintf("%.1f/%.1fGB", used, total)
+}
+
+## Column i is as wide as the wider of the host's name and the widest memory
+## string it can produce (used == total).
+#' @keywords internal
+.monitorWidths <- function(cores, totalRam) {
+  widest <- vapply(totalRam, function(t) nchar(.fmtRam(t, t)), integer(1))
+  pmax(nchar(cores), widest)
+}
+
+#' Render one right-aligned row of the monitor display
+#' @keywords internal
+.monitorRow <- function(vals, widths, pad = 2L) {
+  vals[is.na(vals)] <- ""
+  paste(mapply(function(v, w) sprintf("%*s%s", w, v, strrep(" ", pad)), vals, widths),
+        collapse = "")
+}
+
+#' Get RAM usage in GB on the current machine
 #'
-#' Continuously queries each worker for the number of active threads via
-#' `clusters::numActiveThreads()` and displays a single, aligned status line
-#' that updates in place. It also tracks the **peak** thread count per core
-#' (named by the `cores` vector). On interrupt (Ctrl-C), it prints a final
-#' aligned summary of peak values and returns them invisibly.
+#' Reads \file{/proc/meminfo} and returns used and total memory in gigabytes.
+#' Used is `MemTotal - MemAvailable`, that is, everything the kernel cannot hand
+#' out immediately, so page cache in active use counts as used.
 #'
-#' The display renders a one-line header of core names (left-aligned),
-#' followed by a live one-line status of current counts (right-aligned within
-#' the width of each core name). Lines are redrawn in-place using ANSI erase
-#' sequences (`\033[2K\r`) which are supported in RStudio Server and most
-#' ANSI-aware terminals.
+#' @return A list with `used_gb` and `total_gb`, both `NA_real_` where
+#'   \file{/proc/meminfo} is absent (any non-Linux host) or unreadable.
+#' @export
+#' @examples
+#' ramUsageGB()
+ramUsageGB <- function() {
+  x <- .ramFromMeminfo()
+  list(used_gb = unname(x[["used"]]), total_gb = unname(x[["total"]]))
+}
+
+#' Watch active threads and memory across a cluster's hosts
 #'
-#' @param cl A PSOCK cluster object (e.g., created with
-#'   \code{parallelly::makeClusterPSOCK()}) connected to the remote machines
-#'   corresponding to \code{cores}.
-#' @param cores A character vector of core (host) names. The order and names
-#'   define column layout and are used to name the returned peak vector.
-#' @param pad Integer number of spaces to insert \emph{between} columns
-#'   (default: \code{2}). Padding is not part of the alignment width.
-#' @param interval Numeric number of seconds to wait between refreshes
-#'   (default: \code{1}).
+#' @description
+#' Polls every worker for its active-thread count and its memory use, and
+#' redraws two aligned rows in place: threads on the first, `used/totalGB` on
+#' the second. Interrupt it (Ctrl-C) to stop; it then prints the per-host peaks
+#' it saw and returns them.
 #'
-#' @details
-#' - The function calls \code{clusters::numActiveThreads()} on each worker.
-#'   If a worker errors, that tick treats the value as \code{NA} for display
-#'   and as \code{0} when updating the peak (so peaks are not reduced by \code{NA}s).
-#' - The header is printed once. Each subsequent update clears and redraws only
-#'   the live values line using ANSI sequences. If ANSI is not supported by the
-#'   current console, the escape codes may appear literally; in that case, run
-#'   the function in RStudio Server, a modern terminal, or adapt it to use
-#'   fallbacks.
-#' - The function runs until interrupted (e.g., \kbd{Ctrl-C}). On interrupt, it
-#'   clears the live line, prints the final peaks aligned under the header, and
-#'   returns the named peak vector invisibly.
+#' Neither probe needs `clusters` installed on the hosts. The functions are
+#' re-homed in the global environment before being sent, so they travel whole
+#' rather than as a reference to this package's namespace.
 #'
-#' @return Invisibly returns a named integer vector of peak active thread counts,
-#'   with names matching \code{cores}. Also prints a final aligned summary on
-#'   interrupt.
+#' @param cl A running cluster with one worker per host, in the same order as
+#'   `cores`. If missing, one is built over SSH from `cores` and stopped on exit.
+#' @param cores Character vector of host names, in the cluster's worker order.
+#' @param pad Integer; spaces between columns.
+#' @param interval Numeric; seconds between polls.
 #'
-#' @section Requirements on workers:
-#' The \pkg{clusters} package must be installed on each worker. This function
-#' issues \code{parallel::clusterEvalQ(cl, requireNamespace("clusters"))} once
-#' to assert availability, but it does not install packages remotely.
+#' @return Invisibly, a list with `threads` (peak active threads per host) and
+#'   `ram` (peak memory used per host, GB). Returned on interrupt.
 #'
+#' @note The display uses ANSI erase sequences to redraw in place. Redirect it
+#'   to a file and you get one block per tick instead of a live display.
+#' @export
 #' @examples
 #' \dontrun{
-#' if (FALSE) {
-#' library(parallelly)
-#' library(parallel)
-#'
-#' cores <- c("birds", "biomass", "camas", "carbon", "caribou", "coco",
-#'            "core", "dougfir", "fire", "mpb", "sbw", "mega",
-#'            "acer", "abies", "pinus")
-#'
-#' # Create a PSOCK cluster over SSH (example; configure to your environment)
-#' cl <- parallelly::makeClusterPSOCK(
-#'  workers = cores,
-#'   rshcmd = "ssh",
-#'    homogeneous = FALSE
-#'  )
-#'
-#' # Watch and track peaks; press Ctrl-C to stop.
-#' peak <- monitorCluster(cl, cores, pad = 2, interval = 1)
-#'
-#' # After interrupt, 'peak' is a named integer vector with per-core maxima.
-#' print(peak)
-#'
-#' stopCluster(cl)
+#' hosts <- c("birds", "biomass", "camas")
+#' peaks <- monitorCluster(cores = hosts)   # Ctrl-C to stop
+#' peaks$ram
 #' }
-#' }
-#'
-#' @seealso \code{\link[parallelly]{makeClusterPSOCK}},
-#'   \code{\link[parallel]{clusterEvalQ}},
-#'   \code{\link[clusters]{numActiveThreads}}
-#'
-#' @note
-#' This function uses ANSI escape sequences to clear and redraw a single line
-#' (\code{"\\033[2K\\r"}). RStudio Server consoles interpret ANSI by default.
-#' If your output is redirected (non-TTY) or ANSI is disabled, consider
-#' adapting the clearing step to use a fallback (e.g., overwrite with spaces).
-#'
-#' @export
 monitorCluster <- function(cl, cores, pad = 2, interval = 1) {
   stopifnot(length(cores) > 0)
 
   if (missing(cl)) {
-    cl <- parallelly::makeClusterPSOCK(
-      workers = cores ,
-      rshcmd = "ssh",
-      homogeneous = FALSE
-    )
-    on.exit(parallel::stopCluster(cl))
-
+    cl <- parallelly::makeClusterPSOCK(workers = cores, rshcmd = "ssh", homogeneous = FALSE)
+    on.exit(try(parallel::stopCluster(cl), silent = TRUE), add = TRUE)
   }
-  # Ensure 'clusters' is available on workers (optional but helpful)
-  master_libpaths <- .libPaths()
-  parallel::clusterCall(cl, function(p) .libPaths(p), master_libpaths)
+  if (length(cl) != length(cores))
+    stop("`cl` has ", length(cl), " workers but `cores` names ", length(cores),
+         " hosts. Results are matched by position, so they must correspond.",
+         call. = FALSE)
 
-  parallel::clusterEvalQ(cl, { requireNamespace("clusters", quietly = TRUE) })
+  parallel::clusterCall(cl, .bare(function(p) .libPaths(p)), .libPaths())
 
-  # Widths equal the name lengths; pad is spacing BETWEEN columns
-  name_widths <- nchar(cores)
+  ## Total memory is fixed for the life of the cluster; ask once.
+  totalRam <- .probeWorkers(cl, .ramFromMeminfo, "total")
+  names(totalRam) <- cores
+  widths <- .monitorWidths(cores, totalRam)
+  header <- .monitorRow(cores, widths, pad)
 
-  # Header (left-aligned names + pad spaces between columns)
-  header <- paste(
-    mapply(function(name, w) sprintf("%-*s%s", w, name, strrep(" ", pad)),
-           cores, name_widths),
-    collapse = ""
-  )
+  peakThreads <- stats::setNames(rep(0, length(cores)), cores)
+  peakRam <- stats::setNames(rep(NA_real_, length(cores)), cores)
+  firstTick <- TRUE
+
   cat(header, "\n", sep = "")
-
-  # Render one values line: right-align within name width, then add pad
-  render_values_line <- function(vals_named) {
-    vals <- vals_named[cores]
-    vals[is.na(vals)] <- ""
-    paste(
-      mapply(function(val, w) sprintf("%*s%s", w, val, strrep(" ", pad)),
-             vals, name_widths),
-      collapse = ""
-    )
-  }
-
-  # Peak tracker (named numeric vector)
-  peak <- setNames(rep(0L, length(cores)), cores)
-
-  # Main loop — Ctrl-C to stop; on interrupt, print final peaks and return them
   tryCatch({
     repeat {
-      # Evaluate clusters::numActiveThreads() directly on each worker
-      res_list <- parallel::clusterEvalQ(cl, {
-        # Be robust to errors per node
-        tryCatch(clusters::numActiveThreads(), error = function(e) NA_integer_)
-      })
+      threads <- .probeWorkers(cl, numActiveThreads, 1L)
+      usedRam <- .probeWorkers(cl, .ramFromMeminfo, "used")
 
-      # Format into a named vector in the same order as 'cores'
-      vals <- unlist(res_list, use.names = FALSE)
-      names(vals) <- cores
+      peakThreads <- pmax(peakThreads, ifelse(is.na(threads), 0, threads))
+      peakRam <- pmax(peakRam, usedRam, na.rm = TRUE)
 
-      # Update peak (treat NA as 0 for peak comparison)
-      vals_non_na <- vals
-      vals_non_na[is.na(vals_non_na)] <- 0L
-      peak <- pmax(peak, vals_non_na)
+      threadStrs <- ifelse(is.na(threads), NA_character_, as.character(threads))
+      ramStrs <- mapply(.fmtRam, usedRam, totalRam)
 
-      # Clear the values line & redraw (RStudio Server: ANSI supported)
-      cat("\033[2K\r")
-      cat(render_values_line(vals))
-      flush.console()
-
+      if (firstTick) {
+        cat(.monitorRow(threadStrs, widths, pad), "\n", sep = "")
+        cat(.monitorRow(ramStrs, widths, pad), sep = "")
+        firstTick <- FALSE
+      } else {
+        cat("\033[A\033[2K\r", .monitorRow(threadStrs, widths, pad), "\n", sep = "")
+        cat("\033[2K\r", .monitorRow(ramStrs, widths, pad), sep = "")
+      }
+      utils::flush.console()
       Sys.sleep(interval)
     }
   }, interrupt = function(e) {
-    # On Ctrl-C: clear live line, print final PEAKs aligned, and return 'peak'
     cat("\033[2K\r\n")
-    cat("Final PEAKs:\n")
+    cat("Peaks seen:\n")
     cat(header, "\n", sep = "")
-    cat(render_values_line(peak), "\n", sep = "")
-    cat(sprintf("Total peak threads across all cores: %d\n", sum(peak)))
-    invisible(peak)
+    cat(.monitorRow(as.character(peakThreads), widths, pad), "\n", sep = "")
+    cat(.monitorRow(vapply(seq_along(cores), function(i) .fmtRam(peakRam[[i]], totalRam[[i]]),
+                           character(1)), widths, pad), "\n", sep = "")
+    cat(sprintf("Peak threads across all hosts: %d\n", as.integer(sum(peakThreads))))
+    invisible(list(threads = peakThreads, ram = peakRam))
   })
 }

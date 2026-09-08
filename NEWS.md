@@ -1,6 +1,14 @@
-# clusters 0.0.27
+# clusters 0.0.28
 
 ## Bug fixes
+
+* System-library shipping and host verification were handed a host vector with
+  `localhost` removed while the probe cluster has one worker per element of the
+  full vector. Results are matched to hosts by position, so everything shifted
+  by one and the last host was never examined: kodama's missing `libtbb.so.12`
+  went unshipped, its failed loads went unreported, and it received workers
+  that died on `RcppParallel`. Both steps now use the probe's own host vector,
+  and this machine's own workers are no longer dropped by the allocation filter.
 
 * `clusterSetup()` now forwards `pkgsNeeded` and `libPath` to
   `plan_psock_min()`. Without them the per-host verification checked only the

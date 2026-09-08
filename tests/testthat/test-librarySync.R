@@ -53,3 +53,13 @@ test_that("clusterSetup() forwards what the workers need and which library is th
   expect_match(src, "pkgsNeeded = pkgsNeeded")
   expect_match(src, "libPath = libPath")
 })
+
+test_that("shipping and verification are indexed by the probe's own host vector", {
+  # cl_probe has one worker per element of `hosts`; results are matched by
+  # position, so a shorter vector (coresUnique, localhost removed) shifts every
+  # result and hides the last host. 2026-09-08: kodama.
+  src <- paste(deparse(clusters:::plan_psock_min), collapse = "\n")
+  expect_match(src, "shipSystemLibs\\(cl_probe, hosts = hosts")
+  expect_match(src, "verifyClusterHosts\\(cl_verify, hosts = hosts")
+  expect_false(grepl("hosts = coresUnique", src))
+})

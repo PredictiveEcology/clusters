@@ -122,6 +122,7 @@ plan_psock_min <- function(
  # Deal with other package stuff
   revtunnel <- FALSE
   ldPrefixed <- FALSE
+  verifiedHosts <- hosts
   allLocalhost <- identical("localhost", unique(hosts))
   # `pkgsNeeded` stays as given: what the workers must be able to load. Its
   # dependency closure is not computed here any more -- the whole master
@@ -210,7 +211,11 @@ plan_psock_min <- function(
     # verification below, which would otherwise reject the host for a fault that
     # is one rsync away from fixed.
     if (isTRUE(getOption("clusters.shipSystemLibs", TRUE))) {
-      shipped <- shipSystemLibs(cl_probe, hosts = coresUnique, libs = master_libs)
+      # `hosts`, not `coresUnique`: cl_probe has one worker per element of `hosts`
+      # (localhost included) and results are matched to hosts by position. With
+      # the shorter vector everything shifted by one and the last host -- kodama,
+      # the one missing libtbb -- was never looked at (2026-09-08).
+      shipped <- shipSystemLibs(cl_probe, hosts = hosts, libs = master_libs)
       if (length(unlist(shipped$shipped))) {
         # NOT rscript_envs: parallelly implements that as
         # `Rscript -e 'Sys.setenv(...)'`, and glibc parses LD_LIBRARY_PATH once
@@ -245,16 +250,17 @@ plan_psock_min <- function(
     cl_verify <- cl_probe
     if (isTRUE(ldPrefixed)) {
       cl_verify <- makeClusterPSOCK(
-        workers = coresUnique, rscript = rscript, homogeneous = FALSE,
+        workers = hosts, rscript = rscript, homogeneous = FALSE,
         rscript_libs = master_libs, rscript_envs = rscript_envs,
         rscript_startup = startup_lines, rshopts = rshopts, revtunnel = TRUE,
         setup_strategy = ifelse(isRstudio(), "sequential", "parallel"),
         connectTimeout = 2 * 60, timeout = 30 * 24 * 60 * 60, autoStop = auto_stop)
       on.exit(try(parallel::stopCluster(cl_verify), silent = TRUE), add = TRUE)
     }
-    coresUnique <- verifyClusterHosts(cl_verify, hosts = coresUnique, pkgs = pkgsTopLevel,
-                                      libs = master_libs,
-                                      action = getOption("clusters.onBadHost", "stop"))
+    # Same alignment rule as above: one worker per element of `hosts`.
+    verifiedHosts <- verifyClusterHosts(cl_verify, hosts = hosts, pkgs = pkgsTopLevel,
+                                        libs = master_libs,
+                                        action = getOption("clusters.onBadHost", "stop"))
     
     # parallel::stopCluster(cl_probe)
     # Sys.sleep(2) 
@@ -335,7 +341,7 @@ plan_psock_min <- function(
     )
   }, labels, caps))
   # Hosts that failed verification (action = "drop") must not be allocated.
-  if (!allLocalhost) nodes <- nodes[nodes$host %in% coresUnique, , drop = FALSE]
+  if (!allLocalhost) nodes <- nodes[nodes$host %in% verifiedHosts, , drop = FALSE]
   
   # nodes <- do.call(rbind, lapply(stats_list, function(x) {
   #   data.frame(

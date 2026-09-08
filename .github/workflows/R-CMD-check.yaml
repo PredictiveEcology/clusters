@@ -1,50 +1,27 @@
-on:
-  push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
+## Thin caller. The job itself lives in PredictiveEcology/actions, so the
+## runner matrix, the geospatial system dependencies and the R setup move once,
+## there, instead of ageing separately in this repository.
+##
+## Pinned at @main deliberately: a tag cannot change underneath us but can go
+## stale unnoticed, which is how a repo elsewhere in the org spent months on an
+## action version that apt-installed a package name retired before Noble.
+##
+## https://github.com/PredictiveEcology/actions/blob/main/.github/workflows/R-CMD-check.yaml
 
 name: R-CMD-check
 
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   R-CMD-check:
-    runs-on: ${{ matrix.config.os }}
-
-    name: ${{ matrix.config.os }} (${{ matrix.config.r }})
-
-    strategy:
-      fail-fast: false
-      matrix:
-        config:
-          - {os: macOS-latest,   r: 'release'}
-          - {os: windows-latest, r: 'release'}
-          - {os: ubuntu-latest,  r: 'devel', http-user-agent: 'release'}
-          - {os: ubuntu-latest,  r: 'release'}
-          - {os: ubuntu-latest,  r: 'oldrel-1'}
-
-    env:
-      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
-      R_REMOTES_NO_ERRORS_FROM_WARNINGS: true
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: r-lib/actions/setup-pandoc@v2
-
-      - uses: r-lib/actions/setup-r@v2
-        with:
-          http-user-agent: ${{ matrix.config.http-user-agent }}
-          Ncpus: 2
-          r-version: ${{ matrix.config.r }}
-          use-public-rspm: true
-
-      - uses: r-lib/actions/setup-r-dependencies@v2
-        with:
-          extra-packages: any::rcmdcheck
-
-      - uses: r-lib/actions/check-r-package@v2
-        with:
-          args: 'c("--no-manual", "--as-cran")'
-          upload-snapshots: true
+    uses: PredictiveEcology/actions/.github/workflows/R-CMD-check.yaml@main
+    secrets: inherit

@@ -1,3 +1,27 @@
+# clusters 0.0.30
+
+## New features
+
+* `monitorCluster()` shows memory as well as threads: a second row of
+  `used/totalGB` per host, and the peak of both is reported when you interrupt
+  it. It returns `list(threads = , ram = )` rather than a bare thread vector.
+* `ramUsageGB()` reports this machine's used and total memory, `NA` where
+  \file{/proc/meminfo} does not exist.
+
+## Notes
+
+* Neither probe requires `clusters` on the hosts. The probe functions are
+  re-homed in the global environment before being sent, so they serialise
+  whole instead of as a reference to this package's namespace. The previous
+  approach -- inlining the `/proc/meminfo` parser into each `clusterEvalQ()`
+  call -- had three copies of it to keep in step.
+* `monitorCluster()` now refuses a cluster whose worker count differs from
+  `cores`. Results are matched to hosts by position, so a mismatch labelled
+  every column wrongly.
+* CI: `R-CMD-check` and `test-coverage` call the shared reusable workflows in
+  `PredictiveEcology/actions`, rather than carrying their own copies of the
+  matrix and the system-dependency install.
+
 # clusters 0.0.24
 
 ## New features

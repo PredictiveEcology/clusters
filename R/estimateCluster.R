@@ -122,17 +122,13 @@ plan_psock_min <- function(
  # Deal with other package stuff
   revtunnel <- FALSE
   allLocalhost <- identical("localhost", unique(hosts))
+  # `pkgsNeeded` stays as given: what the workers must be able to load. Its
+  # dependency closure is not computed here any more -- the whole master
+  # library is mirrored below, so nothing can be missed the way `ps` (needed by
+  # Require) was on 2026-09-07 when only a computed subset was synced.
   pkgsTopLevel <- pkgsNeeded
-  # No `qs` here any more: it is archived on CRAN, nothing in this package or its
-  # callers uses it, and a package absent from the master library is a
-  # nonexistent rsync source -- "exit 23" for every job (2026-09-07).
-  aa <- Require::pkgDep(unique(c("RCurl", pkgsNeeded)), recursive = TRUE)
-  pkgsNeeded <- unique(Require::extractPkgName(unname(unlist(aa))))
-  pkgsNeeded <- setdiff(pkgsNeeded, "rgdal")
-  
-  
+
   if (!allLocalhost) {
-    repos <- c("https://predictiveecology.r-universe.dev", getOption("repos"))
     revtunnel <- ifelse(allLocalhost, FALSE, TRUE)
     coresUnique <- setdiff(unique(hosts), "localhost")
     message("copying packages to: ", paste(coresUnique, collapse = ", "))
@@ -155,7 +151,7 @@ plan_psock_min <- function(
     #   #                                    # , rscript = c("nice", RscriptPath)
     #   # )
     # })
-    parallel::clusterExport(cl_probe, list("master_libs", "logPath", "repos", "pkgsNeeded"),
+    parallel::clusterExport(cl_probe, list("master_libs", "logPath", "pkgsNeeded"),
                             envir = environment())
     
     # The master library is mirrored to every host below and other jobs may be
@@ -170,7 +166,6 @@ plan_psock_min <- function(
            paste(missingPkgs, collapse = ", "),
            ". Install them as part of project setup before launching workers; ",
            "this function does not install into a library that running workers share.")
-    toSync <- pkgsNeeded[.libraryHas(pkgsNeeded, master_libs[1])]
     
     parallel::clusterEvalQ(cl_probe, {
       # If this is first time that packages need to be installed for this user on this machine
@@ -188,11 +183,12 @@ plan_psock_min <- function(
       # NOTE: deliberately NOT `--update`. That flag skips files that are newer on
       # the receiver, so a downgrade on the master would never propagate and a
       # stale-but-newer remote copy would win. The master is the single source of
-      # truth for what the workers run, so mirror it exactly (`--delete` prunes
-      # files inside the synced package directories that the master no longer has).
+      # truth for what the workers run, so mirror the whole library exactly
+      # (`--delete` prunes what the master no longer has). Whole, not a computed
+      # subset: a subset cannot promise the invariant in the error below.
       res <- .runWithRetry(rsync, c("-a", "--delete",
-                                    shQuote(file.path(master_libs[1], toSync)),
-                                    shQuote(paste0(ip, ":", master_libs[1]))))
+                                    shQuote(paste0(master_libs[1], "/")),
+                                    shQuote(paste0(ip, ":", master_libs[1], "/"))))
       if (!identical(res$status, 0L))
         stop("rsync of the project library to '", ip, "' failed (exit ", res$status,
              ") after ", res$tries, " attempt(s): ", res$log, ". ",
@@ -200,16 +196,12 @@ plan_psock_min <- function(
       res$status
     })
     
+    # Nothing is installed on the hosts either: the mirror above is complete, and
+    # a host that still cannot load a package is named by verifyClusterHosts()
+    # below rather than patched over the network mid-job.
     parallel::clusterEvalQ(cl_probe, {
-      # If this is first time that packages need to be installed for this user on this machine
-      #   there won't be a folder present that is writable
-      if (tryCatch(packageVersion("Require") < "1.0.1.9000", error = function(e) TRUE))
-        install.packages("Require", lib = master_libs[1], repos = unique(c("predictiveecology.r-universe.dev", getOption("repos"))))
-      library(Require, lib.loc = master_libs[1])
       if (!is.null(logPath) && is.character(logPath))
         dir.create(dirname(logPath), recursive = TRUE, showWarnings = FALSE)
-      if (NROW(pkgsNeeded))
-        out <- Require::Install(pkgsNeeded, libPaths = master_libs)
     })
     # A host can be missing a *system* library the synced packages link against
     # (libtbb.so.12 for RcppParallel, say). That needs no root: ship the file to

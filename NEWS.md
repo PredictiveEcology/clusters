@@ -1,7 +1,12 @@
-# clusters 0.0.25
+# clusters 0.0.26
 
 ## Bug fixes
 
+* The whole master library is mirrored to each host, not a computed dependency
+  closure. The closure missed transitive dependencies (`ps`, needed by
+  Require, on 2026-09-08), and the hosts then tried to install over the
+  network. Nothing is installed on the hosts any more; a host that cannot
+  load a required package is named by `verifyClusterHosts()`.
 * `plan_psock_min()` no longer installs into the master library. That library
   is mirrored to every host and other jobs may be running from it at that
   moment; installing into it corrupts their lazy-load databases and hands

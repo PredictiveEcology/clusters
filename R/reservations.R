@@ -136,6 +136,7 @@ releaseCores <- function(id = NULL, pid = Sys.getpid(),
 #' @param nodes A data.frame with `host` and `free_est`, as built by
 #'   [plan_psock_min()] from its probe.
 #' @inheritParams reservations
+#' @param path Path to the reservations ledger; defaults to `getOption("clusters.reservationsPath")`.
 #' @return `nodes` with `free_est` reduced by every live reservation on that
 #'   host, floored at zero, plus a `reserved` column for reporting. Reservations
 #'   held by this process count too: a master that already built one cluster is

@@ -46,7 +46,7 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
           runif(1, min = x[1], max = x[2])), ... )
       }
       DE[[iter]] <- Cache(
-        DEoptim(
+        DEoptim::DEoptim(
           fn,
           lower = lower,
           upper = upper,
@@ -293,11 +293,15 @@ ggDEoptimFilename <- function(visualizeDEoptim, rep, iter = NULL, subfolder = "f
 #' @param cachePath A `cacheRepo` to pass to `showCache` and
 #'        `loadFromCache` if `DE` is missing.
 #'
+#' @param titles Character vector of parameter names, one per histogram.
+#' @param lower Named numeric of lower bounds, used to fix each panel's x range.
+#' @param upper Named numeric of upper bounds, used to fix each panel's x range.
 #' @export
 #' @importFrom data.table as.data.table
 #' @importFrom graphics hist par
 #' @importFrom reproducible loadFromCache showCache
 #' @importFrom utils tail
+#' @import ggplot2
 visualizeDE <- function(DE, cachePath, titles, lower, upper) {
   if (missing(DE)) {
     if (missing(cachePath)) {
@@ -321,6 +325,13 @@ visualizeDE <- function(DE, cachePath, titles, lower, upper) {
       ggtitle(p) + xlab(NULL) +
       theme_minimal()
   })
+  ## Suggests, not Imports: one ggarrange call does not justify pulling ggpubr's
+  ## dependency tree into every install, CI runs included.
+  if (!requireNamespace("ggpubr", quietly = TRUE)) {
+    message("Install ggpubr to arrange these ", length(ff), " plots on one page; ",
+            "returning the list instead.")
+    return(invisible(ff))
+  }
   invisible(ggpubr::ggarrange(plotlist = ff))
 }
 

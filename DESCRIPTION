@@ -16,18 +16,25 @@ Authors@R: c(
 Depends:
     R (>= 4.2)
 Imports:
+    cli,
     data.table,
+    DEoptim,
     filelock,
+    ggplot2,
+    graphics,
     parallel,
     parallelly,
+    qs2,
     reproducible (>= 2.1.2.9045),
     Require,
+    rstudioapi,
+    stats,
     tools,
     utils
 Suggests:
+    ggpubr,
     knitr,
     roxygen2,
-    qs,
     rmarkdown,
     sf,
     testthat,

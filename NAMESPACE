@@ -25,6 +25,7 @@ export(termsInDEoptim)
 export(testMachine)
 export(verifyClusterHosts)
 export(visualizeDE)
+import(ggplot2)
 importFrom(data.table,
   as.data.table,
   data.table,

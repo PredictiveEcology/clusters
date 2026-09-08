@@ -3,6 +3,19 @@
 #' This includes copying files over to unique(cores) machines, then loading all objects from disk in
 #' each of the parallel cores.
 #'
+#' @param messagePrefix Character prefix for this cluster's messages, so concurrent builds can be told apart in a shared log.
+#' @param itermax Integer; maximum DEoptim iterations. See [DEoptim::DEoptim.control()].
+#' @param trace Logical or integer passed to `DEoptim.control()`; how often to report progress.
+#' @param strategy Integer in `[1, 10]`; the DEoptim strategy variant.
+#' @param initialpop Optional matrix of starting parameter sets, one row per population member.
+#' @param NP Integer; number of population members. Defaults to DEoptim's own rule when `NULL`.
+#' @param cores Character vector of host names, repeated once per worker wanted on that host, or a number for localhost only.
+#' @param logPath Path for worker output (`outfile` of the PSOCK cluster). Each host writes its own copy.
+#' @param libPath The project library. This is the master copy: it is mirrored to every host, and workers load from it.
+#' @param objsNeeded Character vector naming objects in `envir` to send to the workers.
+#' @param pkgsNeeded Character vector of packages the workers must be able to load. Hosts that cannot are reported by [verifyClusterHosts()].
+#' @param nCoresNeeded Integer; how many workers to aim for across all hosts.
+#' @param envir Environment holding `objsNeeded`; defaults to the caller's.
 #' @export
 #' @returns A list of items that can be passed to `DEoptim.control()`
 #'
@@ -364,11 +377,11 @@ rmIncompleteDups <- function(path, pattern = "^(.+)\\_[[:digit:]]{5,8}.*\\.png",
 #'
 #' Uses `vmstat` (must be installed; it is by default on linux).
 #'
+#' @param resource Character; which `ps` field to report, e.g. `"us"` for user CPU.
 #' @return Returns the outputs from `vmstat`
 #' @export
 #' @param machines Character vector of the name(s) of the PSOCK resource to
 #'   query, e.g., `"n168"`
-#' @param resources Column extracted in vmstat. Defaults to `"us"` or "user CPU"
 resourcesUsed <- function(machines = "localhost", resource = "us") {
   #if (!identical("localhost", machines)) {
   cl <- suppressMessages(makeClusterPSOCK(machines))
@@ -391,17 +404,16 @@ resourcesUsed <- function(machines = "localhost", resource = "us") {
 #' is leading to multiple files for the same .runName. This will remove
 #' duplicates, keeping only the most recent.
 #'
+#' @param secsAgo Numeric; consider files modified within this many seconds. Ignored if `after` is given.
+#' @param after A time; consider files modified after it. Defaults to `secsAgo` before now.
 #' @return For side effects: removed files
 #' @export
 #' @param path A folder in which to search for duplicates
 #' @param pattern The regular expression to search for, to identify the files. This
 #'   must have 1 set of parentheses (), as only the content between the () will be
 #'   used for duplicate assessment, i.e., remove anything in the file that shouldn't
-#'   be used.
-#' @param delete Logical. Default `FALSE`, which will only list the files that
-#'   will be deleted. If `TRUE`, then the identified files will
-#'   be deleted
-dirNew <- function(path, secsAgo = Inf, after = Sys.time() - secsAgo,
+#'   be 
+used.dirNew <- function(path, secsAgo = Inf, after = Sys.time() - secsAgo,
                    pattern = "^(.+)\\_[[:digit:]]{6,8}.*\\.png") {
   d <- dir(path, recursive = TRUE, full.names = TRUE);
   e <- file.info(d)
@@ -523,6 +535,7 @@ numActiveThreads <- function (pattern = "", minCPU = 50) {
 #' @param rscript_libs Optional library paths for workers.
 #' @param ... Additional arguments passed to parallelly::makeClusterPSOCK.
 #'
+#' @param rshopts Character vector of options passed to `ssh`. The defaults disable X11 forwarding and fail fast when a tunnel cannot be established.
 #' @export
 makeClusterPSOCK <- function(
     workers,

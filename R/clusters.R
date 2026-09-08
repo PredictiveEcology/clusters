@@ -1,5 +1,8 @@
 #' Test machines
 #'
+#' @param NcoresMax Integer; the largest worker count to time.
+#' @param N Integer; workload multiplier for the reported totals.
+#' @param thinning Integer; step between the worker counts that are timed.
 #' @examples
 #' # example code
 #' hosts <- c("97", "106", "184", "189", "213", "217", "220")#, "102")
@@ -51,6 +54,14 @@ testMachine <- function(NcoresMax = parallel::detectCores(), N = 100, thinning =
 
 #' Plot the outputs from `testMachine`
 #'
+#' @param Ncores Integer vector of worker counts that were timed.
+#' @param coreTimes List of per-core `range()` timings, one element per entry of `Ncores`.
+#' @param estTotTime List of estimated total times, one per entry of `Ncores`.
+#' @param optimisticTotTime List of best-case total times, one per entry of `Ncores`.
+#' @param systemTimes List of measured elapsed times, one per entry of `Ncores`.
+#' @param N Integer; the workload multiplier the times are scaled to.
+#' @param nam Character; host name, used in the plot title.
+#' @param detectedCores Integer; what the host reports as its core count, drawn as a reference line.
 #' @examples
 #'
 #' par(mfrow = c(2,length(hosts)))
@@ -82,6 +93,20 @@ plotMachine <- function(Ncores, coreTimes, estTotTime, optimisticTotTime, system
 
 #' @export
 #' @importFrom data.table data.table setorderv rbindlist
+#' Pick how many workers to run on each host
+#'
+#' Takes the per-host timings from [runTests()] and fits, for each host, a
+#' linear model of the slowest worker's time against the number of workers. The
+#' models are then used to choose an allocation of `Npops` workers across the
+#' hosts that finishes soonest, since a host whose per-worker time degrades
+#' quickly is worth fewer workers than its core count suggests.
+#'
+#' @param outs A list of [testMachine()] results, one per host, named by host.
+#' @param Npops Integer; total number of workers to allocate.
+#'
+#' @return A `data.table` with one row per host, giving the workers assigned and
+#'   the predicted time.
+#' @export
 getHostCombination <- function(outs, Npops = 100) {
 
   summ <- data.table(estToTime = do.call(c, lapply(outs, function(o) as.vector(unlist(o$estTotTime)))),
@@ -129,6 +154,18 @@ getHostCombination <- function(outs, Npops = 100) {
 }
 
 #' @export
+#' Build host names from the last octets of their addresses
+#'
+#' A convenience for clusters whose hosts sit on one subnet: give the final
+#' octets and get back full addresses.
+#'
+#' @param ips Numeric or character vector of final octets, e.g. `c(11, 12)`.
+#' @param ipbase Character; everything before the final octet, with its trailing dot.
+#'
+#' @return Character vector of addresses.
+#' @export
+#' @examples
+#' makeHosts(c(11, 12))
 makeHosts <- function(ips, ipbase = "10.20.0.") {
   paste0(ipbase, ips)
 }
@@ -136,6 +173,11 @@ makeHosts <- function(ips, ipbase = "10.20.0.") {
 
 #' Runs test on each machine in `hosts`
 #'
+#' @param hosts Character vector of host names to test.
+#' @param repos Repositories to install from on each host.
+#' @param clustersBranch Branch of this package to install on the hosts.
+#' @param RscriptPath Path to `Rscript` on the hosts.
+#' @param Npops Integer; population size the timings are scaled to.
 #' @export
 #' @return a list; same as `getHostCombination` return.
 runTests <- function(hosts, repos = c("predictiveecology.r-universe.dev", getOption("repos")),

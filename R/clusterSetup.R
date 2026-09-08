@@ -506,6 +506,8 @@ changeNodenameToLocalhost <- function(cores) {
 #' @note
 #' This does not address memory or disk use issues.
 #' @examples
+#' \dontrun{
+#' ## Runs until interrupted, so R CMD check must not execute it.
 #'
 #' # This will show the active number, updated every 0.5 seconds
 #' cat("Number Active CPUs right now:\n");
@@ -515,6 +517,7 @@ changeNodenameToLocalhost <- function(cores) {
 #'   Sys.sleep(0.5)
 #' }
 #'
+#' }
 numActiveThreads <- function (pattern = "", minCPU = 50) {
   if (!identical(.Platform$OS.type, "windows")) {
     a0 <- system("ps -ef", intern = TRUE)[-1]

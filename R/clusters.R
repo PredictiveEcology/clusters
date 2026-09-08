@@ -4,6 +4,8 @@
 #' @param N Integer; workload multiplier for the reported totals.
 #' @param thinning Integer; step between the worker counts that are timed.
 #' @examples
+#' \dontrun{
+#' ## Builds an SSH cluster and times it; needs hosts, so not run by checks.
 #' # example code
 #' hosts <- c("97", "106", "184", "189", "213", "217", "220")#, "102")
 #' hosts <- makeHosts(ipbase = "spades", hosts)
@@ -29,6 +31,7 @@
 #' @importFrom parallelly makeClusterPSOCK
 #' @importFrom parallel detectCores stopCluster clusterApply
 #' @export
+#' }
 testMachine <- function(NcoresMax = parallel::detectCores(), N = 100, thinning = 5) {
   Ncores <- c(1, seq(floor(NcoresMax/thinning)) * thinning)
   coreTimes <- list(); systemTimes <- list(); estTotTime <- list(); optimisticTotTime <- list()
@@ -63,12 +66,15 @@ testMachine <- function(NcoresMax = parallel::detectCores(), N = 100, thinning =
 #' @param nam Character; host name, used in the plot title.
 #' @param detectedCores Integer; what the host reports as its core count, drawn as a reference line.
 #' @examples
+#' \dontrun{
+#' ## Needs the `outs` timings from runTests() on real hosts.
 #'
 #' par(mfrow = c(2,length(hosts)))
 #' Map(out = outs, nam = names(outs), function(out, nam)
 #'     do.call(plotMachine, append(out, list(nam = nam))))
 #'
 #' @export
+#' }
 plotMachine <- function(Ncores, coreTimes, estTotTime, optimisticTotTime, systemTimes,
                         N = 100, nam, detectedCores) {
   ncoresUsed <- "NCores used"
@@ -152,7 +158,6 @@ getHostCombination <- function(outs, Npops = 100) {
        cluster = rep(out$host, out$N))
 }
 
-#' @export
 #' Build host names from the last octets of their addresses
 #'
 #' A convenience for clusters whose hosts sit on one subnet: give the final

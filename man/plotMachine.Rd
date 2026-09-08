@@ -35,10 +35,3 @@ plotMachine(
 \description{
 Plot the outputs from \code{testMachine}
 }
-\examples{
-
-par(mfrow = c(2,length(hosts)))
-Map(out = outs, nam = names(outs), function(out, nam)
-    do.call(plotMachine, append(out, list(nam = nam))))
-
-}

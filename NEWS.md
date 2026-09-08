@@ -1,3 +1,56 @@
+# clusters 0.0.29
+
+## Bug fixes
+
+* The `LD_LIBRARY_PATH` prefix for shipped system libraries was refused whenever
+  the hosts' pre-existing values differed (kodama's Rscript is the system R).
+  Only the shipped directory is needed: each host's R wrapper appends the value
+  the process started with to R's own paths.
+* Stopping the probe cluster is wrapped in `try()`: a probe node that has gone
+  away turned a normal exit into "invalid connection", masking the outcome.
+
+## New features
+
+* Option `clusters.waitForCores` (seconds, default 0): when other live builds
+  hold every core, re-measure and wait up to that long instead of failing with
+  "Allocation yielded zero workers" after hours of input preparation.
+
+* System-library shipping and host verification were handed a host vector with
+  `localhost` removed while the probe cluster has one worker per element of the
+  full vector. Results are matched to hosts by position, so everything shifted
+  by one and the last host was never examined: kodama's missing `libtbb.so.12`
+  went unshipped, its failed loads went unreported, and it received workers
+  that died on `RcppParallel`. Both steps now use the probe's own host vector,
+  and this machine's own workers are no longer dropped by the allocation filter.
+
+* `clusterSetup()` now forwards `pkgsNeeded` and `libPath` to
+  `plan_psock_min()`. Without them the per-host verification checked only the
+  planner's three default packages, and the planner took `.libPaths()[1]` as
+  the master library -- an overlay or user library when one is first -- and
+  mirrored that to the hosts instead of the project library, after which the
+  hosts could not find Require in it.
+* When system libraries were shipped, hosts are verified on workers launched
+  with the final `LD_LIBRARY_PATH` prefix. The probe predates the shipping and
+  glibc reads that variable only at process start, so verifying on the probe
+  failed such a host forever. Hosts dropped by verification (option
+  `clusters.onBadHost = "drop"`) no longer receive final workers.
+* The whole master library is mirrored to each host, not a computed dependency
+  closure. The closure missed transitive dependencies (`ps`, needed by
+  Require, on 2026-09-08), and the hosts then tried to install over the
+  network. Nothing is installed on the hosts any more; a host that cannot
+  load a required package is named by `verifyClusterHosts()`.
+* `plan_psock_min()` no longer installs into the master library. That library
+  is mirrored to every host and other jobs may be running from it at that
+  moment; installing into it corrupts their lazy-load databases and hands
+  rsync a moving target. Anything missing is now reported with a clear
+  message -- it belongs in project setup, before workers launch.
+* The archived `qs` is no longer hard-coded into the worker package list.
+  Nothing here or in the callers uses it, and a package absent from the master
+  library was a nonexistent rsync source: every DEoptim job spent ~20 minutes
+  failing to install it and then died with "rsync ... failed (exit 23)".
+* rsync to a host is retried up to three times and its stderr is kept and
+  reported, instead of being discarded.
+
 # clusters 0.0.24
 
 ## New features

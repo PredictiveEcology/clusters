@@ -266,6 +266,14 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
       }
     ))
     message("it took ", round(stPackages[3], 2), "s to load packages")
+
+    ## Workers are fresh R sessions, so they are at terra's defaults regardless of what
+    ## the master set: memfrac 0.5 -- half of TOTAL RAM, per worker -- memmax 16 GB and
+    ## todisk FALSE. With nCoresNeeded in the hundreds that is not a policy anyone chose.
+    mirrored <- mirrorTerraOptions(clThird)
+    if (length(mirrored))
+      message("terra options given to nodes: ",
+              paste(names(mirrored), unlist(mirrored), sep = "=", collapse = " "))
     
     message("Moving objects to each node in cluster")
     stMoveObjects <- try({

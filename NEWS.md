@@ -1,3 +1,14 @@
+# clusters 0.0.31
+
+## New features
+
+* `clusterSetup()` now gives the workers the master's terra memory settings, via the
+  new `mirrorTerraOptions()`. A PSOCK worker is a fresh R session, so it started at
+  terra's defaults -- `memfrac = 0.5`, `memmax = 16`, `todisk = FALSE` -- no matter what
+  the master had set. `memfrac` is a fraction of the machine's *total* RAM applied per
+  process, so a hundred workers each believed it could size a working buffer at half of
+  total RAM, silently overriding a master that had been set to something much smaller.
+
 # clusters 0.0.30
 
 ## New features

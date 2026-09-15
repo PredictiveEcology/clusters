@@ -152,18 +152,35 @@ releaseCores <- function(id = NULL, pid = Sys.getpid(),
 #'   [plan_psock_min()] from its probe.
 #' @inheritParams reservations
 #' @param path Path to the reservations ledger; defaults to `getOption("clusters.reservationsPath")`.
-#' @return `nodes` with `free_est` reduced by every live reservation on that
-#'   host, floored at zero, plus a `reserved` column for reporting. Reservations
-#'   held by this process count too: a master that already built one cluster is
-#'   genuinely using those cores while it builds the next.
+#' @param loadWindowMinutes The averaging window, in minutes, of the load average
+#'   `free_est` was measured from (5 for `parallelly::freeCores(memory = "5min")`).
+#' @details `free_est` already contains the load of clusters that have been
+#'   running for a while, so subtracting their whole reservation counts those cores
+#'   twice. A load average is exponentially damped: `age` minutes after a cluster
+#'   starts it shows `1 - exp(-age / loadWindowMinutes)` of that cluster's load. Each
+#'   reservation is therefore subtracted only by the share the average has not
+#'   absorbed yet, `workers * exp(-age / loadWindowMinutes)`: all of it for a cluster
+#'   built moments ago, which is what stops concurrent builds double-booking, and
+#'   almost none of it for a cluster that has been running for half an hour.
+#' @return `nodes` with `free_est` reduced by the unabsorbed share of every live
+#'   reservation on that host, floored at zero, plus a `reserved` column (the
+#'   reserved workers, for reporting). Reservations held by this process count
+#'   too: a master that already built one cluster is genuinely using those cores
+#'   while it builds the next.
 #' @export
 freeCoresLessReserved <- function(nodes,
-                                  path = getOption("clusters.reservationsPath")) {
+                                  path = getOption("clusters.reservationsPath"),
+                                  loadWindowMinutes = 5) {
   res <- liveReservations(path)
-  reserved <- if (NROW(res))
-    vapply(nodes$host, function(h) sum(res$workers[res$host %in% h]), numeric(1))
-  else rep(0, NROW(nodes))
+  if (NROW(res)) {
+    ageMinutes <- pmax(as.numeric(difftime(Sys.time(), res$created, units = "mins")), 0)
+    unabsorbed <- res$workers * exp(-ageMinutes / loadWindowMinutes)
+    reserved <- vapply(nodes$host, function(h) sum(res$workers[res$host %in% h]), numeric(1))
+    subtract <- vapply(nodes$host, function(h) sum(unabsorbed[res$host %in% h]), numeric(1))
+  } else {
+    reserved <- subtract <- rep(0, NROW(nodes))
+  }
   nodes$reserved <- as.integer(reserved)
-  nodes$free_est <- pmax(as.numeric(nodes$free_est) - reserved, 0)
+  nodes$free_est <- pmax(as.numeric(nodes$free_est) - round(subtract, 3), 0)
   nodes
 }

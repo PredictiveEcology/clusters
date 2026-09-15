@@ -4,20 +4,38 @@
 \alias{freeCoresLessReserved}
 \title{Subtract live reservations from measured free cores}
 \usage{
-freeCoresLessReserved(nodes, path = getOption("clusters.reservationsPath"))
+freeCoresLessReserved(
+  nodes,
+  path = getOption("clusters.reservationsPath"),
+  loadWindowMinutes = 5
+)
 }
 \arguments{
 \item{nodes}{A data.frame with \code{host} and \code{free_est}, as built by
 \code{\link[=plan_psock_min]{plan_psock_min()}} from its probe.}
 
 \item{path}{Path to the reservations ledger; defaults to \code{getOption("clusters.reservationsPath")}.}
+
+\item{loadWindowMinutes}{The averaging window, in minutes, of the load average
+\code{free_est} was measured from (5 for \code{parallelly::freeCores(memory = "5min")}).}
 }
 \value{
-\code{nodes} with \code{free_est} reduced by every live reservation on that
-host, floored at zero, plus a \code{reserved} column for reporting. Reservations
-held by this process count too: a master that already built one cluster is
-genuinely using those cores while it builds the next.
+\code{nodes} with \code{free_est} reduced by the unabsorbed share of every live
+reservation on that host, floored at zero, plus a \code{reserved} column (the
+reserved workers, for reporting). Reservations held by this process count
+too: a master that already built one cluster is genuinely using those cores
+while it builds the next.
 }
 \description{
 Subtract live reservations from measured free cores
+}
+\details{
+\code{free_est} already contains the load of clusters that have been
+running for a while, so subtracting their whole reservation counts those cores
+twice. A load average is exponentially damped: \code{age} minutes after a cluster
+starts it shows \code{1 - exp(-age / loadWindowMinutes)} of that cluster's load. Each
+reservation is therefore subtracted only by the share the average has not
+absorbed yet, \code{workers * exp(-age / loadWindowMinutes)}: all of it for a cluster
+built moments ago, which is what stops concurrent builds double-booking, and
+almost none of it for a cluster that has been running for half an hour.
 }

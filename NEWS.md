@@ -1,3 +1,17 @@
+# clusters 0.0.32
+
+## Bug fixes
+
+* `plan_psock_min()` no longer counts the cores of running clusters twice. It measures
+  free cores from a trailing load average and then subtracted every live core
+  reservation, although the average already carried the load of any cluster running
+  for more than a few minutes. On a shared fleet, clusters built after others had
+  started got a handful of workers while hosts sat idle (FireSense, 2026-09-15: 5, 2
+  and 7 of 100). `freeCoresLessReserved()` now subtracts each reservation only by the
+  share of its load the average has not yet absorbed,
+  `workers * exp(-age / loadWindowMinutes)`, so concurrent builds still cannot
+  double-book.
+
 # clusters 0.0.31
 
 ## New features

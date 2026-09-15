@@ -373,7 +373,8 @@ plan_psock_min <- function(
   #    is under-represented in it; without this, concurrent builders double-book
   #    the same cores. See ?reservations.
   if (isTRUE(getOption("clusters.useReservations", TRUE))) {
-    nodes <- freeCoresLessReserved(nodes)
+    nodes <- freeCoresLessReserved(nodes,
+                                   loadWindowMinutes = as.numeric(sub("min$", "", load_memory)))
     if (any(nodes$reserved > 0))
       message("Cores reserved by other live cluster builds: ",
               paste0(nodes$host[nodes$reserved > 0], "=", nodes$reserved[nodes$reserved > 0],

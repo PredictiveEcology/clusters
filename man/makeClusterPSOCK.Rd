@@ -9,6 +9,8 @@ makeClusterPSOCK(
   outfile = NULL,
   rscript_libs = .libPaths(),
   ...,
+  rscript = NULL,
+  default_packages = c("datasets", "utils", "grDevices", "graphics", "stats", "methods"),
   port = NULL,
   rshopts = c("-T", "-o", "ConnectTimeout=10", "-o", "ForwardX11=no", "-o",
     "ExitOnForwardFailure=yes"),
@@ -27,6 +29,12 @@ number of localhost workers (as a positive integer).}
 \item{rscript_libs}{Optional library paths for workers.}
 
 \item{...}{Additional arguments passed to parallelly::makeClusterPSOCK.}
+
+\item{rscript}{The command that starts a worker, passed to \code{\link[parallelly:makeClusterPSOCK]{parallelly::makeClusterPSOCK()}}. It
+is an argument here, not left to \code{...}: otherwise \verb{rscript =} partially matched \code{rscript_libs}
+and became the workers' library path whenever \code{rscript_libs} was not also given.}
+
+\item{default_packages}{Packages R attaches in each worker; the default is parallelly's.}
 
 \item{port}{Optional port or port block start.}
 
@@ -52,4 +60,12 @@ For more details, see below.}
 }
 \description{
 Lightweight wrapper for parallelly::makeClusterPSOCK
+}
+\details{
+A worker command that starts with \code{env} (the OpenBLAS cap from \code{\link[=.workerRscript]{.workerRscript()}}, or an
+\code{LD_LIBRARY_PATH} prefix) is not recognised by parallelly as Rscript, so parallelly passes the
+default packages as an \verb{R_DEFAULT_PACKAGES=} assignment in front of the command. With \code{renice}
+that assignment ends up after \code{nice}, which then fails to run it ("nice:
+'R_DEFAULT_PACKAGES=...': No such file or directory"). For such a command the default packages
+are put among \code{env}'s own assignments instead.
 }

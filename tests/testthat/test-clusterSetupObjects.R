@@ -11,7 +11,9 @@ objectsOnWorkers <- function() {
   x1 <- c(a = 1, b = 2)
   control <- clusters::clusterSetup(
     messagePrefix = "objects", itermax = 1, trace = FALSE, cores = "localhost",
-    logPath = withr::local_tempdir(), libPath = .libPaths()[1],
+    ## every library: under R CMD check .libPaths()[1] holds only this package, and the workers also
+    ## need parallelly, qs2 and reproducible ("there is no package called 'parallelly'")
+    logPath = withr::local_tempdir(), libPath = .libPaths(),
     objsNeeded = list("x1"), pkgsNeeded = "stats", nCoresNeeded = 2L, envir = environment())
   on.exit(try(parallel::stopCluster(control$cluster), silent = TRUE), add = TRUE)
   parallel::clusterEvalQ(control$cluster, get0("x1", envir = .GlobalEnv))

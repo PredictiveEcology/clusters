@@ -32,7 +32,7 @@ test_that("an existing prefix is kept", {
 
 test_that("plan_psock_min launches workers through the capped command", {
   src <- paste(deparse(clusters:::plan_psock_min), collapse = "\n")
-  expect_match(src, "rscript <- .workerRscript(rscript)", fixed = TRUE)
+  expect_match(src, "rscript <- .workerRscript(.localRscript(rscript, hosts))", fixed = TRUE)
 })
 
 test_that("a prefixed worker command stays runnable under nice (clusters' makeClusterPSOCK renices)", {

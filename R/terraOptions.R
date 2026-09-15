@@ -34,13 +34,16 @@ mirrorTerraOptions <- function(cl) {
     return(invisible(NULL))
   }
 
-  parallel::clusterCall(cl, function(vals) {
+  ## `.bare()`: a function made here would carry this frame, and so `cl`, to every worker.
+  ## parallelly keeps each node's call stack (`sys.calls()`), which holds any data passed through
+  ## do.call(): on the FireSense fleet (2026-09-15) this call sent 9.6 GB to each of 110 workers.
+  parallel::clusterCall(cl, .bare(function(vals) {
     ## A host without terra is not an error here: it simply cannot run terra work.
     if (requireNamespace("terra", quietly = TRUE)) {
       do.call(terra::terraOptions, vals)
     }
     invisible(NULL)
-  }, vals)
+  }), vals)
 
   invisible(vals)
 }

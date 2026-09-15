@@ -6,7 +6,7 @@ URL:
     http://clusters.predictiveecology.org,
     https://github.com/PredictiveEcology/clusters
 Date: 2026-09-15
-Version: 0.0.39
+Version: 0.0.40
 Authors@R: c(
       person("Eliot J B", "McIntire", email = "eliot.mcintire@nrcan-rncan.gc.ca",
              role = c("aut", "cre"), comment=c(ORCID = "0000-0002-6914-8316")),
@@ -32,11 +32,13 @@ Imports:
     tools,
     utils
 Suggests:
+    codetools,
     ggpubr,
     knitr,
     roxygen2,
     rmarkdown,
     sf,
+    SpaDES.core,
     terra,
     testthat,
     withr

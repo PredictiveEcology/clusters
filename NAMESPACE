@@ -26,9 +26,13 @@ export(verifyClusterHosts)
 export(visualizeDE)
 import(ggplot2)
 importFrom(data.table,
+  ":=",
   as.data.table,
   data.table,
+  melt,
   rbindlist,
+  set,
+  setnames,
   setorderv
 )
 importFrom(graphics,

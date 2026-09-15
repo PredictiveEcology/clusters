@@ -93,6 +93,10 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
   DE <- list()
   dots <- list(...)
   objFunArgs <- list(...)
+  ## `iterStep` is the plotting interval (fireSenseUtils::runDEoptim documents it as making the plots
+  ## at each iterStep), not an objective-function argument: it used to be passed on to `fn`.
+  plotEvery <- if (is.null(dots$iterStep)) 1L else max(1L, as.integer(dots$iterStep))
+  objFunArgs$iterStep <- NULL
   itersToDo <- seq(control$itermax)
   if (is.null(dots$rep)) {
     dots$rep <- runName
@@ -158,7 +162,11 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
         useCache = getOption("clusters.cacheDEoptimIterations", TRUE),
         verbose = .verbose
       )
-      if (!reproducible::isUpdated(DE[[iter]]))
+      ## Was this generation computed in this session, or replayed from the cache? isUpdated() alone
+      ## cannot tell when the per-generation cache is off: it is FALSE for a skipped Cache() too.
+      computedNow <- !isTRUE(getOption("clusters.cacheDEoptimIterations", TRUE)) ||
+        reproducible::isUpdated(DE[[iter]])
+      if (!computedNow)
         message(paste(round(unname(DE[[iter]]$optim$bestmem), 4), collapse = " "))
       message(cli::col_green("Iteration ", iter, " done!"))
     } else {
@@ -245,7 +253,16 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
 
       }
     }
-    if (!isFALSE(figurePath) && (isUpdated(DE[[iter]]))) { # i.e., should be a path
+    # Break out if the last N segments are "non-significant slope at p == 0.1 i.e., conservative
+    converged <- all(tail(pvals, 2) > 0.1) && length(DE) > 349
+    ## Plot generations computed in this session, not ones replayed from the cache, every `plotEvery`
+    ## generations and at the last one. Plotting used to require reproducible::isUpdated(), which is
+    ## FALSE whenever nested Cache() is skipped (spades.useCache = "eventsOnly"), so no progress plots
+    ## were made at all (FireSense phase 2, 2026-09-15; the 2026-09-08 fits still had them).
+    isLastIter <- converged || iter == max(itersToDo)
+    if (!isFALSE(figurePath) && computedNow && (iter %% plotEvery == 0L || isLastIter)) { # i.e., should be a path
+      message(cli::col_green("Plotting DEoptim progress at iteration ", iter, " (every ", plotEvery,
+                             " iterations) to ", figurePath))
       if (!is.null(dots$formulaToFit))
         terms <- suppressMessages(termsInDEoptim(dots$formulaToFit, dots$thresh, length(lower)))
       else

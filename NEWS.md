@@ -1,3 +1,14 @@
+# clusters 0.0.42
+
+## Bug fixes
+
+* `DEoptimIterative2()` sets DEoptim's `c` to 0, with a message, when `iterStep` is more than 1. DEoptim
+  (2.2.8, `src/de4_0.c`) adapts F with `meanF = (1 - c) * meanF + c * goodF2 / goodF`, where `goodF` only grows on a
+  successful trial and is not reset within a call. When a call's first generation has no successful trial, `goodF`
+  is 0 and `meanF` is NaN from then on, so every later trial vector is NaN. A FireSense fit with `iterStep = 5` and
+  `c = 0.1` failed on all 110 workers at generation ~141 (2026-09-15). With one generation per call, the caller's
+  `c` stands.
+
 # clusters 0.0.41
 
 ## Changes

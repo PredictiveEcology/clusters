@@ -1,16 +1,17 @@
 
 
 ## A per-process record of objective-function evaluations. DEoptim() returns the final population
-## but not its objective values, so each new evaluation is recorded where it runs (this process,
-## or a PSOCK worker) and gathered after every one-generation chunk.
+## but not its objective values, so each new evaluation -- its value and how long it took -- is
+## recorded where it runs (this process, or a PSOCK worker) and gathered after every chunk.
 .deoptimRecord <- new.env(parent = emptyenv())
 
 .parKey <- function(par) paste(sprintf("%a", as.numeric(par)), collapse = ",")
 
 .deoptimRecordTake <- function() {
-  out <- list(keys = .deoptimRecord$keys, vals = .deoptimRecord$vals)
+  out <- list(keys = .deoptimRecord$keys, vals = .deoptimRecord$vals, secs = .deoptimRecord$secs)
   .deoptimRecord$keys <- NULL
   .deoptimRecord$vals <- NULL
+  .deoptimRecord$secs <- NULL
   out
 }
 
@@ -19,29 +20,33 @@
   recs <- list(.deoptimRecordTake())
   if (!is.null(cl))
     recs <- c(recs, parallel::clusterCall(cl, .deoptimRecordTake))
-  list(keys = unlist(lapply(recs, `[[`, "keys")), vals = unlist(lapply(recs, `[[`, "vals")))
+  list(keys = unlist(lapply(recs, `[[`, "keys")), vals = unlist(lapply(recs, `[[`, "vals")),
+       secs = unlist(lapply(recs, `[[`, "secs")))
 }
 
 ## `fn`, except that a parameter set whose value is already known returns that value instead of
-## being evaluated again, and every new evaluation is recorded. Built in its own small frame, not
-## in the caller's, because DEoptim sends this closure to the workers in every generation.
+## being evaluated again, and every new evaluation is recorded with its elapsed seconds. Built in its
+## own small frame, not in the caller's, because DEoptim sends this closure to the workers.
 .memoObjFun <- function(fn, knownKeys, knownVals) {
   force(fn); force(knownKeys); force(knownVals)
   function(par, ...) {
     key <- .parKey(par)
     hit <- match(key, knownKeys)
     if (!is.na(hit)) return(knownVals[[hit]])
+    started <- proc.time()[["elapsed"]]
     val <- fn(par, ...)
+    .deoptimRecord$secs <- c(.deoptimRecord$secs, proc.time()[["elapsed"]] - started)
     .deoptimRecord$keys <- c(.deoptimRecord$keys, key)
     .deoptimRecord$vals <- c(.deoptimRecord$vals, val)
     val
   }
 }
 
-## One DEoptim generation from `control$initialpop` that costs only the new trial evaluations:
-## DEoptim evaluates its initial population first, and the carried population's values (`known`)
-## come from the lookup instead. The final population's values are returned as `member$popval`,
-## which seeds the next chunk, also when this chunk is loaded from the cache.
+## `control$itermax` DEoptim generations from `control$initialpop` that cost only the new trial
+## evaluations: DEoptim evaluates its initial population first, and the carried population's values
+## (`known`) come from the lookup instead. The final population's values are returned as
+## `member$popval`, which seeds the next chunk, also when this chunk is loaded from the cache; every
+## new evaluation's seconds and value as `member$evaluations`.
 .DEoptimChunk <- function(fn, lower, upper, control, known, dotsList) {
   cl <- control$cluster
   invisible(.deoptimRecordTakeAll(cl))   # nothing left over from an interrupted chunk
@@ -52,7 +57,17 @@
   keys <- c(known$keys, recs$keys)
   vals <- c(known$vals, recs$vals)
   out$member$popval <- unname(vals[match(apply(out$member$pop, 1, .parKey), keys)])
+  out$member$evaluations <- data.frame(seconds = as.numeric(recs$secs), value = as.numeric(recs$vals))
   out
+}
+
+## One line for a chunk's evaluation times, e.g. "880 evaluations: 1.2 / 3.4 / 9.8 / 25.1 s (min / median /
+## 90% / max); 11.2 s per generation".
+.evaluationTimes <- function(evaluations, generations, wallSeconds) {
+  s <- evaluations$seconds
+  q <- if (length(s)) round(stats::quantile(s, c(0, 0.5, 0.9, 1), names = FALSE), 1) else rep(NA, 4)
+  paste0(length(s), " evaluations: ", paste(q, collapse = " / "), " s (min / median / 90% / max); ",
+         round(wallSeconds / max(1, generations), 1), " s per generation")
 }
 
 ## NP for a cluster of `nWorkers`. DEoptim evaluates the population one member per worker, so a
@@ -96,11 +111,16 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
     stop("DEoptim progress plots use SpaDES.core::Plots(); install SpaDES.core or use figurePath = FALSE")
   dots <- list(...)
   objFunArgs <- list(...)
-  ## `iterStep` is the plotting interval (fireSenseUtils::runDEoptim documents it as making the plots
-  ## at each iterStep), not an objective-function argument: it used to be passed on to `fn`.
-  plotEvery <- if (is.null(dots$iterStep)) 1L else max(1L, as.integer(dots$iterStep))
+  ## `iterStep` generations run in each DEoptim call, as fireSenseUtils::runDEoptim documents; each call
+  ## is one cached chunk, plotted when it finishes. DEoptim adapts CR and F (when c > 0) only within a
+  ## call -- it resets them at the start of every call -- so a longer step keeps more of that
+  ## adaptation, and a shorter one loses less work to an outage. It is not an objective-function argument.
+  iterStep <- if (is.null(dots$iterStep)) 1L else max(1L, as.integer(dots$iterStep))
   objFunArgs$iterStep <- NULL
-  itersToDo <- seq(control$itermax)
+  ## integers whatever type itermax has: the chunk length is in the cache key, and 2 and 2L digest differently
+  chunkEnds <- as.integer(unique(pmin(seq_len(ceiling(control$itermax / iterStep)) * iterStep, control$itermax)))
+  chunkLengths <- diff(c(0L, chunkEnds))
+  itersToDo <- seq_along(chunkEnds)
   if (is.null(dots$rep)) {
     dots$rep <- runName
   }
@@ -115,7 +135,6 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
             parallelArgs = NULL)
 
   control <- modifyList(a, as.list(control))
-  control$itermax <- 1L
 
   opts <- options("reproducible.showSimilar" = FALSE)
   on.exit(options(opts), add = TRUE)
@@ -136,7 +155,12 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
 
   for (iter in itersToDo) {
 
+    control$itermax <- chunkLengths[iter]
+    ## no intermediate populations: nothing here uses them, and DEoptim fails indexing them
+    ## ("attempt to select less than one element") when storepopfrom is inside a short chunk
+    control$storepopfrom <- control$itermax + 1L
     controlForCache <- controlForCache(control)
+    chunkStarted <- proc.time()[["elapsed"]]
 
     if (FALSE) { # for interactive use
       fn(apply(cbind(lower, upper), 1, mean),
@@ -155,9 +179,10 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
         control = control,
         known = known,
         dotsList = objFunArgs,
-        ## fn and its arguments are in fixedDigest; initialpop, NP and strategy in controlForCache
+        ## fn and its arguments are in fixedDigest; initialpop, NP and strategy in controlForCache;
+        ## the chunk's length is not in controlForCache, and chunks of different lengths differ
         omitArgs = c("fn", "control", "known", "dotsList"),
-        .cacheExtra = list(controlForCache, fixedDigest, iter),
+        .cacheExtra = list(controlForCache, fixedDigest, iter, chunkLengths[iter]),
         cacheId = cacheIds[[iter]],
         .functionName = paste0("DEoptimForCache_", runName, "_", iter),
         ## Every generation is cached even when nested caching is turned off (as
@@ -171,7 +196,12 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
         reproducible::isUpdated(DE[[iter]])
       if (!computedNow)
         message(paste(round(unname(DE[[iter]]$optim$bestmem), 4), collapse = " "))
-      message(cli::col_green("Iteration ", iter, " done!"))
+      firstGeneration <- chunkEnds[iter] - chunkLengths[iter] + 1L
+      message(cli::col_green(if (chunkLengths[iter] == 1L) paste0("Iteration ", chunkEnds[iter], " done!")
+                             else paste0("Iterations ", firstGeneration, "-", chunkEnds[iter], " done!")))
+      if (computedNow && !is.null(DE[[iter]]$member$evaluations))
+        message(.evaluationTimes(DE[[iter]]$member$evaluations, chunkLengths[iter],
+                                 proc.time()[["elapsed"]] - chunkStarted))
     } else {
       # This is for testing --> it is fast
       # fn <- function(par, x) {
@@ -204,7 +234,11 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
     # if (Require:::isRstudio()) if (iter > 200) browser()
     rng <- 25; # how often to do this: i.e., num new iterations per fit, i.e., 1:100, 26:125
     dataRunToUse <- 200 # this will do the lm on this many items
-    numSegments <- (length(DE) - dataRunToUse) / rng + 1# (length(DE) - dataRunToUse + 1) / rng
+    ## generations so far, over chunks of any length
+    bestvalitAll <- unlist(lapply(DE, function(x) x$member$bestvalit))
+    nGenerations <- length(bestvalitAll)
+    numSegments <- (nGenerations - dataRunToUse) / rng + 1
+    numSegmentsBefore <- (nGenerations - chunkLengths[iter] - dataRunToUse) / rng + 1
     pvals <- c(0,0)
 
 
@@ -213,7 +247,7 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
     gg1 <- ggPlotFnSimple(dfForGGplotSimple)
 
     if (numSegments > 1) {
-      isNewSegment <- numSegments %% 1 == 0
+      isNewSegment <- floor(numSegments) > floor(numSegmentsBefore)   # a segment ended in this chunk
       if (isNewSegment) {
         pvals <- numeric(floor(numSegments))
         iters <- list()
@@ -221,7 +255,7 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
         # l <- list()
         segmentSeq <- seq_len(floor(numSegments))
         # if (!exists("dfForGGplotSimple", inherits = FALSE))
-        DEoutBestValit <- sapply(DE, function(x) x$member$bestvalit)
+        DEoutBestValit <- bestvalitAll
         if (!all(is.infinite(DEoutBestValit))) {
 
           for (i in segmentSeq) {
@@ -230,7 +264,7 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
             if (i == tail(segmentSeq, 1)[1]) col <- "red"
             iters[[i]] <- seq_len(dataRunToUse) + (i-1) * rng;
             # message(cli::col_yellow(paste(range(iters), collapse = ":")));
-            a <- data.table(iter = seq_along(DE), val = DEoutBestValit)
+            a <- data.table(iter = seq_len(nGenerations), val = DEoutBestValit)
             lmOut <- try(lm(val ~ iter, data = a[iters[[i]]]))
             if (!is(lmOut, "try-error")) {
               # next
@@ -257,14 +291,13 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
       }
     }
     # Break out if the last N segments are "non-significant slope at p == 0.1 i.e., conservative
-    converged <- all(tail(pvals, 2) > 0.1) && length(DE) > 349
-    ## Plot generations computed in this session, not ones replayed from the cache, every `plotEvery`
-    ## generations and at the last one. Plotting used to require reproducible::isUpdated(), which is
+    converged <- all(tail(pvals, 2) > 0.1) && nGenerations > 349
+    ## Plot chunks computed in this session, not ones replayed from the cache, when each chunk (`iterStep`
+    ## generations) finishes. Plotting used to require reproducible::isUpdated(), which is
     ## FALSE whenever nested Cache() is skipped (spades.useCache = "eventsOnly"), so no progress plots
     ## were made at all (FireSense phase 2, 2026-09-15; the 2026-09-08 fits still had them).
-    isLastIter <- converged || iter == max(itersToDo)
-    if (!isFALSE(figurePath) && computedNow && (iter %% plotEvery == 0L || isLastIter)) { # i.e., should be a path
-      message(cli::col_green("Plotting DEoptim progress at iteration ", iter, " (every ", plotEvery,
+    if (!isFALSE(figurePath) && computedNow) { # i.e., should be a path
+      message(cli::col_green("Plotting DEoptim progress at iteration ", chunkEnds[iter], " (every ", iterStep,
                              " iterations) to ", figurePath))
       if (!is.null(dots$formulaToFit))
         terms <- suppressMessages(termsInDEoptim(dots$formulaToFit, dots$thresh, length(lower)))
@@ -292,7 +325,7 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
               filename = ggDEoptimFilename(figurePath, dots$rep, subfolder = "", text = texts[5]))
         SpaDES.core::Plots(visualizeDE(DE = DE[[iter]], cachePath = cachePath,
               titles = terms, lower = lower, upper = upper), types = .plots,
-              filename = ggDEoptimFilename(figurePath, rep = dots$rep, subfolder = "", iter = iter, text = texts[6], time = TRUE))
+              filename = ggDEoptimFilename(figurePath, rep = dots$rep, subfolder = "", iter = chunkEnds[iter], text = texts[6], time = TRUE))
       }, message = function(m) {
         if (any(grepl("geom_smooth|Saving", m$message)))
           invokeRestart("muffleMessage")
@@ -308,7 +341,7 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
 
 
     # Break out if the last N segments are "non-significant slope at p == 0.1 i.e., conservative
-    if (all(tail(pvals, 2) > 0.1) && length(DE) > 349) {
+    if (converged) {
       break
     }
   }
@@ -481,16 +514,18 @@ termsInDEoptim <- function(fireSense_spreadFormula, thresh, numParams) {
 DEoptimToDataFrame <- function(d, item = "bestvalit") {
   b <- lapply(d, function(dr) as.data.frame(dr$member[[item]]) |> setNames("bestValue"))
   b <- rbindlist(b, idcol = "iter")
+  b[, iter := seq_len(.N)]   # one value per generation, over chunks of any length
   b
 }
 
 visualizeDEoptimLines <- function(d, terms, allPoints = FALSE) {
-  iter <- length(d)
-  se <- seq(iter)
+  ## the generation at the end of each chunk (1, 2, 3, ... when each chunk is one generation)
+  se <- cumsum(vapply(d, function(dr) length(dr$member$bestvalit), integer(1)))
   # this commented code will use "all the population
   if (isTRUE(allPoints)) {
     b <- lapply(d, function(dr) as.data.frame(dr$member$pop))
-    b <- rbindlist(b, idcol = "iter")#
+    b <- rbindlist(b, idcol = "iter")
+    b[, iter := se[iter]]
     setnames(b, old = grep("^V", colnames(b), value = TRUE),  terms)
 
   } else {

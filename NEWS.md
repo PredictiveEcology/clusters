@@ -1,3 +1,18 @@
+# clusters 0.0.41
+
+## Changes
+
+* `DEoptimIterative2()` runs `iterStep` generations in each DEoptim call, as
+  `fireSenseUtils::runDEoptim()` documents; it always ran one. Each call is one cached chunk and is
+  plotted when it finishes, so `iterStep` is both the restart unit and the plotting interval.
+  DEoptim adapts CR and F (when `c > 0`) only within a call -- it resets them at the start of every
+  call -- so one generation per call discarded that adaptation. Without `iterStep`, one generation
+  per call, as before. The chunk length is part of each chunk's cache key.
+* Every new objective-function evaluation's elapsed seconds are recorded where it runs and returned
+  with its value as `member$evaluations` of each chunk; a message per chunk reports the minimum,
+  median, 90th percentile and maximum, and the wall time per generation. The slowest evaluations set
+  the time of a generation, so these show how much a long-tail cutoff could save.
+
 # clusters 0.0.40
 
 ## Bug fixes

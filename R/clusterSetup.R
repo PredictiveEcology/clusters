@@ -285,13 +285,13 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
     stMoveObjects <- try({
       system.time({
         objsToCopy <- mget(unlist(objsNeeded), envir = envir)
-        FileBackendsToCopy <- Filenames(objsToCopy)
+        FileBackendsToCopy <- reproducible::Filenames(objsToCopy)
         hasFilename <- nzchar(FileBackendsToCopy)
         if (any(hasFilename)) {
           objsToMem <- names(FileBackendsToCopy)[hasFilename]
           objsToCopy[objsToMem] <-
             lapply(objsToCopy[objsToMem],
-                   function(x) toMemory(x))
+                   function(x) terra::toMemory(x))
         }
         objsToCopy <- reproducible::.wrap(objsToCopy)
         filenameForTransfer <- normalizePath(tempfile(fileext = ".qs2"), mustWork = FALSE, winslash = "/")
@@ -340,8 +340,8 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
     
     if (is(stMoveObjects, "try-error")) {
       message("The attempt to move objects to cluster using rsync and qs2 failed; trying clusterExport")
-      stMoveObjects <- system.time(parallel::clusterExport(clThird, objsNeeded, envir = environment()))
-      list2env(mget(unlist(objsNeeded), envir = environment()), envir = .GlobalEnv)
+      stMoveObjects <- system.time(parallel::clusterExport(clThird, objsNeeded, envir = envir))
+      list2env(mget(unlist(objsNeeded), envir = envir), envir = .GlobalEnv)
     }
     message("it took ", round(stMoveObjects[3], 2), "s to move objects to nodes")
     control$cluster <- clThird

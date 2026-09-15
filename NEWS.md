@@ -1,3 +1,20 @@
+# clusters 0.0.37
+
+## Bug fixes
+
+* `mirrorTerraOptions()`, and so `clusterSetup()`, no longer sends the cluster object to every
+  worker. The function it sent was made inside it and carried `cl`, and parallelly stores each
+  node's call stack (`sys.calls()`), which holds any data passed through `do.call()`. A FireSense
+  fit started with `do.call(runDEoptim, args)` sent 9.6 GB to each of its 110 workers, one worker at
+  a time, and stalled for hours before any objects were moved; SpaDES-run fits spent about 4.5
+  minutes there (2026-09-14). Workers that received it held about 11 GB each. The function now
+  has the global environment, as the probes in `monitorCluster()` already do.
+* `clusterSetup()` moves the caller's objects to the workers when reproducible is not attached. It
+  called `Filenames()` and `toMemory()` without their packages, which clusters does not import, and
+  its fallback then looked for the objects in its own frame instead of `envir`, so it failed too
+  ("object 'x1' not found"). SpaDES attaches reproducible, which hid both; a DEoptim fit run from a
+  plain script stopped there (FireSense, 2026-09-15).
+
 # clusters 0.0.35
 
 ## Changes

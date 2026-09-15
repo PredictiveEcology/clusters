@@ -39,6 +39,12 @@
   2026-09-15). A test now checks every function in the package with codetools. `DEoptimIterative2()`
   stops at the start, not at the first plot, when plots are requested and SpaDES.core (now in
   Suggests) is not installed.
+* `plan_psock_min()` (and so `clusterSetup()`) starts this R's Rscript when every host is this machine.
+  It started workers with a bare `Rscript`, which is whatever comes first on PATH: under
+  `R CMD check --as-cran` a stub that only prints "'Rscript' should not be used without a path" and exits,
+  so no worker started and the build waited for them indefinitely (this PR's Ubuntu checks); elsewhere
+  possibly a different R from the master's. Clusters with remote hosts still use `Rscript` from each
+  host's PATH.
 
 # clusters 0.0.39
 

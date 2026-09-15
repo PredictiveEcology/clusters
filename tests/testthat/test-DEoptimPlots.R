@@ -9,6 +9,8 @@
 ## visible).
 
 skip_if_not_installed("DEoptim")
+## the progress plots are SpaDES.core::Plots(), a suggested package
+skip_if_not_installed("SpaDES.core")
 
 lower <- c(a = 0, b = 0, c = 0)
 upper <- c(a = 1, b = 1, c = 1)

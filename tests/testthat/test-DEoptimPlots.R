@@ -20,12 +20,10 @@ runPlotted <- function(itermax, cachePath, iterStep, plotted, cacheIterations = 
   withr::local_options(reproducible.cachePath = cachePath,
                        reproducible.useCache = FALSE,       # what spades.useCache = "eventsOnly" does
                        clusters.cacheDEoptimIterations = cacheIterations)
-  ## Plots() is not a clusters function: in a fit it is SpaDES.core's, found on the search path. Put a
-  ## recording stand-in on the search path the same way, and remove it afterwards.
-  hadPlots <- exists("Plots", envir = globalenv(), inherits = FALSE)
-  oldPlots <- if (hadPlots) get("Plots", envir = globalenv()) else NULL
-  assign("Plots", function(...) { plotted$calls <- plotted$calls + 1L; invisible(NULL) }, envir = globalenv())
-  withr::defer(if (hadPlots) assign("Plots", oldPlots, envir = globalenv()) else rm("Plots", envir = globalenv()))
+  ## Plots() is SpaDES.core's; record the calls instead of drawing.
+  testthat::local_mocked_bindings(
+    Plots = function(...) { plotted$calls <- plotted$calls + 1L; invisible(NULL) },
+    .package = "SpaDES.core")
   testthat::local_mocked_bindings(
     visualizeDEoptimLines = function(...) NULL,
     visualizeDE = function(...) NULL,

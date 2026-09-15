@@ -407,7 +407,7 @@ plan_psock_min <- function(
   
   if (haveDifferentRversions) {
     dtForCores <- data.table(machine = names(rversion), Rversion = rversion)
-    messageDF(dtForCores)
+    reproducible::messageDF(dtForCores)
     stop("Please make all machines have the same R version")
   }
   

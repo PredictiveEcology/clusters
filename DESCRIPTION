@@ -32,11 +32,13 @@ Imports:
     tools,
     utils
 Suggests:
+    codetools,
     ggpubr,
     knitr,
     roxygen2,
     rmarkdown,
     sf,
+    SpaDES.core,
     terra,
     testthat,
     withr

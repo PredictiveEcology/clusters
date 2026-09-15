@@ -17,6 +17,13 @@
 * `clusterSetup()` runs on a machine without `~/.ssh/config`. It reads that file to rename this
   machine's ssh alias to `localhost`, and stopped with "cannot open the connection" when it was
   missing.
+* clusters works when SpaDES has not attached its dependencies. Several functions were called
+  neither imported nor as `pkg::fun()`: data.table's `:=`, `set()`, `melt()` and `setnames()`,
+  `messageDF()`, `modifyList2()`, `paddedFloatToChar()` and SpaDES.core's `Plots()`. A DEoptim fit run
+  from a plain script died plotting its progress with "could not find function setnames" (FireSense,
+  2026-09-15). A test now checks every function in the package with codetools. `DEoptimIterative2()`
+  stops at the start, not at the first plot, when plots are requested and SpaDES.core (now in
+  Suggests) is not installed.
 
 # clusters 0.0.36
 

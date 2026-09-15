@@ -91,6 +91,9 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
                               # doObjFunAssertions, Nreps, objFunCoresInternal, thresh, rep,
                               .plots, figurePath, cachePath, runName = 1, .verbose = TRUE) {
   DE <- list()
+  ## progress plots are drawn with SpaDES.core::Plots(): say so now, not after the first generations
+  if (!isFALSE(figurePath) && !requireNamespace("SpaDES.core", quietly = TRUE))
+    stop("DEoptim progress plots use SpaDES.core::Plots(); install SpaDES.core or use figurePath = FALSE")
   dots <- list(...)
   objFunArgs <- list(...)
   ## `iterStep` is the plotting interval (fireSenseUtils::runDEoptim documents it as making the plots
@@ -277,17 +280,17 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
 
       texts <- c("objFun/", "lines_mean_AllPoints/", "lines_mean/", "lines_dif/", "lines_variance/", "hists/")
       withCallingHandlers({
-        Plots(gg1, types = .plots,
+        SpaDES.core::Plots(gg1, types = .plots,
               filename = ggDEoptimFilename(figurePath, dots$rep, subfolder = "", text = texts[1]))
-        Plots(dfForGGplotAllPoints, ggPlotFnMeansAllPoints, types = .plots,
+        SpaDES.core::Plots(dfForGGplotAllPoints, ggPlotFnMeansAllPoints, types = .plots,
               filename = ggDEoptimFilename(figurePath, dots$rep, subfolder = "", text = texts[2]));
-        Plots(dfForGGplot, ggPlotFnMeans, types = .plots,
+        SpaDES.core::Plots(dfForGGplot, ggPlotFnMeans, types = .plots,
               filename = ggDEoptimFilename(figurePath, dots$rep, subfolder = "", text = texts[3]))
-        Plots(dfForGGplot, ggPlotFnDif, types = .plots, ,
+        SpaDES.core::Plots(dfForGGplot, ggPlotFnDif, types = .plots, ,
               filename = ggDEoptimFilename(figurePath, dots$rep, subfolder = "", text = texts[4]))
-        Plots(dfForGGplot, ggPlotFnVars, types = .plots, ,
+        SpaDES.core::Plots(dfForGGplot, ggPlotFnVars, types = .plots, ,
               filename = ggDEoptimFilename(figurePath, dots$rep, subfolder = "", text = texts[5]))
-        Plots(visualizeDE(DE = DE[[iter]], cachePath = cachePath,
+        SpaDES.core::Plots(visualizeDE(DE = DE[[iter]], cachePath = cachePath,
               titles = terms, lower = lower, upper = upper), types = .plots,
               filename = ggDEoptimFilename(figurePath, rep = dots$rep, subfolder = "", iter = iter, text = texts[6], time = TRUE))
       }, message = function(m) {
@@ -318,7 +321,7 @@ controlSet <- function(control, ...) {
     control <- do.call("DEoptim.control", control)
   missingElements <- ...names() %in% names(control)
   if (any(missingElements)) {
-    control <- modifyList2(control, list(...))
+    control <- Require::modifyList2(control, list(...))
 
     # control$itermax <- pmin(iterStep, itermax - iterStep * (iter - 1))
     # control$storepopfrom <- control$itermax + 1
@@ -392,7 +395,7 @@ ggPlotFnMeansAllPoints <- function(b) {
 ggDEoptimFilename <- function(visualizeDEoptim, rep, iter = NULL, subfolder = "fireSense_SpreadFit",
                               text = "DE_hists_", time = FALSE) {
   if (is.numeric(rep))
-    rep <- paddedFloatToChar(rep, padL = 3)
+    rep <- reproducible::paddedFloatToChar(rep, padL = 3)
   file.path(visualizeDEoptim,
             subfolder,
             paste0(text, rep,
@@ -412,7 +415,7 @@ ggDEoptimFilename <- function(visualizeDEoptim, rep, iter = NULL, subfolder = "f
 #' @param lower Named numeric of lower bounds, used to fix each panel's x range.
 #' @param upper Named numeric of upper bounds, used to fix each panel's x range.
 #' @export
-#' @importFrom data.table as.data.table
+#' @importFrom data.table := as.data.table melt set setnames
 #' @importFrom graphics hist par
 #' @importFrom reproducible loadFromCache showCache
 #' @importFrom utils tail

@@ -17,7 +17,8 @@ clusterSetup(
   objsNeeded,
   pkgsNeeded,
   nCoresNeeded = 100,
-  envir = parent.frame()
+  envir = parent.frame(),
+  controlArgs = list()
 )
 }
 \arguments{
@@ -46,6 +47,11 @@ clusterSetup(
 \item{nCoresNeeded}{Integer; how many workers to aim for across all hosts.}
 
 \item{envir}{Environment holding \code{objsNeeded}; defaults to the caller's.}
+
+\item{controlArgs}{Named list of further \code{\link[DEoptim:DEoptim.control]{DEoptim::DEoptim.control()}} settings (for example
+\code{CR}, \code{F}, \code{c}, \code{p}, \code{reltol}), added to the returned control so they reach DEoptim. A name
+\code{DEoptim.control()} does not have is an error. \code{NP} is still the number of workers built, and
+\code{cluster} and \code{parallelType} are set here.}
 }
 \value{
 A list of items that can be passed to \code{DEoptim.control()}

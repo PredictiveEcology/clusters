@@ -16,6 +16,10 @@
 #' @param pkgsNeeded Character vector of packages the workers must be able to load. Hosts that cannot are reported by [verifyClusterHosts()].
 #' @param nCoresNeeded Integer; how many workers to aim for across all hosts.
 #' @param envir Environment holding `objsNeeded`; defaults to the caller's.
+#' @param controlArgs Named list of further [DEoptim::DEoptim.control()] settings (for example
+#'   `CR`, `F`, `c`, `p`, `reltol`), added to the returned control so they reach DEoptim. A name
+#'   `DEoptim.control()` does not have is an error. `NP` is still the number of workers built, and
+#'   `cluster` and `parallelType` are set here.
 #' @export
 #' @returns A list of items that can be passed to `DEoptim.control()`
 #'
@@ -23,7 +27,8 @@
 clusterSetup <- function(messagePrefix = "DEoptim_",
                          itermax = 500, trace = TRUE, strategy = 3, initialpop = NULL, NP = NULL,
                          cores, logPath, libPath, objsNeeded, pkgsNeeded,
-                         nCoresNeeded = 100, envir = parent.frame()) {
+                         nCoresNeeded = 100, envir = parent.frame(), controlArgs = list()) {
+  controlArgs <- .deoptimControlArgs(controlArgs)
 
   # if (!all(requireNamespace("qs2") && requireNamespace("reproducible") && requireNamespace("Require")))
   #   stop("Please install missing packages")
@@ -136,11 +141,15 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
     }
   }
   control <- list(itermax = itermax, trace = trace, strategy = strategy)
-  
+
   if (!is.null(initialpop)) {
     control$initialpop <- initialpop
   }
-  
+
+  ## Every further DEoptim setting the caller gave (CR, F, c, p, reltol, ...) goes to DEoptim.
+  if (is.null(NP)) NP <- controlArgs$NP
+  control <- utils::modifyList(control, controlArgs[setdiff(names(controlArgs), "NP")])
+
   ## NP is exactly the number of workers: DEoptim evaluates one population member per worker.
   control$NP <- .clusterNP(NP, nWorkers = if (is.null(cores)) 0L else length(cores))
   

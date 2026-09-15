@@ -5,6 +5,10 @@
 * `DEoptimIterative2()` respects the caller's DEoptim settings. It merged its own defaults over
   them, so `NP` was always 10 x the number of parameters and `strategy` always 3, whatever the
   caller or the cluster said. The defaults now only fill what the caller did not set.
+* `clusterSetup()` passes any further DEoptim settings through to DEoptim: its new `controlArgs`
+  (for example `list(CR = 0.7, F = 0.6, c = 0.9)`) goes into the returned control. It built the
+  control from `itermax`, `trace`, `strategy`, `initialpop` and `NP` only, so settings such as `c`
+  never reached DEoptim. A name `DEoptim.control()` does not know is an error.
 * `clusterSetup()` sets `NP` to exactly the number of workers in the cluster it built (a message
   says so when a different `NP` was requested), and stops with a clear message when fewer than 4
   workers are available, the minimum DEoptim accepts.

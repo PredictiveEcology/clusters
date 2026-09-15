@@ -69,6 +69,23 @@
   nWorkers
 }
 
+## DEoptim settings a caller passes through clusterSetup(). Every name must be a DEoptim.control()
+## argument: a misspelt setting silently falling back to a default is how `.c` went unused.
+## `cluster` and `parallelType` are this package's to set.
+.deoptimControlArgs <- function(controlArgs) {
+  if (is.null(controlArgs) || !length(controlArgs)) return(list())
+  controlArgs <- as.list(controlArgs)
+  nms <- names(controlArgs)
+  if (is.null(nms) || any(!nzchar(nms)))
+    stop("controlArgs must be a named list of DEoptim.control() settings", call. = FALSE)
+  known <- setdiff(names(formals(DEoptim::DEoptim.control)), c("cluster", "parallelType"))
+  bad <- setdiff(nms, known)
+  if (length(bad))
+    stop("Not DEoptim.control() settings: ", paste(bad, collapse = ", "),
+         ". Valid names: ", paste(known, collapse = ", "), call. = FALSE)
+  controlArgs
+}
+
 DEoptimIterative2 <- function(fn, lower, upper, control, ...,
                               # formulaToFit, covMinMax, tests, maxFireSpread, mutuallyExclusive,
                               # doObjFunAssertions, Nreps, objFunCoresInternal, thresh, rep,

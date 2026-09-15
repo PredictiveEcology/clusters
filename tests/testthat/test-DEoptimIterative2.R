@@ -78,6 +78,38 @@ test_that("a stopped run resumes from its cached generations without evaluating 
   expect_identical(longer[[3]]$member$pop, first[[3]]$member$pop)
 })
 
+test_that("DEoptim settings passed to clusterSetup() reach DEoptim", {
+  ## Eliot, 2026-09-15: "Any user passed args should pass into the DEoptim processes."
+  ## clusterSetup() built control from itermax, trace, strategy, initialpop and NP only, so a
+  ## caller's c, CR, F, p never reached DEoptim.
+  seen <- new.env()
+  realDEoptim <- DEoptim::DEoptim
+  testthat::local_mocked_bindings(
+    DEoptim = function(fn, lower, upper, control, ...) {
+      seen$control <- control
+      realDEoptim(fn, lower, upper, control, ...)
+    },
+    .package = "DEoptim")
+  args <- list(c = 0.9, CR = 0.7, F = 0.6, strategy = 6L, p = 0.3)
+  control <- suppressMessages(clusters::clusterSetup(
+    itermax = 2, trace = FALSE, NP = 8L, cores = NULL, logPath = withr::local_tempdir(),
+    objsNeeded = character(0), controlArgs = args))
+  fn <- function(par) sum((par - 0.3)^2)
+  withr::local_options(reproducible.cachePath = withr::local_tempdir(), reproducible.useCache = FALSE)
+  DE <- suppressWarnings(suppressMessages(clusters:::DEoptimIterative2(
+    fn, lower = lower, upper = upper, control = control,
+    figurePath = FALSE, .plots = NULL, runName = "ctl", .verbose = -1)))
+  for (nm in names(args)) expect_equal(seen$control[[nm]], args[[nm]], label = nm)
+  expect_identical(as.integer(seen$control$NP), 8L)
+})
+
+test_that("a DEoptim setting clusterSetup() does not know is an error, not silently dropped", {
+  expect_error(
+    clusters::clusterSetup(itermax = 2, cores = NULL, logPath = withr::local_tempdir(),
+                           objsNeeded = character(0), controlArgs = list(cc = 0.9)),
+    "Not DEoptim.control\\(\\) settings: cc")
+})
+
 test_that("NP is exactly the number of workers in the cluster", {
   expect_identical(clusters:::.clusterNP(NP = NULL, nWorkers = 57L), 57L)
   expect_message(np <- clusters:::.clusterNP(NP = 100L, nWorkers = 57L), "57")

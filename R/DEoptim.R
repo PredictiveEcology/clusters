@@ -112,9 +112,9 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
   dots <- list(...)
   objFunArgs <- list(...)
   ## `iterStep` generations run in each DEoptim call, as fireSenseUtils::runDEoptim documents; each call
-  ## is one cached chunk, plotted when it finishes. DEoptim adapts CR and F (when c > 0) only within a
-  ## call -- it resets them at the start of every call -- so a longer step keeps more of that
-  ## adaptation, and a shorter one loses less work to an outage. It is not an objective-function argument.
+  ## is one cached chunk, plotted when it finishes, and a shorter step loses less work to an outage. With
+  ## more than one generation per call, DEoptim's CR/F adaptation is turned off (c = 0; see below). It is not
+  ## an objective-function argument.
   iterStep <- if (is.null(dots$iterStep)) 1L else max(1L, as.integer(dots$iterStep))
   objFunArgs$iterStep <- NULL
   ## integers whatever type itermax has: the chunk length is in the cache key, and 2 and 2L digest differently
@@ -135,6 +135,16 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
             parallelArgs = NULL)
 
   control <- modifyList(a, as.list(control))
+
+  ## DEoptim (2.2.8, src/de4_0.c) adapts F with meanF = (1 - c) * meanF + c * goodF2 / goodF, and goodF only grows
+  ## on a successful trial and is not reset within a call: when a call's first generation has no successful trial,
+  ## meanF is NaN from then on and every later trial vector is NaN (a FireSense fit, iterStep 5, c = 0.1, failed on
+  ## all 110 workers at generation ~141, 2026-09-15). One generation per call never reaches the update.
+  if (iterStep > 1L && isTRUE(control$c > 0)) {
+    message("iterStep = ", iterStep, " runs several DEoptim generations per call, where DEoptim's CR/F adaptation ",
+            "can turn every trial vector into NaN; running with c = 0 instead of c = ", control$c)
+    control$c <- 0
+  }
 
   opts <- options("reproducible.showSimilar" = FALSE)
   on.exit(options(opts), add = TRUE)

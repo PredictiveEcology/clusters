@@ -77,7 +77,9 @@ test_that("itermax given as 4 or 4L finds the same cached chunks", {
 })
 
 test_that("every new evaluation's time is recorded, and each chunk reports the times", {
-  slowFn <- function(par) { Sys.sleep(0.01); sum((par - 0.3)^2) }
+  ## 50 ms each, checked against 30 ms: Windows' timer ticks about every 15 ms, and a 10 ms sleep there
+  ## was recorded as less than 9 ms (CI, R CMD check on windows-latest)
+  slowFn <- function(par) { Sys.sleep(0.05); sum((par - 0.3)^2) }
   out <- runChunked(itermax = 4, iterStep = 2, cachePath = withr::local_tempdir(), calls = newCalls(),
                     fn = slowFn)
   ev <- out$DE[[1]]$member$evaluations
@@ -86,7 +88,7 @@ test_that("every new evaluation's time is recorded, and each chunk reports the t
   ## chunk 1: the random initial population (8) and at most 8 trials in each of its 2 generations
   expect_gt(nrow(ev), 8L)
   expect_lte(nrow(ev), 8L + 2L * 8L)
-  expect_true(all(ev$seconds >= 0.009))
+  expect_true(all(ev$seconds >= 0.03))
   expect_true(all(is.finite(ev$value)))
   expect_lte(nrow(out$DE[[2]]$member$evaluations), 2L * 8L)   # later chunks: trials only
   expect_true(any(grepl("evaluations: .* s \\(min / median / 90% / max\\); .* s per generation",

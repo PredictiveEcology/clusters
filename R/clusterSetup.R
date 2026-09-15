@@ -588,11 +588,8 @@ makeClusterPSOCK <- function(
 ) {
   # workers <- rep("localhost", cores)
   if (is.null(port)) {
-    global_range <- 20000:40000
-    block_size <- 300
-    # Random block for this master
-    start <- sample(global_range, 1)
-    port <- seq(start, length.out = block_size)
+    # Random block for this master, ending below the ephemeral range (see .tunnelPortBlock)
+    port <- .tunnelPortBlock(workers)
   }
 
   if (!is.null(rscript) && identical(basename(rscript[1]), "env") && length(default_packages)) {

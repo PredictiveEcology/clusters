@@ -1,3 +1,16 @@
+# clusters 0.0.39
+
+## Bug fixes
+
+* `makeClusterPSOCK()` picks its port block below the ephemeral port range. parallelly gives each
+  worker's reverse tunnel the ports after the master's, and the block was drawn from 20000:40000, so
+  about a third of builds put tunnel ports at 32768 or above, where the kernel hands ports to outgoing
+  connections on every host (32768-60999). On 2026-09-15 a FireSense worker's own connection on camas had
+  been given the next tunnel's port: that tunnel could not bind, the worker could not reach the master
+  ("cannot open the connection"), and the 110-worker build hung at "Starting main parallel cluster".
+  The block, plus one port per worker, now ends below the start of this machine's ephemeral range
+  (32768 when it cannot be read).
+
 # clusters 0.0.36
 
 ## Bug fixes

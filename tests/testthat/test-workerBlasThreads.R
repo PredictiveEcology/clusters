@@ -35,6 +35,39 @@ test_that("plan_psock_min launches workers through the capped command", {
   expect_match(src, "rscript <- .workerRscript(rscript)", fixed = TRUE)
 })
 
+test_that("a prefixed worker command stays runnable under nice (clusters' makeClusterPSOCK renices)", {
+  ## 2026-09-15: the first real cluster built with the prefix failed on every host with
+  ##   nice: 'R_DEFAULT_PACKAGES=datasets,...': No such file or directory
+  ## parallelly sees `env`, not Rscript, as the program, so it passes the default packages as a
+  ## R_DEFAULT_PACKAGES= assignment in front of the command -- and renice puts `nice` in front of that.
+  ## a dry run prints the worker command (as a message) instead of starting the worker
+  msgs <- character()
+  out <- capture.output(withCallingHandlers(
+    clusters::makeClusterPSOCK("localhost", port = 11111L, dryrun = TRUE,
+                               rscript = clusters:::.workerRscript("Rscript", blasThreads = 1L)),
+    message = function(m) { msgs <<- c(msgs, conditionMessage(m)); invokeRestart("muffleMessage") }))
+  lines <- unlist(strsplit(c(out, msgs), "\n", fixed = TRUE))
+  cmd <- grep("OPENBLAS_NUM_THREADS", lines, value = TRUE)[1]
+  expect_length(cmd, 1L)
+  expect_match(cmd, "nice --adjustment=20 ", fixed = TRUE)   # the wrapper's renice is still applied
+  expect_false(grepl("nice --adjustment=[0-9]+ R_DEFAULT_PACKAGES=", cmd))
+  ## the default packages travel inside env's assignments instead
+  ## env's path is quoted differently by platform: '/usr/bin/env' on Unix, "C:\rtools45\usr\bin\env.exe" on Windows
+  expect_match(cmd, "env(\\.exe)?['\"]? OPENBLAS_NUM_THREADS=1 R_DEFAULT_PACKAGES=datasets,utils,grDevices,graphics,stats,methods")
+})
+
+test_that("a worker launched through clusters' makeClusterPSOCK starts, capped and with the default packages", {
+  skip_on_cran()
+  skip_on_os(c("windows", "mac"))
+  cl <- clusters::makeClusterPSOCK(
+    1L, rscript = clusters:::.workerRscript(file.path(R.home("bin"), "Rscript"), blasThreads = 1L),
+    autoStop = TRUE)
+  on.exit(parallel::stopCluster(cl), add = TRUE)
+  got <- parallel::clusterEvalQ(cl, list(env = Sys.getenv("OPENBLAS_NUM_THREADS"), search = search()))[[1]]
+  expect_identical(got$env, "1")
+  expect_true(all(paste0("package:", c("stats", "utils", "methods")) %in% got$search))
+})
+
 test_that("a worker started this way has one OpenBLAS thread", {
   skip_on_cran()
   skip_on_os(c("windows", "mac"))   # `env` and /proc/self/task are what this checks

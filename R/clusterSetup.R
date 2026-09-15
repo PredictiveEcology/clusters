@@ -560,6 +560,16 @@ numActiveThreads <- function (pattern = "", minCPU = 50) {
 #' @param ... Additional arguments passed to parallelly::makeClusterPSOCK.
 #'
 #' @param rshopts Character vector of options passed to `ssh`. The defaults disable X11 forwarding and fail fast when a tunnel cannot be established.
+#' @param rscript The command that starts a worker, passed to [parallelly::makeClusterPSOCK()]. It
+#'   is an argument here, not left to `...`: otherwise `rscript =` partially matched `rscript_libs`
+#'   and became the workers' library path whenever `rscript_libs` was not also given.
+#' @param default_packages Packages R attaches in each worker; the default is parallelly's.
+#' @details A worker command that starts with `env` (the OpenBLAS cap from [.workerRscript()], or an
+#'   `LD_LIBRARY_PATH` prefix) is not recognised by parallelly as Rscript, so parallelly passes the
+#'   default packages as an `R_DEFAULT_PACKAGES=` assignment in front of the command. With `renice`
+#'   that assignment ends up after `nice`, which then fails to run it ("nice:
+#'   'R_DEFAULT_PACKAGES=...': No such file or directory"). For such a command the default packages
+#'   are put among `env`'s own assignments instead.
 #' @export
 makeClusterPSOCK <- function(
     workers,
@@ -567,6 +577,8 @@ makeClusterPSOCK <- function(
     rscript_libs = .libPaths(),
     ...,
     # Hardcoded defaults LAST for easy override
+    rscript = NULL,
+    default_packages = c("datasets", "utils", "grDevices", "graphics", "stats", "methods"),
     port = NULL,
     rshopts = c("-T", "-o", "ConnectTimeout=10", "-o", "ForwardX11=no", "-o", "ExitOnForwardFailure=yes"),
     tries = 5L,
@@ -582,19 +594,29 @@ makeClusterPSOCK <- function(
     start <- sample(global_range, 1)
     port <- seq(start, length.out = block_size)
   }
-  
-  
+
+  if (!is.null(rscript) && identical(basename(rscript[1]), "env") && length(default_packages)) {
+    ## env's assignments come first, then the program; the default packages go with them.
+    isAssignment <- grepl("^[A-Za-z_][A-Za-z0-9_]*=", rscript)
+    lastAssignment <- max(c(1L, which(isAssignment)))
+    rscript <- append(rscript, paste0("R_DEFAULT_PACKAGES=", paste(unique(default_packages), collapse = ",")),
+                      after = lastAssignment)
+    default_packages <- NULL
+  }
+
   parallelly::makeClusterPSOCK(
-    workers        = workers,
-    port           = port,
-    outfile        = outfile,
-    rscript_libs   = rscript_libs,
+    workers          = workers,
+    port             = port,
+    outfile          = outfile,
+    rscript_libs     = rscript_libs,
+    rscript          = rscript,
+    default_packages = default_packages,
     ...,
-    rshopts        = rshopts,
-    tries          = tries,
-    delay          = delay,
-    renice         = renice,
-    revtunnel      = revtunnel
+    rshopts          = rshopts,
+    tries            = tries,
+    delay            = delay,
+    renice           = renice,
+    revtunnel        = revtunnel
   )
 }
 

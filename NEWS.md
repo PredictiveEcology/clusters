@@ -15,6 +15,20 @@
   ("object 'x1' not found"). SpaDES attaches reproducible, which hid both; a DEoptim fit run from a
   plain script stopped there (FireSense, 2026-09-15).
 
+# clusters 0.0.36
+
+## Bug fixes
+
+* Workers start again when their command is prefixed with `env`, as the OpenBLAS thread cap of
+  0.0.34 does. parallelly treats the first word of `rscript` as the program, so it passed the default
+  packages as an `R_DEFAULT_PACKAGES=` assignment in front of the command, and `makeClusterPSOCK()`'s
+  `renice = 20` then put `nice` in front of that. Every worker failed with
+  "nice: 'R_DEFAULT_PACKAGES=...': No such file or directory" (FireSense, 2026-09-15). The default
+  packages now go among `env`'s own assignments. The `LD_LIBRARY_PATH` prefix had the same problem.
+* `makeClusterPSOCK()` has an `rscript` argument. It was left to `...`, where `rscript =` partially
+  matched `rscript_libs` whenever `rscript_libs` was not also given, so the command became the
+  workers' library path and plain `Rscript` was launched.
+
 # clusters 0.0.35
 
 ## Changes

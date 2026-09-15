@@ -86,7 +86,9 @@ plan_psock_min <- function(
   master_libs <- if (is.null(libPath)) .libPaths() else libPath
   
   rscript_envs <- c(R_LIBS_USER = user_lib_template)
-  
+  # One OpenBLAS thread per worker; the cap must prefix the command (see ?.workerRscript).
+  rscript <- .workerRscript(rscript)
+
   # Single-line startup: set master libs + create per-user library, prepend it
   startup_lines <- c(
     sprintf('master_libs <- c(%s)', paste(sprintf('"%s"', master_libs), collapse = ", ")),

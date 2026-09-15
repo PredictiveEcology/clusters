@@ -24,3 +24,16 @@
     return(rscript)
   c("env", paste0("OPENBLAS_NUM_THREADS=", as.integer(blasThreads)), rscript)
 }
+
+## Workers that all run on this machine start this R's Rscript. A bare `Rscript` is whatever comes first on
+## PATH: under R CMD check --as-cran that is a stub that prints "'Rscript' should not be used without a path"
+## and exits, so no worker started and the build waited for them (clusters #12 CI, 2026-09-15); elsewhere it
+## can be a different R from the master's. A cluster with remote hosts keeps `Rscript`, found on each host's
+## PATH, because R is not installed in the same place everywhere (kodama runs the system R).
+.localRscript <- function(rscript, hosts) {
+  thisMachine <- c("localhost", "127.0.0.1", Sys.info()[["nodename"]])
+  if (identical(rscript, "Rscript") && length(hosts) && all(hosts %in% thisMachine))
+    file.path(R.home("bin"), "Rscript")
+  else
+    rscript
+}

@@ -113,9 +113,10 @@ test_that("an old reservation is not subtracted again once the load average carr
 test_that("a reservation is subtracted by the share of its load the average has not absorbed", {
   withLedger({
     reserveCores(data.frame(host = "a", assign = 8L))
-    ageLedger(5)
-    out <- freeCoresLessReserved(data.frame(host = "a", free_est = 10), loadWindowMinutes = 5)
-    ## a 5-min exponentially damped average shows 1 - exp(-1) of a new load after 5 min
+    ageLedger(7)
+    out <- freeCoresLessReserved(data.frame(host = "a", free_est = 10), loadWindowMinutes = 5,
+                                 graceMinutes = 2)
+    ## load starts after the 2-min grace; a 5-min damped average shows 1 - exp(-1) of it 5 min later
     expect_equal(out$free_est, 10 - 8 * exp(-1), tolerance = 0.01)
   })
 })
@@ -123,9 +124,22 @@ test_that("a reservation is subtracted by the share of its load the average has 
 test_that("a longer load window keeps subtracting a reservation for longer", {
   withLedger({
     reserveCores(data.frame(host = "a", assign = 8L))
-    ageLedger(5)
-    out15 <- freeCoresLessReserved(data.frame(host = "a", free_est = 10), loadWindowMinutes = 15)
+    ageLedger(7)
+    out15 <- freeCoresLessReserved(data.frame(host = "a", free_est = 10), loadWindowMinutes = 15,
+                                   graceMinutes = 2)
     expect_equal(out15$free_est, 10 - 8 * exp(-1 / 3), tolerance = 0.01)
+  })
+})
+
+test_that("a reservation counts in full during the grace period, however slow the machine", {
+  ## CI on Windows took 0.2 s between reserving and reading, and without a grace period the
+  ## decay had already started: free_est was 6.003 instead of 6.
+  withLedger({
+    reserveCores(data.frame(host = "a", assign = 4L))
+    ageLedger(1.5)
+    out <- freeCoresLessReserved(data.frame(host = "a", free_est = 10), loadWindowMinutes = 5,
+                                 graceMinutes = 2)
+    expect_identical(out$free_est, 6)
   })
 })
 

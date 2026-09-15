@@ -9,8 +9,9 @@
   started got a handful of workers while hosts sat idle (FireSense, 2026-09-15: 5, 2
   and 7 of 100). `freeCoresLessReserved()` now subtracts each reservation only by the
   share of its load the average has not yet absorbed,
-  `workers * exp(-age / loadWindowMinutes)`, so concurrent builds still cannot
-  double-book.
+  `workers * exp(-max(age - graceMinutes, 0) / loadWindowMinutes)`. A reservation counts
+  in full for its first `graceMinutes` (2), while the new cluster's workers are still
+  starting, so concurrent builds still cannot double-book.
 
 # clusters 0.0.31
 

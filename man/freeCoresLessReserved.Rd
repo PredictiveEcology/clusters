@@ -7,7 +7,8 @@
 freeCoresLessReserved(
   nodes,
   path = getOption("clusters.reservationsPath"),
-  loadWindowMinutes = 5
+  loadWindowMinutes = 5,
+  graceMinutes = 2
 )
 }
 \arguments{
@@ -18,6 +19,11 @@ freeCoresLessReserved(
 
 \item{loadWindowMinutes}{The averaging window, in minutes, of the load average
 \code{free_est} was measured from (5 for \code{parallelly::freeCores(memory = "5min")}).}
+
+\item{graceMinutes}{Minutes after it is made during which a reservation counts in
+full. A reservation is recorded when the cluster has started, but its workers
+only load the hosts once objects are copied to them and the work begins (2.5-4
+minutes for the FireSense spread fits).}
 }
 \value{
 \code{nodes} with \code{free_est} reduced by the unabsorbed share of every live
@@ -32,10 +38,10 @@ Subtract live reservations from measured free cores
 \details{
 \code{free_est} already contains the load of clusters that have been
 running for a while, so subtracting their whole reservation counts those cores
-twice. A load average is exponentially damped: \code{age} minutes after a cluster
-starts it shows \code{1 - exp(-age / loadWindowMinutes)} of that cluster's load. Each
-reservation is therefore subtracted only by the share the average has not
-absorbed yet, \code{workers * exp(-age / loadWindowMinutes)}: all of it for a cluster
-built moments ago, which is what stops concurrent builds double-booking, and
-almost none of it for a cluster that has been running for half an hour.
+twice. A load average is exponentially damped: \code{t} minutes after a cluster's
+load starts it shows \code{1 - exp(-t / loadWindowMinutes)} of it. Each reservation is
+therefore subtracted only by the share the average has not absorbed yet,
+\code{workers * exp(-max(age - graceMinutes, 0) / loadWindowMinutes)}: all of it for a
+cluster built moments ago, which is what stops concurrent builds double-booking,
+and almost none of it for a cluster that has been running for half an hour.
 }

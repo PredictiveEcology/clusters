@@ -122,6 +122,12 @@ test_that("NP is exactly the number of workers in the cluster", {
 test_that("with a cluster, each generation after the first evaluates NP sets on the workers", {
   skip_on_cran()
   skip_if(identical(Sys.getenv("NOT_CRAN"), ""), "PSOCK workers need the installed package")
+  ## DEoptim needs NP >= 4, one member per worker, so the cluster cannot shrink below 4 workers.
+  ## R CMD check allows only 2 child processes (_R_CHECK_LIMIT_CORES_): skip there, run locally.
+  limit <- tolower(Sys.getenv("_R_CHECK_LIMIT_CORES_"))
+  skip_if(nzchar(limit) && !identical(limit, "false"),
+          "R CMD check limits child processes to 2; this test needs 4 workers")
+  skip_if(isTRUE(parallel::detectCores() < 4L), "needs 4 cores")
   cl <- parallel::makeCluster(4L)
   on.exit(parallel::stopCluster(cl), add = TRUE)
   ## the workers must load this version of clusters to run the recording wrapper

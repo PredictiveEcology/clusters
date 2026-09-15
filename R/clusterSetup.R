@@ -141,11 +141,8 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
     control$initialpop <- initialpop
   }
   
-  if (!is.null(NP)) {
-    control$NP <- NP
-  } else {
-    control$NP <- length(cores)
-  }
+  ## NP is exactly the number of workers: DEoptim evaluates one population member per worker.
+  control$NP <- .clusterNP(NP, nWorkers = if (is.null(cores)) 0L else length(cores))
   
   if (!is.null(cores)) {
     message(paste0(

@@ -1,3 +1,25 @@
+# clusters 0.0.33
+
+## Bug fixes
+
+* `DEoptimIterative2()` respects the caller's DEoptim settings. It merged its own defaults over
+  them, so `NP` was always 10 x the number of parameters and `strategy` always 3, whatever the
+  caller or the cluster said. The defaults now only fill what the caller did not set.
+* `clusterSetup()` sets `NP` to exactly the number of workers in the cluster it built (a message
+  says so when a different `NP` was requested), and stops with a clear message when fewer than 4
+  workers are available, the minimum DEoptim accepts.
+* `DEoptimIterative2()` no longer evaluates the carried population again in every generation. It
+  runs DEoptim one generation at a time, and DEoptim evaluates its initial population before each
+  generation, so every generation cost 2 x NP evaluations for NP new parameter sets. The values of
+  each generation's final population are now kept (`member$popval`) and returned from a lookup,
+  so a generation costs NP evaluations.
+* Each generation is cached even when nested caching is turned off, as
+  `spades.useCache = "eventsOnly"` does, so a stopped fit resumes from its last cached
+  generation. The objective function and its arguments are digested once per run, not in every
+  generation. `options(clusters.cacheDEoptimIterations = FALSE)` turns the per-generation cache off.
+* `DEoptimIterative2()` calls `reproducible::Cache()` explicitly; it failed with "could not find
+  function Cache" unless reproducible was attached.
+
 # clusters 0.0.32
 
 ## Bug fixes

@@ -1,27 +1,105 @@
 
 
+## A per-process record of objective-function evaluations. DEoptim() returns the final population
+## but not its objective values, so each new evaluation is recorded where it runs (this process,
+## or a PSOCK worker) and gathered after every one-generation chunk.
+.deoptimRecord <- new.env(parent = emptyenv())
+
+.parKey <- function(par) paste(sprintf("%a", as.numeric(par)), collapse = ",")
+
+.deoptimRecordTake <- function() {
+  out <- list(keys = .deoptimRecord$keys, vals = .deoptimRecord$vals)
+  .deoptimRecord$keys <- NULL
+  .deoptimRecord$vals <- NULL
+  out
+}
+
+## Take, and clear, the records of this process and of every worker of `cl`.
+.deoptimRecordTakeAll <- function(cl = NULL) {
+  recs <- list(.deoptimRecordTake())
+  if (!is.null(cl))
+    recs <- c(recs, parallel::clusterCall(cl, .deoptimRecordTake))
+  list(keys = unlist(lapply(recs, `[[`, "keys")), vals = unlist(lapply(recs, `[[`, "vals")))
+}
+
+## `fn`, except that a parameter set whose value is already known returns that value instead of
+## being evaluated again, and every new evaluation is recorded. Built in its own small frame, not
+## in the caller's, because DEoptim sends this closure to the workers in every generation.
+.memoObjFun <- function(fn, knownKeys, knownVals) {
+  force(fn); force(knownKeys); force(knownVals)
+  function(par, ...) {
+    key <- .parKey(par)
+    hit <- match(key, knownKeys)
+    if (!is.na(hit)) return(knownVals[[hit]])
+    val <- fn(par, ...)
+    .deoptimRecord$keys <- c(.deoptimRecord$keys, key)
+    .deoptimRecord$vals <- c(.deoptimRecord$vals, val)
+    val
+  }
+}
+
+## One DEoptim generation from `control$initialpop` that costs only the new trial evaluations:
+## DEoptim evaluates its initial population first, and the carried population's values (`known`)
+## come from the lookup instead. The final population's values are returned as `member$popval`,
+## which seeds the next chunk, also when this chunk is loaded from the cache.
+.DEoptimChunk <- function(fn, lower, upper, control, known, dotsList) {
+  cl <- control$cluster
+  invisible(.deoptimRecordTakeAll(cl))   # nothing left over from an interrupted chunk
+  memoFn <- .memoObjFun(fn, known$keys, known$vals)
+  out <- do.call(DEoptim::DEoptim,
+                 c(list(fn = memoFn, lower = lower, upper = upper, control = control), dotsList))
+  recs <- .deoptimRecordTakeAll(cl)
+  keys <- c(known$keys, recs$keys)
+  vals <- c(known$vals, recs$vals)
+  out$member$popval <- unname(vals[match(apply(out$member$pop, 1, .parKey), keys)])
+  out
+}
+
+## NP for a cluster of `nWorkers`. DEoptim evaluates the population one member per worker, so a
+## larger NP leaves members queued behind busy workers and a smaller one leaves workers idle.
+.clusterNP <- function(NP, nWorkers) {
+  nWorkers <- as.integer(nWorkers)
+  if (!length(nWorkers) || nWorkers == 0L) return(NP)
+  if (nWorkers < 4L)
+    stop("DEoptim needs at least 4 population members, one per worker, but the cluster has only ",
+         nWorkers, " worker(s). Wait for free cores (options(clusters.waitForCores = )) or run ",
+         "fewer fits at once.", call. = FALSE)
+  if (!is.null(NP) && !is.na(NP) && !identical(as.integer(NP), nWorkers))
+    message("NP set to ", nWorkers, ", the number of workers in the cluster (", NP, " was requested)")
+  nWorkers
+}
+
 DEoptimIterative2 <- function(fn, lower, upper, control, ...,
                               # formulaToFit, covMinMax, tests, maxFireSpread, mutuallyExclusive,
                               # doObjFunAssertions, Nreps, objFunCoresInternal, thresh, rep,
                               .plots, figurePath, cachePath, runName = 1, .verbose = TRUE) {
   DE <- list()
   dots <- list(...)
+  objFunArgs <- list(...)
   itersToDo <- seq(control$itermax)
-  control$itermax <- 1L
   if (is.null(dots$rep)) {
     dots$rep <- runName
   }
 
+  ## Defaults only for what the caller did not set: NP is the caller's (the number of workers the
+  ## cluster was built with) and so is strategy. Merging the other way replaced both, so NP was
+  ## always 10 x parameters and strategy always 3.
   a <- list(VTR = -Inf, strategy = 3L, NP = NA, itermax = 1, CR = 0.5,
             F = 0.8, bs = FALSE, trace = 1, initialpop = NULL, storepopfrom = 2,
             storepopfreq = 1, p = 0.2, c = 0.5, reltol = 0.1, steptol = 500,
             parallelType = "none", packages = NULL, parVar = NULL, foreachArgs = list(),
             parallelArgs = NULL)
 
-  control <- modifyList(control, a)
+  control <- modifyList(a, as.list(control))
+  control$itermax <- 1L
 
   opts <- options("reproducible.showSimilar" = FALSE)
   on.exit(options(opts), add = TRUE)
+
+  ## The objective function and its arguments are the same in every generation: digest them once
+  ## here, instead of Cache() digesting them again in each generation.
+  fixedDigest <- reproducible::.robustDigest(list(formals(fn), body(fn), objFunArgs))
+  known <- list(keys = NULL, vals = NULL)
 
   cacheIds <- lapply(seq(itersToDo), function(x) NULL)
   if (FALSE) {
@@ -45,30 +123,25 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
         fn(apply(do.call(rbind, list(lower, upper)), 2, function(x)
           runif(1, min = x[1], max = x[2])), ... )
       }
-      DE[[iter]] <- Cache(
-        DEoptim::DEoptim(
-          fn,
-          lower = lower,
-          upper = upper,
-          control = control, ...
-          # formulaToFit = formulaToFit,
-          # covMinMax = covMinMax,
-          # tests = tests,
-          # maxFireSpread = maxFireSpread,
-          # mutuallyExclusive = mutuallyExclusive,
-          # doAssertions = doObjFunAssertions,
-          # Nreps = Nreps,
-          # plot.it = FALSE,
-          # objFunCoresInternal = objFunCoresInternal,
-          # thresh = thresh
-        ),
-        .cacheExtra = list(controlForCache, 1, iter),
+      DE[[iter]] <- reproducible::Cache(
+        .DEoptimChunk,
+        fn = fn,
+        lower = lower,
+        upper = upper,
+        control = control,
+        known = known,
+        dotsList = objFunArgs,
+        ## fn and its arguments are in fixedDigest; initialpop, NP and strategy in controlForCache
+        omitArgs = c("fn", "control", "known", "dotsList"),
+        .cacheExtra = list(controlForCache, fixedDigest, iter),
         cacheId = cacheIds[[iter]],
         .functionName = paste0("DEoptimForCache_", runName, "_", iter),
-        verbose = .verbose,
-        omitArgs = c("verbose", "control")
+        ## Every generation is cached even when nested caching is turned off (as
+        ## spades.useCache = "eventsOnly" does), so a stopped fit resumes where it was.
+        useCache = getOption("clusters.cacheDEoptimIterations", TRUE),
+        verbose = .verbose
       )
-      if (!isUpdated(DE[[iter]]))
+      if (!reproducible::isUpdated(DE[[iter]]))
         message(paste(round(unname(DE[[iter]]$optim$bestmem), 4), collapse = " "))
       message(cli::col_green("Iteration ", iter, " done!"))
     } else {
@@ -90,6 +163,14 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
     }
 
     control$initialpop <- DE[[iter]]$member$pop
+    ## the next generation starts from this population, whose values are already known
+    popval <- DE[[iter]]$member$popval
+    known <- if (length(popval) == NROW(control$initialpop)) {
+      ok <- !is.na(popval)
+      list(keys = apply(control$initialpop, 1, .parKey)[ok], vals = popval[ok])
+    } else {
+      list(keys = NULL, vals = NULL)    # e.g. a generation cached before values were kept
+    }
 
     # if (iter > 499) browser()
     # if (Require:::isRstudio()) if (iter > 200) browser()

@@ -52,7 +52,8 @@ test_that("a prefixed worker command stays runnable under nice (clusters' makeCl
   expect_match(cmd, "nice --adjustment=20 ", fixed = TRUE)   # the wrapper's renice is still applied
   expect_false(grepl("nice --adjustment=[0-9]+ R_DEFAULT_PACKAGES=", cmd))
   ## the default packages travel inside env's assignments instead
-  expect_match(cmd, "env'? OPENBLAS_NUM_THREADS=1 R_DEFAULT_PACKAGES=datasets,utils,grDevices,graphics,stats,methods")
+  ## env's path is quoted differently by platform: '/usr/bin/env' on Unix, "C:\rtools45\usr\bin\env.exe" on Windows
+  expect_match(cmd, "env(\\.exe)?['\"]? OPENBLAS_NUM_THREADS=1 R_DEFAULT_PACKAGES=datasets,utils,grDevices,graphics,stats,methods")
 })
 
 test_that("a worker launched through clusters' makeClusterPSOCK starts, capped and with the default packages", {

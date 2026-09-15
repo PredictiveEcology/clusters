@@ -89,6 +89,60 @@ test_that("this is what stops two builders double-booking the same cores", {
   })
 })
 
+## Backdate every reservation in the ledger by `minutes`.
+ageLedger <- function(minutes) {
+  f <- reservationsPath()
+  res <- readRDS(f)
+  res$created <- res$created - minutes * 60
+  saveRDS(res, f)
+}
+
+test_that("an old reservation is not subtracted again once the load average carries its load", {
+  ## 2026-09-15, FireSense phase 2: fits built 1-3 h after other fits got 5, 2 and 7 of 100
+  ## workers. free_est comes from the 5-min load average, which already carried the running
+  ## fits' load, and their reservations were subtracted on top: every busy host counted twice.
+  withLedger({
+    reserveCores(data.frame(host = "a", assign = 8L))
+    ageLedger(60)
+    out <- freeCoresLessReserved(data.frame(host = "a", free_est = 10), loadWindowMinutes = 5)
+    expect_equal(out$free_est, 10, tolerance = 0.01)
+    expect_equal(out$reserved, 8L)   # still reported: the cores are in use
+  })
+})
+
+test_that("a reservation is subtracted by the share of its load the average has not absorbed", {
+  withLedger({
+    reserveCores(data.frame(host = "a", assign = 8L))
+    ageLedger(7)
+    out <- freeCoresLessReserved(data.frame(host = "a", free_est = 10), loadWindowMinutes = 5,
+                                 graceMinutes = 2)
+    ## load starts after the 2-min grace; a 5-min damped average shows 1 - exp(-1) of it 5 min later
+    expect_equal(out$free_est, 10 - 8 * exp(-1), tolerance = 0.01)
+  })
+})
+
+test_that("a longer load window keeps subtracting a reservation for longer", {
+  withLedger({
+    reserveCores(data.frame(host = "a", assign = 8L))
+    ageLedger(7)
+    out15 <- freeCoresLessReserved(data.frame(host = "a", free_est = 10), loadWindowMinutes = 15,
+                                   graceMinutes = 2)
+    expect_equal(out15$free_est, 10 - 8 * exp(-1 / 3), tolerance = 0.01)
+  })
+})
+
+test_that("a reservation counts in full during the grace period, however slow the machine", {
+  ## CI on Windows took 0.2 s between reserving and reading, and without a grace period the
+  ## decay had already started: free_est was 6.003 instead of 6.
+  withLedger({
+    reserveCores(data.frame(host = "a", assign = 4L))
+    ageLedger(1.5)
+    out <- freeCoresLessReserved(data.frame(host = "a", free_est = 10), loadWindowMinutes = 5,
+                                 graceMinutes = 2)
+    expect_identical(out$free_est, 6)
+  })
+})
+
 test_that(".pidAlive answers correctly on whatever platform is running the tests", {
   ## Deliberately not skipped anywhere: this is the check that failed silently
   ## on two platforms at once. /proc does not exist on macOS, where every pid

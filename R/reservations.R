@@ -152,18 +152,39 @@ releaseCores <- function(id = NULL, pid = Sys.getpid(),
 #'   [plan_psock_min()] from its probe.
 #' @inheritParams reservations
 #' @param path Path to the reservations ledger; defaults to `getOption("clusters.reservationsPath")`.
-#' @return `nodes` with `free_est` reduced by every live reservation on that
-#'   host, floored at zero, plus a `reserved` column for reporting. Reservations
-#'   held by this process count too: a master that already built one cluster is
-#'   genuinely using those cores while it builds the next.
+#' @param loadWindowMinutes The averaging window, in minutes, of the load average
+#'   `free_est` was measured from (5 for `parallelly::freeCores(memory = "5min")`).
+#' @param graceMinutes Minutes after it is made during which a reservation counts in
+#'   full. A reservation is recorded when the cluster has started, but its workers
+#'   only load the hosts once objects are copied to them and the work begins (2.5-4
+#'   minutes for the FireSense spread fits).
+#' @details `free_est` already contains the load of clusters that have been
+#'   running for a while, so subtracting their whole reservation counts those cores
+#'   twice. A load average is exponentially damped: `t` minutes after a cluster's
+#'   load starts it shows `1 - exp(-t / loadWindowMinutes)` of it. Each reservation is
+#'   therefore subtracted only by the share the average has not absorbed yet,
+#'   `workers * exp(-max(age - graceMinutes, 0) / loadWindowMinutes)`: all of it for a
+#'   cluster built moments ago, which is what stops concurrent builds double-booking,
+#'   and almost none of it for a cluster that has been running for half an hour.
+#' @return `nodes` with `free_est` reduced by the unabsorbed share of every live
+#'   reservation on that host, floored at zero, plus a `reserved` column (the
+#'   reserved workers, for reporting). Reservations held by this process count
+#'   too: a master that already built one cluster is genuinely using those cores
+#'   while it builds the next.
 #' @export
 freeCoresLessReserved <- function(nodes,
-                                  path = getOption("clusters.reservationsPath")) {
+                                  path = getOption("clusters.reservationsPath"),
+                                  loadWindowMinutes = 5, graceMinutes = 2) {
   res <- liveReservations(path)
-  reserved <- if (NROW(res))
-    vapply(nodes$host, function(h) sum(res$workers[res$host %in% h]), numeric(1))
-  else rep(0, NROW(nodes))
+  if (NROW(res)) {
+    ageMinutes <- pmax(as.numeric(difftime(Sys.time(), res$created, units = "mins")) - graceMinutes, 0)
+    unabsorbed <- res$workers * exp(-ageMinutes / loadWindowMinutes)
+    reserved <- vapply(nodes$host, function(h) sum(res$workers[res$host %in% h]), numeric(1))
+    subtract <- vapply(nodes$host, function(h) sum(unabsorbed[res$host %in% h]), numeric(1))
+  } else {
+    reserved <- subtract <- rep(0, NROW(nodes))
+  }
   nodes$reserved <- as.integer(reserved)
-  nodes$free_est <- pmax(as.numeric(nodes$free_est) - reserved, 0)
+  nodes$free_est <- pmax(as.numeric(nodes$free_est) - round(subtract, 3), 0)
   nodes
 }

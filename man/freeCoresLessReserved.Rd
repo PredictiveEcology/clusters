@@ -4,20 +4,44 @@
 \alias{freeCoresLessReserved}
 \title{Subtract live reservations from measured free cores}
 \usage{
-freeCoresLessReserved(nodes, path = getOption("clusters.reservationsPath"))
+freeCoresLessReserved(
+  nodes,
+  path = getOption("clusters.reservationsPath"),
+  loadWindowMinutes = 5,
+  graceMinutes = 2
+)
 }
 \arguments{
 \item{nodes}{A data.frame with \code{host} and \code{free_est}, as built by
 \code{\link[=plan_psock_min]{plan_psock_min()}} from its probe.}
 
 \item{path}{Path to the reservations ledger; defaults to \code{getOption("clusters.reservationsPath")}.}
+
+\item{loadWindowMinutes}{The averaging window, in minutes, of the load average
+\code{free_est} was measured from (5 for \code{parallelly::freeCores(memory = "5min")}).}
+
+\item{graceMinutes}{Minutes after it is made during which a reservation counts in
+full. A reservation is recorded when the cluster has started, but its workers
+only load the hosts once objects are copied to them and the work begins (2.5-4
+minutes for the FireSense spread fits).}
 }
 \value{
-\code{nodes} with \code{free_est} reduced by every live reservation on that
-host, floored at zero, plus a \code{reserved} column for reporting. Reservations
-held by this process count too: a master that already built one cluster is
-genuinely using those cores while it builds the next.
+\code{nodes} with \code{free_est} reduced by the unabsorbed share of every live
+reservation on that host, floored at zero, plus a \code{reserved} column (the
+reserved workers, for reporting). Reservations held by this process count
+too: a master that already built one cluster is genuinely using those cores
+while it builds the next.
 }
 \description{
 Subtract live reservations from measured free cores
+}
+\details{
+\code{free_est} already contains the load of clusters that have been
+running for a while, so subtracting their whole reservation counts those cores
+twice. A load average is exponentially damped: \code{t} minutes after a cluster's
+load starts it shows \code{1 - exp(-t / loadWindowMinutes)} of it. Each reservation is
+therefore subtracted only by the share the average has not absorbed yet,
+\code{workers * exp(-max(age - graceMinutes, 0) / loadWindowMinutes)}: all of it for a
+cluster built moments ago, which is what stops concurrent builds double-booking,
+and almost none of it for a cluster that has been running for half an hour.
 }

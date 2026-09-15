@@ -5,16 +5,29 @@
 ##   * every generation re-evaluated the carried population, 2 x NP evaluations for NP new ones;
 ##   * the per-generation Cache was skipped under spades.useCache = "eventsOnly", so a stopped fit
 ##     restarted from generation 1.
+##
+## What the lookup guarantees is that the population carried into a generation is not evaluated
+## again. Evaluation counts are therefore upper bounds, not exact: a trial is occasionally
+## bit-identical to a carried member (binomial crossover copies most components, and members share
+## components inherited from a common ancestor), and then its known value is reused. A parameter set
+## scored in an earlier generation but no longer in the population can be evaluated again, as plain
+## DEoptim would.
+##
+## Counters are passed as plain variables: the per-generation cache key includes the objective
+## function's enclosing environment, so an argument written as `counter = (counter <- new())`
+## changes the key and a rerun misses the cache.
 
 skip_if_not_installed("DEoptim")
 
 lower <- c(a = 0, b = 0, c = 0)
 upper <- c(a = 1, b = 1, c = 1)
 pureFn <- function(par) sum((par - 0.3)^2)
+parKey <- function(par) paste(sprintf("%a", as.numeric(par)), collapse = ",")
 
 runDE <- function(itermax, cachePath, counter, NP = 8L, strategy = 2L, cluster = NULL) {
   fn <- function(par) {
     counter$n <- counter$n + 1L
+    counter$keys <- c(counter$keys, parKey(par))
     sum((par - 0.3)^2)
   }
   control <- list(NP = NP, strategy = strategy, itermax = itermax, trace = FALSE)
@@ -29,6 +42,9 @@ runDE <- function(itermax, cachePath, counter, NP = 8L, strategy = 2L, cluster =
   ))
 }
 
+newCounter <- function() { counter <- new.env(); counter$n <- 0L; counter$keys <- character(0); counter }
+resetCounter <- function(counter) { counter$n <- 0L; counter$keys <- character(0); invisible(counter) }
+
 test_that("the caller's NP and strategy reach DEoptim", {
   seen <- new.env()
   realDEoptim <- DEoptim::DEoptim
@@ -39,22 +55,37 @@ test_that("the caller's NP and strategy reach DEoptim", {
       realDEoptim(fn, lower, upper, control, ...)
     },
     .package = "DEoptim")
-  counter <- new.env(); counter$n <- 0L
+  counter <- newCounter()
   DE <- runDE(itermax = 2, cachePath = withr::local_tempdir(), counter = counter, NP = 8L, strategy = 2L)
   expect_identical(as.integer(seen$strategy), 2L)
   expect_identical(as.integer(seen$NP), 8L)
   expect_identical(nrow(DE[[2]]$member$pop), 8L)
 })
 
-test_that("after the first generation, each generation evaluates NP new parameter sets, not 2 x NP", {
-  counter <- new.env(); counter$n <- 0L
+test_that("after the first generation, each generation evaluates at most NP new parameter sets", {
+  counter <- newCounter()
   DE <- runDE(itermax = 4, cachePath = withr::local_tempdir(), counter = counter, NP = 8L)
-  ## generation 1: the random initial population (8) and its first trials (8); then 8 per generation
-  expect_identical(counter$n, 8L + 8L + 3L * 8L)
+  ## generation 1: the random initial population (8) and its first trials (8); then at most 8 per
+  ## generation. Re-evaluating the carried population, as before, cost 8 + 8 + 3 x 16 = 64.
+  expect_lte(counter$n, 8L + 8L + 3L * 8L)
+  expect_gt(counter$n, 8L)                              # the random initial population, at least
+})
+
+test_that("the population carried into a generation is not evaluated again", {
+  cp <- withr::local_tempdir()
+  counter <- newCounter()
+  DE <- runDE(itermax = 1, cachePath = cp, counter = counter, NP = 8L)
+  for (g in 2:4) {
+    carried <- apply(DE[[g - 1L]]$member$pop, 1, parKey)
+    resetCounter(counter)
+    DE <- runDE(itermax = g, cachePath = cp, counter = counter, NP = 8L)  # 1..g-1 from the cache
+    expect_lte(counter$n, 8L)
+    expect_false(any(counter$keys %in% carried), label = paste("generation", g))
+  }
 })
 
 test_that("the values carried into the next generation are the objective function's values", {
-  counter <- new.env(); counter$n <- 0L
+  counter <- newCounter()
   DE <- runDE(itermax = 3, cachePath = withr::local_tempdir(), counter = counter, NP = 8L)
   last <- DE[[3]]
   expect_equal(last$member$popval, unname(apply(last$member$pop, 1, pureFn)))
@@ -63,18 +94,19 @@ test_that("the values carried into the next generation are the objective functio
 
 test_that("a stopped run resumes from its cached generations without evaluating them again", {
   cp <- withr::local_tempdir()
-  counter <- new.env(); counter$n <- 0L
+  counter <- newCounter()
   first <- runDE(itermax = 3, cachePath = cp, counter = counter, NP = 8L)
-  expect_identical(counter$n, 8L + 8L + 2L * 8L)
+  expect_lte(counter$n, 8L + 8L + 2L * 8L)
 
-  counter$n <- 0L
+  resetCounter(counter)
   again <- runDE(itermax = 3, cachePath = cp, counter = counter, NP = 8L)
   expect_identical(counter$n, 0L)                       # every generation came from the cache
   expect_identical(again[[3]]$member$pop, first[[3]]$member$pop)
 
-  counter$n <- 0L
+  resetCounter(counter)
   longer <- runDE(itermax = 5, cachePath = cp, counter = counter, NP = 8L)
-  expect_identical(counter$n, 2L * 8L)                  # only the two new generations were run
+  expect_lte(counter$n, 2L * 8L)                        # only the two new generations were run
+  expect_gt(counter$n, 0L)
   expect_identical(longer[[3]]$member$pop, first[[3]]$member$pop)
 })
 
@@ -119,7 +151,7 @@ test_that("NP is exactly the number of workers in the cluster", {
   expect_identical(clusters:::.clusterNP(NP = 120L, nWorkers = 0L), 120L)
 })
 
-test_that("with a cluster, each generation after the first evaluates NP sets on the workers", {
+test_that("with a cluster, each generation after the first evaluates at most NP sets on the workers", {
   skip_on_cran()
   skip_if(identical(Sys.getenv("NOT_CRAN"), ""), "PSOCK workers need the installed package")
   ## DEoptim needs NP >= 4, one member per worker, so the cluster cannot shrink below 4 workers.
@@ -149,6 +181,8 @@ test_that("with a cluster, each generation after the first evaluates NP sets on 
     control = list(NP = 4L, strategy = 2L, itermax = 3, trace = FALSE, cluster = cl),
     figurePath = FALSE, .plots = NULL, runName = "cl", .verbose = -1)))
   calls <- sum(unlist(parallel::clusterEvalQ(cl, .nCalls)))
-  expect_identical(calls, 4L + 4L + 2L * 4L)
+  ## re-evaluating the carried population, as before, cost 4 + 4 + 2 x 8 = 24
+  expect_lte(calls, 4L + 4L + 2L * 4L)
+  expect_gt(calls, 4L)                                  # the random initial population, at least
   expect_identical(nrow(DE[[3]]$member$pop), length(cl))
 })

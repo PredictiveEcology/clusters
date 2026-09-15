@@ -1,3 +1,16 @@
+# clusters 0.0.34
+
+## Bug fixes
+
+* Cluster workers started by `plan_psock_min()` (and so `clusterSetup()`) run with one OpenBLAS
+  thread. R linked to multithreaded OpenBLAS starts one thread per logical CPU, up to 64, and
+  every matrix product wakes them all. With one worker per CPU that is pure contention: on the
+  FireSense fleet each DEoptim worker held 49 threads and used about 6 CPUs while the allocator
+  counted one, and a 50,000 x 12 product ran 2-3x slower with the pool. The cap prefixes the
+  worker command (`env OPENBLAS_NUM_THREADS=1`), because `rscript_envs` is applied after R has
+  started, too late for OpenBLAS. Change it with `options(clusters.workerBlasThreads = n)`, or set it
+  to `NA` to leave workers alone.
+
 # clusters 0.0.32
 
 ## Bug fixes

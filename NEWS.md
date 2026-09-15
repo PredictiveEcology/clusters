@@ -1,3 +1,18 @@
+# clusters 0.0.35
+
+## Changes
+
+* `plan_psock_min()` (and so `clusterSetup()`) waits for the whole population it asked for
+  instead of starting with whatever is free. It used to wait only when no worker at all was
+  free; on the FireSense fleet (2026-09-15) fits built after others started DEoptim with 5, 2 and
+  7 of their 100 workers and ran for days. Now a build re-probes every minute, with a message
+  saying how many workers it could get, until the full `total` is free; at the deadline
+  (`options(clusters.waitForCores)` seconds, default 0) it stops with the shortfall and the free
+  cores by host. A request larger than every core on the hosts stops at once. The number of
+  concurrent fits therefore limits itself to the cluster. `options(clusters.minWorkersFraction = f)`
+  accepts a partial start (default 1, the whole population). Real cores are still preferred over
+  hyperthreads.
+
 # clusters 0.0.32
 
 ## Bug fixes

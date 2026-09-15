@@ -323,12 +323,14 @@ plan_psock_min <- function(
   parallel::clusterExport(cl_probe, varlist = c("load_memory", "fraction"), envir = environment())
   
   ## 2) Run the capacity queries everywhere (same code on each worker).
-  ##    Repeated while other live builds hold every core, up to
-  ##    option clusters.waitForCores seconds (default 0: no waiting). A job that
-  ##    has just spent hours preparing its inputs should queue for cores, not
-  ##    die (2026-09-08: the sixth concurrent build found none free).
-  waitDeadline <- Sys.time() + getOption("clusters.waitForCores", 0)
-  repeat {
+  ##    Repeated until the whole population is free, up to option
+  ##    clusters.waitForCores seconds (default 0: no waiting). A job that has just
+  ##    spent hours preparing its inputs should queue for cores, not die
+  ##    (2026-09-08: the sixth concurrent build found none free), and it must not
+  ##    start with a fraction of its workers either (2026-09-15: fits ran with 5, 2
+  ##    and 7 of 100). See .allocateWhenAvailable().
+  nodes <- NULL
+  probeCapacity <- function() {
   caps <- parallel::clusterEvalQ(cl_probe, {
     maxC  <- parallelly::availableCores()
     freeC <- parallelly::freeCores(memory = load_memory, fraction = fraction)
@@ -380,18 +382,18 @@ plan_psock_min <- function(
               paste0(nodes$host[nodes$reserved > 0], "=", nodes$reserved[nodes$reserved > 0],
                      collapse = ", "))
   }
-  alloc_df <- .ht_allocate_min(nodes, total = total, beta = beta)
-  
+  nodes <<- nodes
+  nodes
+  }
+  alloc_df <- .allocateWhenAvailable(probeCapacity, total = total, beta = beta,
+                                     minFraction = getOption("clusters.minWorkersFraction", 1),
+                                     waitSeconds = getOption("clusters.waitForCores", 0))
+
   # Build workers vector using SSH aliases preserved in allocation$host
   workers <- unlist(
     mapply(function(h, k) rep(h, k), alloc_df$host, alloc_df$assign, SIMPLIFY = FALSE),
     use.names = FALSE
   )
-  if (length(workers) > 0L || Sys.time() >= waitDeadline) break
-  message("No free cores on any host (held by other live cluster builds); ",
-          "waiting 60 s, until ", format(waitDeadline, "%Y-%m-%d %H:%M"), " at most")
-  Sys.sleep(60)
-  }
   
   rversion <- parallel::clusterEvalQ(cl_probe, {
     as.character(getRversion())

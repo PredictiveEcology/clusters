@@ -493,8 +493,10 @@ summaryOutputFolder <- function(path, pattern = "^.+hists/(.+)\\_iter.+\\_[[:dig
 
 
 
-changeNodenameToLocalhost <- function(cores) {
-  sshLines <- readLines("~/.ssh/config")
+changeNodenameToLocalhost <- function(cores, sshConfig = "~/.ssh/config") {
+  ## no ssh config (a laptop, a CI runner): nothing to rename
+  if (!file.exists(sshConfig)) return(cores)
+  sshLines <- readLines(sshConfig)
   hasSelf <- grep(Sys.info()["nodename"], sshLines, value = T)
   onlyHost <- grep("^Host ", hasSelf, value = TRUE)
   whLocalhost <- gsub("^Host (\\w+).*", "\\1", onlyHost)

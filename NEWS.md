@@ -14,6 +14,9 @@
   its fallback then looked for the objects in its own frame instead of `envir`, so it failed too
   ("object 'x1' not found"). SpaDES attaches reproducible, which hid both; a DEoptim fit run from a
   plain script stopped there (FireSense, 2026-09-15).
+* `clusterSetup()` runs on a machine without `~/.ssh/config`. It reads that file to rename this
+  machine's ssh alias to `localhost`, and stopped with "cannot open the connection" when it was
+  missing.
 
 # clusters 0.0.36
 

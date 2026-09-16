@@ -58,6 +58,27 @@ test_that(".fnTakesPruneAbove() is TRUE only for a function that can receive the
   expect_false(.fnTakesPruneAbove(function(par, thresh = 550) NULL))
 })
 
+test_that("the bound is added only AFTER the objective function's fixed digest is taken", {
+  ## Two separate things keep a per-generation bound out of a chunk's cacheId, and only one of them
+  ## is `omitArgs`:
+  ##
+  ##   1. `dotsList` (= objFunArgs) is in `omitArgs`, so it is not digested as an argument; and
+  ##   2. `fixedDigest` -- .robustDigest(list(formals(fn), body(fn), objFunArgs)) -- IS passed in
+  ##      `.cacheExtra`, which is NOT omitted. It is computed once, before the loop, so it captures
+  ##      objFunArgs *without* `pruneAbove`; the assignment happens inside the loop.
+  ##
+  ## If that order were ever reversed -- fixedDigest moved into the loop, or the bound set before it
+  ## -- a value that changes every generation would enter every chunk's key and invalidate every
+  ## cached generation of every running fit. That is a multi-day loss on a live campaign, and it
+  ## would be silent: the fit would simply recompute. Assert the order.
+  src <- paste(deparse(DEoptimIterative2), collapse = "\n")
+  atFixed <- regexpr("fixedDigest <- ", src, fixed = TRUE)
+  atPrune <- regexpr("objFunArgs$pruneAbove <- ", src, fixed = TRUE)
+  expect_gt(atFixed, 0L)
+  expect_gt(atPrune, 0L)
+  expect_lt(atFixed, atPrune)
+})
+
 test_that("DEoptimIterative2() passes the bound to the objective function as pruneAbove", {
   ## Parsed, not run: a real call needs a cluster. `dotsList` is the objective function's argument
   ## list, and it is in `omitArgs`, so threading the bound through it cannot invalidate a cached

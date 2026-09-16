@@ -16,13 +16,17 @@
 ## The replacement asks the question directly for a monotone series: has the best value improved in
 ## the last `noImproveFor` generations?
 
-test_that("premise: a flat window's p-value falls below the old 0.1 gate", {
-  ## the exact constant (0.0848) is an artefact of summary.lm() on a perfect fit; assert the property
-  ## that matters -- it is under the gate -- so the test does not break on a different R version
+test_that("premise: a flat window gives a degenerate, platform-dependent p-value", {
+  ## A flat window is what convergence looks like, and summary.lm() cannot describe it: the residuals
+  ## are ~0, so it warns "essentially perfect fit" and returns a p that means nothing. The VALUE is not
+  ## reproducible -- 0.0848 on the FireSense host, 0.122 on the CI Linux runners -- so the old gate,
+  ## `all(tail(pvals, 2) > 0.1)`, fired or did not by luck of the floating point: at 0.122 it would have
+  ## stopped, at 0.0848 it never could. Assert the degeneracy, never the constant.
   flat <- data.frame(iter = seq_len(200), val = rep(58419.45, 200))
-  p <- suppressWarnings(summary(stats::lm(val ~ iter, data = flat))$coefficients[2, 4])
-  expect_lt(p, 0.1)
-  expect_false(all(c(p, p) > 0.1))    # the old rule, fed its own best case
+  expect_warning(summary(stats::lm(val ~ iter, data = flat)), "essentially perfect fit")
+  s <- suppressWarnings(summary(stats::lm(val ~ iter, data = flat)))
+  expect_lt(abs(s$coefficients[2, 1]), 1e-8)   # slope indistinguishable from zero
+  expect_lt(s$sigma, 1e-6)                     # residual SE ~ 0: nothing for a p-value to describe
 })
 
 test_that("premise: a window containing one step looks highly significant", {

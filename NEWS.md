@@ -7,8 +7,10 @@
   seven unique values across 456 generations, with runs of up to 141 -- so the old rule,
   `all(tail(pvals, 2) > 0.1)` over 200-generation windows, could never fire: a window spanning a step
   gives p of about 1e-44 to 1e-61, while a perfectly flat window, which is what convergence looks like,
-  makes `summary.lm()` warn "essentially perfect fit" and return a degenerate p of 0.0848 -- below the
-  0.1 gate. Every fit therefore ran to `itermax` (one stopped at exactly generation 1000 after 14 h).
+  makes `summary.lm()` warn "essentially perfect fit" and return a degenerate p whose value is not even
+  reproducible across platforms -- 0.0848 on the machine running the fits, 0.122 on the CI Linux
+  runners. Whether the gate fired was therefore luck of the floating point, and on the FireSense host it
+  never could: every fit ran to `itermax` (one stopped at exactly generation 1000 after 14 h).
   The new `.deoptimConverged()` stops when the best value has not improved for `noImproveFor`
   generations, after at least `minGenerations`, set by `clusters.deoptimNoImproveFor` (default 200) and
   `clusters.deoptimMinGenerations` (default 350). The window p-values are still printed as a diagnostic.

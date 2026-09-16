@@ -101,6 +101,33 @@
   controlArgs
 }
 
+## The bound an objective function can prune against: the worst value the CURRENT population would
+## accept. DE compares each trial with ITS OWN parent, so a trial scoring worse than the worst parent
+## scores worse than its own parent too and is certain to be rejected -- stopping such a trial early
+## cannot change which members survive, only the time spent proving they do not.
+##
+## MAX, deliberately, not a quantile. A p90 bound would discard trials that beat their own parent,
+## i.e. exactly the good-but-slow trials this must not lose. The bound is on VALUE, never on elapsed
+## time, so a slow evaluation heading for a good score always runs to completion.
+##
+## `failVal` (1e6) trials are excluded: a population holding even one of them would otherwise put the
+## bound at 1e6, which prunes nothing. `Inf` means "no bound" and is the objective function's default,
+## so returning it is the safe no-op whenever the population says nothing usable.
+.prunePopulationBound <- function(popval, failVal = 1e6) {
+  v <- suppressWarnings(as.numeric(popval))
+  v <- v[is.finite(v) & v < failVal]
+  if (!length(v)) return(Inf)
+  max(v)
+}
+
+## `fn` is user-supplied, and DEoptim passes the extra arguments straight through to it, so sending
+## `pruneAbove` to an objective function declaring neither it nor `...` is an "unused argument" error.
+## Send the bound only where it can be received.
+.fnTakesPruneAbove <- function(fn) {
+  nms <- names(formals(fn))
+  isTRUE("pruneAbove" %in% nms || "..." %in% nms)
+}
+
 DEoptimIterative2 <- function(fn, lower, upper, control, ...,
                               # formulaToFit, covMinMax, tests, maxFireSpread, mutuallyExclusive,
                               # doObjFunAssertions, Nreps, objFunCoresInternal, thresh, rep,
@@ -117,6 +144,8 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
   ## an objective-function argument.
   iterStep <- if (is.null(dots$iterStep)) 1L else max(1L, as.integer(dots$iterStep))
   objFunArgs$iterStep <- NULL
+  ## Can this objective function receive the adaptive prune bound? Asked once, not once per chunk.
+  sendPruneAbove <- .fnTakesPruneAbove(fn)
   ## integers whatever type itermax has: the chunk length is in the cache key, and 2 and 2L digest differently
   chunkEnds <- as.integer(unique(pmin(seq_len(ceiling(control$itermax / iterStep)) * iterStep, control$itermax)))
   chunkLengths <- diff(c(0L, chunkEnds))
@@ -239,6 +268,10 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
     } else {
       list(keys = NULL, vals = NULL)    # e.g. a generation cached before values were kept
     }
+    ## The next chunk's trials are compared against this population, so its worst accepted value is
+    ## the bound below which a trial cannot possibly be selected. Recomputed every chunk; it rides in
+    ## `dotsList`, which is in `omitArgs`, so it never enters a chunk's cacheId.
+    if (sendPruneAbove) objFunArgs$pruneAbove <- .prunePopulationBound(popval)
 
     # if (iter > 499) browser()
     # if (Require:::isRstudio()) if (iter > 200) browser()

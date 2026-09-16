@@ -300,8 +300,14 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
 
       }
     }
-    # Break out if the last N segments are "non-significant slope at p == 0.1 i.e., conservative
-    converged <- all(tail(pvals, 2) > 0.1) && nGenerations > 349
+    ## Stop early when the best value has stopped improving. `bestvalit` is a monotone STEP function,
+    ## so the slope of a line through it answers the wrong question: a window spanning a step is wildly
+    ## "significant" (p ~ 1e-44 .. 1e-61), while a perfectly flat window -- which is exactly what
+    ## convergence looks like -- makes summary.lm() warn "essentially perfect fit" and return a
+    ## degenerate p of 0.0848, below the old 0.1 gate. The old test could therefore never fire and every
+    ## fit ran to `itermax` (FireSense phase 2, 2026-09-16). The window p-values above remain as a
+    ## diagnostic; the decision now uses the best value's history directly.
+    converged <- .deoptimConverged(bestvalitAll)
     ## Plot chunks computed in this session, not ones replayed from the cache, when each chunk (`iterStep`
     ## generations) finishes. Plotting used to require reproducible::isUpdated(), which is
     ## FALSE whenever nested Cache() is skipped (spades.useCache = "eventsOnly"), so no progress plots
@@ -350,14 +356,52 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
     }
 
 
-    # Break out if the last N segments are "non-significant slope at p == 0.1 i.e., conservative
+    # Break out when the best value has not improved for long enough; say so, or an early stop is
+    # indistinguishable from a crash in the log
     if (converged) {
+      message(cli::col_green(
+        "Converged: the best value has not improved in ",
+        getOption("clusters.deoptimNoImproveFor", 200L), " generations (",
+        nGenerations, " run); stopping before itermax"))
       break
     }
   }
   DE
 }
 
+
+#' Has the DEoptim fit stopped improving?
+#'
+#' `bestvalit` is monotone non-increasing and moves in steps, so convergence is asked directly: how
+#' many generations since the best value last improved? A linear model over a window cannot answer
+#' this -- see the comment at the call site in [DEoptimIterative2()].
+#'
+#' Leading non-finite values are the generations before any member is scored; DEoptim reports `Inf`
+#' there, and they are dropped. An `NA`/`NaN` anywhere means a value that should exist does not, so
+#' the answer is a conservative `FALSE` rather than a guess.
+#'
+#' @param bestvalit numeric; the best objective value per generation, oldest first.
+#' @param noImproveFor integer; generations without improvement required to call it converged.
+#' @param minGenerations integer; never converge before this many generations have run.
+#' @return `TRUE` when the fit should stop early.
+#' @keywords internal
+#' @noRd
+.deoptimConverged <- function(bestvalit,
+                              noImproveFor = getOption("clusters.deoptimNoImproveFor", 200L),
+                              minGenerations = getOption("clusters.deoptimMinGenerations", 350L)) {
+  bv <- suppressWarnings(as.numeric(bestvalit))
+  if (!length(bv)) return(FALSE)
+  if (anyNA(bv)) return(FALSE)                       # NA/NaN: unknown, so do not stop
+  keep <- which(is.finite(bv))
+  if (!length(keep)) return(FALSE)                   # never scored (all Inf)
+  bv <- bv[seq(min(keep), length(bv))]               # drop the unscored prefix only
+  if (anyNA(bv) || !all(is.finite(bv))) return(FALSE)
+  nGen <- length(bv)
+  if (nGen <= minGenerations || nGen < noImproveFor) return(FALSE)
+  runningBest <- cummin(bv)
+  improved <- c(TRUE, diff(runningBest) < 0)         # element 1 is the baseline
+  (nGen - max(which(improved))) >= noImproveFor
+}
 
 controlSet <- function(control, ...) {
   if (length(names(control)) < 20)

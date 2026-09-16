@@ -22,8 +22,9 @@ test_that("premise: a flat window gives a degenerate, platform-dependent p-value
   ## reproducible -- 0.0848 on the FireSense host, 0.122 on the CI Linux runners -- so the old gate,
   ## `all(tail(pvals, 2) > 0.1)`, fired or did not by luck of the floating point: at 0.122 it would have
   ## stopped, at 0.0848 it never could. Assert the degeneracy, never the constant.
+  ## Even the "essentially perfect fit" WARNING is platform-dependent -- the Linux runners emit it,
+  ## macOS and Windows do not -- so assert only the two numeric properties, which hold everywhere.
   flat <- data.frame(iter = seq_len(200), val = rep(58419.45, 200))
-  expect_warning(summary(stats::lm(val ~ iter, data = flat)), "essentially perfect fit")
   s <- suppressWarnings(summary(stats::lm(val ~ iter, data = flat)))
   expect_lt(abs(s$coefficients[2, 1]), 1e-8)   # slope indistinguishable from zero
   expect_lt(s$sigma, 1e-6)                     # residual SE ~ 0: nothing for a p-value to describe

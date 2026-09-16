@@ -1,3 +1,25 @@
+# clusters 0.0.44
+
+## Enhancements
+
+* `DEoptimIterative2()` now tells the objective function the worst value the current population would
+  accept, as `pruneAbove`, so an objective function that can stop early (fireSenseUtils >= 0.2.3.9019)
+  may abandon a trial whose partial score already exceeds it. This is worth doing because a
+  generation is synchronous: its wall time is the slowest of its `NP` evaluations rather than the
+  median, so the tail sets the clock.
+
+  The bound is `max()` of the population's accepted values with the `1e6` fail sentinels removed --
+  `max()` deliberately, not a quantile. DE compares each trial against its own parent, so a trial
+  worse than the *worst* parent is worse than its own parent and would have been rejected anyway;
+  the search trajectory is unchanged. A quantile would instead discard trials that beat their own
+  parent, which are precisely the good-but-slow trials worth keeping. The test is on value, never on
+  elapsed time.
+
+  It is sent only to objective functions declaring `pruneAbove` or `...`, since DEoptim passes extra
+  arguments straight through and any other function would fail with "unused argument". It travels in
+  `dotsList`, which is in `omitArgs`, so a bound that changes every generation cannot invalidate a
+  cached chunk.
+
 # clusters 0.0.43
 
 ## Bug fixes

@@ -128,6 +128,47 @@
   isTRUE("pruneAbove" %in% nms || "..." %in% nms)
 }
 
+## Periodic re-scoring of the surviving population (`options(clusters.deoptimRescoreEvery = k)`).
+## DE never evaluates a surviving member again, so on a noisy objective a lucky low draw stays in the
+## population for good. Every k generations each member is evaluated once more, and the value DEoptim
+## holds for it becomes the running mean of all its evaluations. The running sums live in `stats`
+## (one entry per distinct member, by .parKey).
+##
+## After a chunk: a member DEoptim carried over already holds its mean, so its sums carry over too; a
+## member that replaced another holds one new evaluation, so its sums start from that value.
+.rescoreUpdate <- function(stats, keys, popval) {
+  first <- !duplicated(keys)                  # `keys` and `popval` are aligned by population row
+  keys <- keys[first]
+  vals <- popval[first]
+  hit <- match(keys, stats$keys)
+  n <- ifelse(is.na(hit), ifelse(is.na(vals), 0L, 1L), stats$n[hit])
+  sum <- ifelse(is.na(hit), ifelse(is.na(vals), 0, vals), stats$sum[hit])
+  list(keys = keys, n = as.integer(n), sum = as.numeric(sum))
+}
+
+.rescoreAdd <- function(stats, keys, vals) {
+  i <- match(keys, stats$keys)
+  stats$n[i] <- stats$n[i] + 1L
+  stats$sum[i] <- stats$sum[i] + vals
+  stats
+}
+
+.rescoreMeans <- function(stats, keys) {
+  i <- match(keys, stats$keys)
+  ifelse(stats$n[i] > 0L, stats$sum[i] / stats$n[i], NA_real_)
+}
+
+## Evaluate each row of `pop` once. The evaluating function is built in its own small frame, as
+## .memoObjFun is, because it is sent to the workers.
+.rescoreFn <- function(fn, args, parNames) {
+  force(fn); force(args); force(parNames)
+  function(par) do.call(fn, c(list(stats::setNames(par, parNames)), args))
+}
+.rescorePopulation <- function(fn, pop, args, parNames, cl) {
+  f <- .rescoreFn(fn, args, parNames)
+  if (is.null(cl)) apply(pop, 1, f) else parallel::parApply(cl, pop, 1, f)
+}
+
 DEoptimIterative2 <- function(fn, lower, upper, control, ...,
                               # formulaToFit, covMinMax, tests, maxFireSpread, mutuallyExclusive,
                               # doObjFunAssertions, Nreps, objFunCoresInternal, thresh, rep,
@@ -146,6 +187,11 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
   objFunArgs$iterStep <- NULL
   ## Can this objective function receive the adaptive prune bound? Asked once, not once per chunk.
   sendPruneAbove <- .fnTakesPruneAbove(fn)
+  ## Re-score the surviving population every `rescoreEvery` generations (0: never); see .rescoreUpdate
+  rescoreEvery <- getOption("clusters.deoptimRescoreEvery")
+  rescoreEvery <- if (is.null(rescoreEvery)) 0L else max(0L, as.integer(rescoreEvery))
+  rescoreArgs <- as.list(getOption("clusters.deoptimRescoreArgs", list()))
+  rescoreStats <- NULL
   ## integers whatever type itermax has: the chunk length is in the cache key, and 2 and 2L digest differently
   chunkEnds <- as.integer(unique(pmin(seq_len(ceiling(control$itermax / iterStep)) * iterStep, control$itermax)))
   chunkLengths <- diff(c(0L, chunkEnds))
@@ -221,7 +267,10 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
         ## fn and its arguments are in fixedDigest; initialpop, NP and strategy in controlForCache;
         ## the chunk's length is not in controlForCache, and chunks of different lengths differ
         omitArgs = c("fn", "control", "known", "dotsList"),
-        .cacheExtra = list(controlForCache, fixedDigest, iter, chunkLengths[iter]),
+        ## With re-scoring, the values the carried members hold are running means, which the initial
+        ## population alone no longer determines; they join the key. Without it the key is unchanged.
+        .cacheExtra = c(list(controlForCache, fixedDigest, iter, chunkLengths[iter]),
+                        if (rescoreEvery > 0L) list(reproducible::.robustDigest(known))),
         cacheId = cacheIds[[iter]],
         .functionName = paste0("DEoptimForCache_", runName, "_", iter),
         ## Every generation is cached even when nested caching is turned off (as
@@ -262,6 +311,34 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
     control$initialpop <- DE[[iter]]$member$pop
     ## the next generation starts from this population, whose values are already known
     popval <- DE[[iter]]$member$popval
+    if (rescoreEvery > 0L && length(popval) == NROW(control$initialpop)) {
+      popKeys <- apply(control$initialpop, 1, .parKey)
+      rescoreStats <- .rescoreUpdate(rescoreStats, popKeys, popval)
+      if (chunkEnds[iter] %% rescoreEvery == 0L) {
+        ## members that already failed (the 1e6 sentinel, see .prunePopulationBound) are not re-scored
+        toScore <- which(!duplicated(popKeys) & is.finite(popval) & popval < 1e6)
+        args <- utils::modifyList(objFunArgs, c(if (sendPruneAbove) list(pruneAbove = Inf), rescoreArgs))
+        vals <- reproducible::Cache(
+          .rescorePopulation, fn = fn, pop = control$initialpop[toScore, , drop = FALSE], args = args,
+          parNames = names(lower), cl = control$cluster,
+          omitArgs = c("fn", "cl"),
+          ## the same population can be re-scored at two points; its evaluations so far tell them apart
+          .cacheExtra = list(fixedDigest, chunkEnds[iter], .rescoreMeans(rescoreStats, popKeys[toScore]),
+                             rescoreStats$n[match(popKeys[toScore], rescoreStats$keys)]),
+          .functionName = paste0("DEoptimRescore_", runName, "_", iter),
+          useCache = getOption("clusters.cacheDEoptimIterations", TRUE),
+          verbose = .verbose)
+        before <- .rescoreMeans(rescoreStats, popKeys)
+        rescoreStats <- .rescoreAdd(rescoreStats, popKeys[toScore], as.numeric(vals))
+        popval <- .rescoreMeans(rescoreStats, popKeys)
+        message(cli::col_green("Re-scored ", length(toScore), " members at generation ", chunkEnds[iter],
+                               "; median change in their values ",
+                               signif(stats::median(popval[toScore] - before[toScore]), 3)))
+        DE[[iter]]$member$popval <- popval
+        DE[[iter]]$member$popvalN <- rescoreStats$n[match(popKeys, rescoreStats$keys)]
+        DE[[iter]]$member$popvalSum <- rescoreStats$sum[match(popKeys, rescoreStats$keys)]
+      }
+    }
     known <- if (length(popval) == NROW(control$initialpop)) {
       ok <- !is.na(popval)
       list(keys = apply(control$initialpop, 1, .parKey)[ok], vals = popval[ok])

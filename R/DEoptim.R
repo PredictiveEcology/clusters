@@ -410,14 +410,12 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
 
       }
     }
-    ## Stop early when the best value has stopped improving. `bestvalit` is a monotone STEP function,
-    ## so the slope of a line through it answers the wrong question: a window spanning a step is wildly
-    ## "significant" (p ~ 1e-44 .. 1e-61), while a perfectly flat window -- which is exactly what
-    ## convergence looks like -- makes summary.lm() warn "essentially perfect fit" and return a
-    ## degenerate p of 0.0848, below the old 0.1 gate. The old test could therefore never fire and every
-    ## fit ran to `itermax` (FireSense phase 2, 2026-09-16). The window p-values above remain as a
-    ## diagnostic; the decision now uses the best value's history directly.
-    converged <- .deoptimConverged(bestvalitAll)
+    ## Stop early when the POPULATION has stopped improving (see .deoptimPopulationConverged). Neither
+    ## the slope of a line through `bestvalit` (a step function: it could never fire) nor "no new best
+    ## for 200 generations" (a lucky record restarts it) answers that. The window p-values above remain
+    ## as a diagnostic.
+    popvalsAll <- lapply(DE, function(x) x$member$popval)
+    converged <- .deoptimPopulationConverged(popvalsAll, chunkEnds[seq_along(DE)])
     ## Plot chunks computed in this session, not ones replayed from the cache, when each chunk (`iterStep`
     ## generations) finishes. Plotting used to require reproducible::isUpdated(), which is
     ## FALSE whenever nested Cache() is skipped (spades.useCache = "eventsOnly"), so no progress plots
@@ -470,8 +468,9 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
     # indistinguishable from a crash in the log
     if (converged) {
       message(cli::col_green(
-        "Converged: the best value has not improved in ",
-        getOption("clusters.deoptimNoImproveFor", 200L), " generations (",
+        "Converged: the population median improved by less than ",
+        getOption("clusters.deoptimConvergenceSE", 1), " standard error(s) over the last ",
+        getOption("clusters.deoptimConvergenceWindow", 200L), " generations (",
         nGenerations, " run); stopping before itermax"))
       break
     }
@@ -480,37 +479,45 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
 }
 
 
-#' Has the DEoptim fit stopped improving?
+#' Has the DEoptim population stopped improving?
 #'
-#' `bestvalit` is monotone non-increasing and moves in steps, so convergence is asked directly: how
-#' many generations since the best value last improved? A linear model over a window cannot answer
-#' this -- see the comment at the call site in [DEoptimIterative2()].
+#' The median of the population's values is compared with the median `window` generations earlier. The
+#' fit has converged when it improved by less than `seMultiplier` standard errors of the current median
+#' (`1.2533 * sd / sqrt(n)`, which needs no random numbers).
 #'
-#' Leading non-finite values are the generations before any member is scored; DEoptim reports `Inf`
-#' there, and they are dropped. An `NA`/`NaN` anywhere means a value that should exist does not, so
-#' the answer is a conservative `FALSE` rather than a guess.
+#' Why the population and not the best value: DE never evaluates a surviving member again, so on a
+#' noisy objective the best value is usually a lucky draw, and each new lucky record restarted the old
+#' "no new best for 200 generations" count. Re-scoring eight converged FireSense fits 10 times per member
+#' (2026-09-17) showed that rule stopping four fits while their populations still improved and running
+#' three for 170-560 generations after their populations had flattened. This rule, applied to the same
+#' fits' recorded populations, stops exactly the three flat ones.
 #'
-#' @param bestvalit numeric; the best objective value per generation, oldest first.
-#' @param noImproveFor integer; generations without improvement required to call it converged.
+#' Values at or above the `1e6` fail sentinel, and non-finite values, are left out. With fewer than four
+#' values to judge, or no population at least `window` generations back, the answer is `FALSE`.
+#'
+#' @param popvals list; each generation's (or chunk's) population values, oldest first.
+#' @param gens integer; the generation each element of `popvals` ends at.
+#' @param window integer; generations over which the median must have stopped improving.
 #' @param minGenerations integer; never converge before this many generations have run.
+#' @param seMultiplier numeric; the improvement allowed, in standard errors of the median.
 #' @return `TRUE` when the fit should stop early.
 #' @keywords internal
 #' @noRd
-.deoptimConverged <- function(bestvalit,
-                              noImproveFor = getOption("clusters.deoptimNoImproveFor", 200L),
-                              minGenerations = getOption("clusters.deoptimMinGenerations", 350L)) {
-  bv <- suppressWarnings(as.numeric(bestvalit))
-  if (!length(bv)) return(FALSE)
-  if (anyNA(bv)) return(FALSE)                       # NA/NaN: unknown, so do not stop
-  keep <- which(is.finite(bv))
-  if (!length(keep)) return(FALSE)                   # never scored (all Inf)
-  bv <- bv[seq(min(keep), length(bv))]               # drop the unscored prefix only
-  if (anyNA(bv) || !all(is.finite(bv))) return(FALSE)
-  nGen <- length(bv)
-  if (nGen <= minGenerations || nGen < noImproveFor) return(FALSE)
-  runningBest <- cummin(bv)
-  improved <- c(TRUE, diff(runningBest) < 0)         # element 1 is the baseline
-  (nGen - max(which(improved))) >= noImproveFor
+.deoptimPopulationConverged <- function(popvals, gens,
+                                        window = getOption("clusters.deoptimConvergenceWindow", 200L),
+                                        minGenerations = getOption("clusters.deoptimMinGenerations", 350L),
+                                        seMultiplier = getOption("clusters.deoptimConvergenceSE", 1)) {
+  if (!length(popvals)) return(FALSE)
+  usable <- function(v) { v <- suppressWarnings(as.numeric(v)); v[is.finite(v) & v < 1e6] }
+  now <- length(popvals)
+  if (gens[now] <= minGenerations) return(FALSE)
+  ref <- which(gens <= gens[now] - window)
+  if (!length(ref)) return(FALSE)
+  cur <- usable(popvals[[now]])
+  old <- usable(popvals[[max(ref)]])
+  if (length(cur) < 4L || length(old) < 4L) return(FALSE)
+  se <- 1.2533 * stats::sd(cur) / sqrt(length(cur))
+  (stats::median(old) - stats::median(cur)) < seMultiplier * se
 }
 
 controlSet <- function(control, ...) {

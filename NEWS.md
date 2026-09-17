@@ -16,6 +16,28 @@
   missing values are left out. Settings: `clusters.deoptimConvergenceWindow` (200),
   `clusters.deoptimMinGenerations` (350), `clusters.deoptimConvergenceSE` (1).
   `clusters.deoptimNoImproveFor` is no longer used.
+  
+# clusters 0.0.45
+
+## Enhancements
+
+* `DEoptimIterative2()` can re-score the surviving population: with
+  `options(clusters.deoptimRescoreEvery = k)`, every `k` generations each member is evaluated once more
+  and the value DEoptim holds for it becomes the running mean of all its evaluations. DE never
+  evaluates a surviving member again, so on a noisy objective a lucky low draw stays in the population
+  for good and keeps beating trials that are really better. In two converged FireSense fits, re-scoring
+  every member 10 times put the values DEoptim held 275-566 below the replicated means (noise SD about
+  200-250), the gap grew with every generation, and in one fit DEoptim's best was only third best by
+  replicated mean.
+
+  Each re-score costs one extra evaluation per member. Members holding the `1e6` fail sentinel are not
+  re-scored. `options(clusters.deoptimRescoreArgs = list(...))` overrides objective-function arguments
+  for the re-scoring calls only (FireSense: `list(thresh = Inf)`, so a re-score is always a full
+  evaluation); `pruneAbove` is `Inf` for them. Re-scores are cached like generations, so a stopped fit
+  resumes to the same means. Off by default (`0`), and then cache keys are unchanged.
+
+  Not changed here: the convergence rule still counts generations since `cummin(bestvalit)` last fell.
+  With re-scoring a member's value can rise, so an early lucky record still anchors that count.
 
 # clusters 0.0.44
 

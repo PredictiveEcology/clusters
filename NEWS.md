@@ -1,3 +1,22 @@
+# clusters 0.0.46
+
+## Bug fixes
+
+* `DEoptimIterative2()` now decides convergence from the population, not from the best value. The rule
+  in 0.0.43 stopped once the best value had not improved for 200 generations. But DE never evaluates a
+  surviving member again, so on a noisy objective the best value is usually a lucky draw, and each new
+  lucky record restarted the count. Eight converged FireSense fits were re-scored 10 times per member:
+  that rule had stopped four while their populations were still clearly improving, and run three for
+  170-560 generations after their populations had flattened.
+
+  A fit has now converged when the median of the population's values has improved by less than one
+  standard error of that median (`1.2533 * sd / sqrt(n)`) over the last 200 generations, after at least
+  350. Replayed over the same eight fits' recorded populations, this stops exactly the three flat ones
+  (at generations 438, 693 and 444) and none of the five still improving. Fail sentinels (`1e6`) and
+  missing values are left out. Settings: `clusters.deoptimConvergenceWindow` (200),
+  `clusters.deoptimMinGenerations` (350), `clusters.deoptimConvergenceSE` (1).
+  `clusters.deoptimNoImproveFor` is no longer used.
+
 # clusters 0.0.44
 
 ## Enhancements

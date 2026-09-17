@@ -36,33 +36,79 @@ test_that("premise: a window containing one step looks highly significant", {
   expect_lt(p, 1e-20)
 })
 
-test_that(".deoptimConverged() is TRUE once the best value has not improved for noImproveFor generations", {
-  bv <- c(seq(100, 61, length.out = 150), rep(60, 250))   # 400 generations; flat for the last 250
-  expect_true(.deoptimConverged(bv, noImproveFor = 200L, minGenerations = 350L))
+## A SECOND replacement (FireSense, 2026-09-17): "the best value has not improved for 200 generations" was
+## wrong in both directions. DE never re-scores a surviving member, so the best value is usually a lucky draw:
+## eight converged fits were re-scored 10 times per member, and the best-value rule had stopped four while
+## their populations were still clearly improving and run three for 170-560 generations after their
+## populations had flattened. Each new lucky record restarted its count.
+##
+## The rule now asks whether the POPULATION is still improving: has the median value moved by less than one
+## standard error of the median over the last `window` generations? Applied to the recorded populations of
+## those eight fits it stops the three flat ones (at 438, 693 and 444) and none of the five still improving.
+
+## `n` values around `centre`, spread like a population (sd ~ `sd`), without touching the RNG stream
+pop <- function(centre, sd = 100, n = 60) centre + sd * stats::qnorm(stats::ppoints(n))
+
+test_that(".deoptimPopulationConverged() is TRUE once the median moved less than one SE over the window", {
+  ## SE of the median of 60 values with sd 100: 1.2533 * 100 / sqrt(60) = 16.2
+  popvals <- c(lapply(1:200, function(g) pop(10000 - g)),  # improving for 200 generations...
+               lapply(1:200, function(g) pop(9800 - g / 100)))  # ...then only 2 more in 200
+  expect_true(.deoptimPopulationConverged(popvals, seq_along(popvals), window = 200L, minGenerations = 350L))
 })
 
-test_that(".deoptimConverged() is FALSE while an improvement falls inside the window", {
-  bv <- c(rep(100, 300), rep(60, 100))                    # improved 100 generations ago
-  expect_false(.deoptimConverged(bv, noImproveFor = 200L, minGenerations = 350L))
+test_that(".deoptimPopulationConverged() is FALSE while the median still improves by more than one SE", {
+  popvals <- lapply(1:400, function(g) pop(10000 - g / 5))  # 40 better over the last 200: ~2.5 SE
+  expect_false(.deoptimPopulationConverged(popvals, seq_along(popvals), window = 200L, minGenerations = 350L))
 })
 
-test_that(".deoptimConverged() is FALSE before minGenerations, however flat", {
-  expect_false(.deoptimConverged(rep(60, 300), noImproveFor = 200L, minGenerations = 350L))
+test_that("a new lucky best does not hold the fit open when the population has stopped moving", {
+  ## the case the best-value rule got wrong: the median is flat, but one member keeps setting records
+  popvals <- lapply(1:400, function(g) { v <- pop(9800); v[1] <- 9000 - g; v })
+  expect_true(.deoptimPopulationConverged(popvals, seq_along(popvals), window = 200L, minGenerations = 350L))
 })
 
-test_that(".deoptimConverged() handles degenerate series without erroring", {
-  ## all-infinite is what DEoptim reports before any member is scored; the old code guarded this too
-  expect_false(.deoptimConverged(rep(Inf, 400), noImproveFor = 200L, minGenerations = 350L))
-  expect_false(.deoptimConverged(numeric(0), noImproveFor = 200L, minGenerations = 350L))
-  expect_false(.deoptimConverged(c(5, 4, 3), noImproveFor = 200L, minGenerations = 350L))
-  expect_false(.deoptimConverged(c(rep(NA_real_, 10), rep(60, 400)),
-                                 noImproveFor = 200L, minGenerations = 350L))
+test_that("the tolerance scales with the population's spread, and with the SE multiplier", {
+  popvals <- lapply(1:400, function(g) pop(10000 - g / 5, sd = 400))   # 40 over 200, SE ~65: under 1 SE
+  expect_true(.deoptimPopulationConverged(popvals, seq_along(popvals), window = 200L, minGenerations = 350L))
+  expect_false(.deoptimPopulationConverged(popvals, seq_along(popvals), window = 200L, minGenerations = 350L,
+                                           seMultiplier = 0.5))
 })
 
-test_that(".deoptimConverged() takes its thresholds from options when not given", {
-  bv <- c(rep(100, 100), rep(60, 300))                    # flat for the last 300 of 400
-  withr::local_options(clusters.deoptimNoImproveFor = 200L, clusters.deoptimMinGenerations = 350L)
-  expect_true(.deoptimConverged(bv))
-  withr::local_options(clusters.deoptimNoImproveFor = 400L)
-  expect_false(.deoptimConverged(bv))
+test_that(".deoptimPopulationConverged() is FALSE before minGenerations, however flat", {
+  popvals <- lapply(1:300, function(g) pop(9800))
+  expect_false(.deoptimPopulationConverged(popvals, seq_along(popvals), window = 200L, minGenerations = 350L))
+})
+
+test_that("failed trials and missing values are left out, and too little to judge is FALSE", {
+  flat <- lapply(1:400, function(g) pop(9800))
+  withFails <- lapply(flat, function(v) { v[1:10] <- 1e6; v })       # the fail sentinel is not a value
+  expect_true(.deoptimPopulationConverged(withFails, seq_along(withFails), window = 200L, minGenerations = 350L))
+  noValues <- lapply(1:400, function(g) rep(NA_real_, 60))            # generations cached before popval was kept
+  expect_false(.deoptimPopulationConverged(noValues, seq_along(noValues), window = 200L, minGenerations = 350L))
+  expect_false(.deoptimPopulationConverged(list(), integer(0), window = 200L, minGenerations = 350L))
+  allFailed <- lapply(1:400, function(g) rep(1e6, 60))
+  expect_false(.deoptimPopulationConverged(allFailed, seq_along(allFailed), window = 200L, minGenerations = 350L))
+})
+
+test_that("chunks of several generations are compared with the latest chunk at least `window` earlier", {
+  ## iterStep = 25: one population per 25 generations
+  gens <- seq(25L, 500L, by = 25L)
+  popvals <- lapply(gens, function(g) pop(if (g <= 250) 10000 - g else 9750))
+  expect_true(.deoptimPopulationConverged(popvals, gens, window = 200L, minGenerations = 350L))   # 500 vs 300
+  expect_false(.deoptimPopulationConverged(popvals[1:16], gens[1:16], window = 200L, minGenerations = 350L))  # 400 vs 200
+})
+
+test_that(".deoptimPopulationConverged() takes its settings from options when not given", {
+  popvals <- lapply(1:400, function(g) pop(if (g <= 150) 10000 - g else 9850))   # flat for the last 250
+  withr::local_options(clusters.deoptimConvergenceWindow = 200L, clusters.deoptimMinGenerations = 350L,
+                       clusters.deoptimConvergenceSE = 1)
+  expect_true(.deoptimPopulationConverged(popvals, seq_along(popvals)))
+  withr::local_options(clusters.deoptimConvergenceWindow = 300L)      # now the window reaches the improvement
+  expect_false(.deoptimPopulationConverged(popvals, seq_along(popvals)))
+})
+
+test_that("DEoptimIterative2() decides convergence from the population, not from bestvalit", {
+  src <- paste(deparse(DEoptimIterative2), collapse = "\n")
+  expect_match(src, ".deoptimPopulationConverged(", fixed = TRUE)
+  expect_false(grepl(".deoptimConverged(", src, fixed = TRUE))
 })

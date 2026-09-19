@@ -1,3 +1,9 @@
+# clusters 0.0.48
+
+* The worker-side transfer read and the transfer directory name are now the exported
+  functions `readTransferredObjects()` and `transferDirName()`, so they are testable without a
+  live multi-host cluster.
+
 # clusters 0.0.47
 
 * `clusterSetup()` now gives each job its own worker-side transfer directory. It previously used a

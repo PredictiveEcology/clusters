@@ -300,8 +300,18 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
         stExport <- system.time({
           outExp <- parallel::clusterExport(clThird, varlist = "filenameForTransfer", envir = environment())
         })
+        ## Each job gets its OWN transfer directory. This used to be a single shared
+        ## "/tmp/fireSense_SpreadFit", and the cleanup below removes `dirname(therePath)`
+        ## recursively -- so a second job starting while a first was still reading would have the
+        ## directory deleted underneath it. `qs_read()` then failed, the `try()` fallback returned
+        ## a try-error, and `.unwrap()` produced objects whose terra external pointers were invalid;
+        ## the workers died with "external pointer is not valid" at the first evaluation, far from
+        ## the real cause. Observed 2026-09-19: 3 of 5 concurrent DEoptim arms died this way.
+        ## `basename(tempfile())` is unique per master process, so concurrent jobs no longer collide.
+        transferDir <- transferDirName()
+        parallel::clusterExport(clThird, varlist = "transferDir", envir = environment())
         out11 <- parallel::clusterEvalQ(clThird, {
-          therePath <- file.path("/tmp/fireSense_SpreadFit", basename(filenameForTransfer))
+          therePath <- file.path(transferDir, basename(filenameForTransfer))
           dir.create(dirname(therePath), recursive = TRUE, showWarnings = FALSE)
           therePath
         })
@@ -319,9 +329,7 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
                                              therePath)))
           })
         out <- parallel::clusterEvalQ(clThird, {
-          out <- try(qs2::qs_read(file = therePath), silent = TRUE)
-          if (is(out, "try-error"))
-            out <- try(qs2::qs_read(file = filenameForTransfer), silent = TRUE)
+          out <- clusters::readTransferredObjects(therePath, filenameForTransfer)
           out <- reproducible::.unwrap(out, cachePath = NULL)
           list2env(out, envir = .GlobalEnv)
         })
@@ -622,3 +630,46 @@ makeClusterPSOCK <- function(
 
 
 
+
+#' Read objects transferred to a worker, failing loudly if the transfer did not arrive
+#'
+#' Tries the local (rsynced) copy first, then the original shared path. A failed read used to fall
+#' through to [reproducible::.unwrap()] on a `try-error`, which produced objects whose terra
+#' external pointers were dangling; the job then died much later with
+#' `"external pointer is not valid"`, an error saying nothing about a file transfer. Verifying here
+#' keeps the error where the cause is.
+#'
+#' @param therePath Path to the worker-local copy of the transferred objects.
+#' @param filenameForTransfer Path to the original, used as a fallback.
+#'
+#' @return The list of transferred objects.
+#' @export
+readTransferredObjects <- function(therePath, filenameForTransfer) {
+  out <- try(qs2::qs_read(file = therePath), silent = TRUE)
+  if (inherits(out, "try-error")) {
+    out <- try(qs2::qs_read(file = filenameForTransfer), silent = TRUE)
+  }
+  if (inherits(out, "try-error")) {
+    stop("clusters: could not read the transferred objects on ", Sys.info()[["nodename"]],
+         " from either '", therePath, "' or '", filenameForTransfer, "'. ",
+         "The transfer file was missing or unreadable; a concurrent job deleting a shared ",
+         "transfer directory is one cause. Original error: ", attr(out, "condition")$message)
+  }
+  if (!is.list(out)) {
+    stop("clusters: the transferred objects on ", Sys.info()[["nodename"]],
+         " are a '", class(out)[1], "', not a list; the transfer file is corrupt.")
+  }
+  out
+}
+
+#' Build the per-job worker transfer directory name
+#'
+#' Unique per master process. This was a single shared `/tmp/fireSense_SpreadFit` for every job,
+#' while the cleanup step removes `dirname(therePath)` recursively -- so concurrent jobs deleted
+#' each other's staged objects mid-read.
+#'
+#' @return A directory path, as a length-one character vector.
+#' @export
+transferDirName <- function() {
+  paste0("/tmp/clusters_transfer_", basename(tempfile("")))
+}

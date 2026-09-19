@@ -1,3 +1,18 @@
+# clusters 0.0.48
+
+* The worker-side transfer read and the transfer directory name are now the exported
+  functions `readTransferredObjects()` and `transferDirName()`, so they are testable without a
+  live multi-host cluster.
+
+# clusters 0.0.47
+
+* `clusterSetup()` now gives each job its own worker-side transfer directory. It previously used a
+  single shared `/tmp/fireSense_SpreadFit`, which the cleanup step removes recursively, so
+  concurrent jobs deleted each other's transfer file mid-read. The failure surfaced later and
+  elsewhere, as terra "external pointer is not valid" on every worker.
+* A failed or corrupt object transfer now errors on the worker with the path and the original
+  message, instead of being passed to `.unwrap()` and producing dangling pointers.
+
 # clusters 0.0.46
 
 ## Bug fixes

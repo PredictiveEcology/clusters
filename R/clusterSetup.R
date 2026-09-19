@@ -300,8 +300,18 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
         stExport <- system.time({
           outExp <- parallel::clusterExport(clThird, varlist = "filenameForTransfer", envir = environment())
         })
+        ## Each job gets its OWN transfer directory. This used to be a single shared
+        ## "/tmp/fireSense_SpreadFit", and the cleanup below removes `dirname(therePath)`
+        ## recursively -- so a second job starting while a first was still reading would have the
+        ## directory deleted underneath it. `qs_read()` then failed, the `try()` fallback returned
+        ## a try-error, and `.unwrap()` produced objects whose terra external pointers were invalid;
+        ## the workers died with "external pointer is not valid" at the first evaluation, far from
+        ## the real cause. Observed 2026-09-19: 3 of 5 concurrent DEoptim arms died this way.
+        ## `basename(tempfile())` is unique per master process, so concurrent jobs no longer collide.
+        transferDir <- paste0("/tmp/clusters_transfer_", basename(tempfile("")))
+        parallel::clusterExport(clThird, varlist = "transferDir", envir = environment())
         out11 <- parallel::clusterEvalQ(clThird, {
-          therePath <- file.path("/tmp/fireSense_SpreadFit", basename(filenameForTransfer))
+          therePath <- file.path(transferDir, basename(filenameForTransfer))
           dir.create(dirname(therePath), recursive = TRUE, showWarnings = FALSE)
           therePath
         })
@@ -319,9 +329,21 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
                                              therePath)))
           })
         out <- parallel::clusterEvalQ(clThird, {
+          ## Read the transferred objects, and FAIL LOUDLY here if that did not work. Previously a
+          ## failed read fell through to `.unwrap()` on a try-error, which yielded objects with
+          ## dangling terra pointers; the job then died later with "external pointer is not valid",
+          ## which says nothing about the transfer. Verifying here keeps the error where the cause is.
           out <- try(qs2::qs_read(file = therePath), silent = TRUE)
-          if (is(out, "try-error"))
+          if (inherits(out, "try-error"))
             out <- try(qs2::qs_read(file = filenameForTransfer), silent = TRUE)
+          if (inherits(out, "try-error"))
+            stop("clusters: could not read the transferred objects on ", Sys.info()[["nodename"]],
+                 " from either '", therePath, "' or '", filenameForTransfer, "'. ",
+                 "The transfer file was missing or unreadable; a concurrent job deleting a shared ",
+                 "transfer directory is one cause. Original error: ", attr(out, "condition")$message)
+          if (!is.list(out))
+            stop("clusters: the transferred objects on ", Sys.info()[["nodename"]],
+                 " are a '", class(out)[1], "', not a list; the transfer file is corrupt.")
           out <- reproducible::.unwrap(out, cachePath = NULL)
           list2env(out, envir = .GlobalEnv)
         })

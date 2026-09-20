@@ -13,7 +13,7 @@ plan_psock_min(
   pkgsNeeded = c("parallelly", "future", "foreach"),
   user_lib_template = "~/.local/R/\%v/library",
   install_repos = c("https://cloud.r-project.org", "https://cran.r-project.org"),
-  rshopts = c("-T", "-o", "ConnectTimeout=10"),
+  rshopts = .sshKeepaliveOpts(),
   rscript = "Rscript",
   auto_stop = TRUE,
   logPath = NULL,
@@ -41,7 +41,8 @@ plan_psock_min(
 \item{install_repos}{Character vector of CRAN-like repos tried in order
 (default \code{c("https://cloud.r-project.org","https://cran.r-project.org")}).}
 
-\item{rshopts}{Character vector of SSH options passed by parallelly (default \code{c("-T","-o","ConnectTimeout=10")}).}
+\item{rshopts}{Character vector of SSH options passed by parallelly. Defaults to
+\code{\link[=.sshKeepaliveOpts]{.sshKeepaliveOpts()}}, which bounds how long the master waits on a worker that has died.}
 
 \item{rscript}{Character; path to \code{Rscript} on workers (default \code{"Rscript"}).}
 

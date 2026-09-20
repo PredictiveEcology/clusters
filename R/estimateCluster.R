@@ -23,7 +23,8 @@
 #'   (default `"~/.local/R/%v/library"`).
 #' @param install_repos Character vector of CRAN-like repos tried in order
 #'   (default `c("https://cloud.r-project.org","https://cran.r-project.org")`).
-#' @param rshopts Character vector of SSH options passed by parallelly (default `c("-T","-o","ConnectTimeout=10")`).
+#' @param rshopts Character vector of SSH options passed by parallelly. Defaults to
+#'   [.sshKeepaliveOpts()], which bounds how long the master waits on a worker that has died.
 #' @param rscript Character; path to `Rscript` on workers (default `"Rscript"`).
 #' @param logPath Optional local file to append compact bootstrap / probe info.
 #' @param libPath Optional site library path to prepend and use if writable.
@@ -68,7 +69,7 @@ plan_psock_min <- function(
   pkgsNeeded = c("parallelly","future","foreach"),
   user_lib_template = "~/.local/R/%v/library",
   install_repos = c("https://cloud.r-project.org","https://cran.r-project.org"),
-  rshopts = c("-T","-o","ConnectTimeout=10"),
+  rshopts = .sshKeepaliveOpts(),
   rscript = "Rscript",
   auto_stop = TRUE,
   logPath = NULL,
@@ -546,4 +547,37 @@ on.exitAny <- function(expr, outerLevel = 2, envir = sys.frame(-abs(outerLevel))
                        add = TRUE, after = TRUE) {
   funExpr <- as.call(list(function() expr))
   do.call(base::on.exit, list(funExpr, add, after), envir = envir)
+}
+#' SSH options that let the master notice a worker has died
+#'
+#' PSOCK workers are reached over SSH, and the master reads results with `unserialize()` on the
+#' socket. That read is bounded by parallelly's `timeout`, which we set to 30 days so that a
+#' legitimately long computation is never cut off. The consequence is that if a worker's R process
+#' dies *after* connecting, SSH holds the tunnel open, the socket never closes, and the master
+#' blocks for up to 30 days -- in practice, forever.
+#'
+#' `connectTimeout` does not help: it only bounds the initial connect, which already succeeded.
+#'
+#' `ServerAliveInterval`/`ServerAliveCountMax` close the door from the SSH side instead. SSH probes
+#' an idle connection every `ServerAliveInterval` seconds and tears it down after
+#' `ServerAliveCountMax` unanswered probes, so a dead worker surfaces as a closed connection and an
+#' R error within ~2 minutes rather than hanging the run. A busy worker answers the probes, so long
+#' computations are unaffected -- the probes run at the SSH layer, not in R.
+#'
+#' Observed 2026-09-19/20: two re-scores hung for hours after a worker died at startup with
+#' `Error in unserialize(node$con)` inside `workRSOCK`, and the masters had to be killed by hand.
+#'
+#' @param extra Character vector of additional SSH options to append.
+#' @param interval Seconds between keepalive probes.
+#' @param countMax Number of unanswered probes before SSH closes the connection.
+#'
+#' @return A character vector of SSH options for `rshopts`.
+#' @export
+.sshKeepaliveOpts <- function(extra = NULL, interval = 30L, countMax = 4L) {
+  stopifnot(length(interval) == 1L, interval > 0, length(countMax) == 1L, countMax > 0)
+  c("-T",
+    "-o", "ConnectTimeout=10",
+    "-o", paste0("ServerAliveInterval=", as.integer(interval)),
+    "-o", paste0("ServerAliveCountMax=", as.integer(countMax)),
+    extra)
 }

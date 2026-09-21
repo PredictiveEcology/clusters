@@ -1,3 +1,10 @@
+# clusters 0.0.49
+
+* SSH connections to workers now use `ServerAliveInterval`/`ServerAliveCountMax`, so a worker whose
+  R process dies after connecting surfaces as an error within ~2 minutes instead of blocking the
+  master for up to 30 days. Added `.sshKeepaliveOpts()`, used as the `rshopts` default by both
+  `plan_psock_min()` and `makeClusterPSOCK()`.
+
 # clusters 0.0.48
 
 * The worker-side transfer read and the transfer directory name are now the exported

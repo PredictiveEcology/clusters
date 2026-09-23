@@ -7,7 +7,7 @@
 .ht_allocate_min(nodes, total, beta)
 }
 \arguments{
-\item{nodes}{data.frame with \code{host}, \code{cores_total}, \code{free_est}.}
+\item{nodes}{data.frame with \code{host}, \code{cores_total}, \code{free_est}, and optionally \code{cores_physical}.}
 
 \item{total}{Integer total workers requested.}
 
@@ -19,7 +19,9 @@ data.frame with \code{preHT_free}, \code{HT_free}, \code{weighted_free}, \code{a
 \description{
 Minimal HT-aware allocation:
 \itemize{
-\item \code{preHT_free = pmin(free_est, cores_total/2)}
+\item \code{preHT_free = pmin(free_est, cores_physical)}; where \code{cores_physical} is absent or \code{NA}, it is
+taken as \code{cores_total/2} (two threads per core), so a host without hyperthreading counts all its
+cores as real only when the probe could see its topology (\code{\link[=.physicalCores]{.physicalCores()}})
 \item \code{HT_free    = pmax(free_est - preHT_free, 0)}
 \item \code{weighted   = preHT_free + beta * HT_free}
 Proportional shares with integer rounding and caps ≤ \code{free_est}.

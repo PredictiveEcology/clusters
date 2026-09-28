@@ -340,6 +340,8 @@ plan_psock_min <- function(
     freeC <- parallelly::freeCores(memory = load_memory, fraction = fraction)
     list(
       cores_total = as.integer(maxC),
+      # NA if the host cannot say (or runs an older clusters): the allocator then assumes 2 threads/core
+      cores_physical = tryCatch(clusters:::.availablePhysicalCores(maxC), error = function(e) NA_integer_),
       free_est    = as.integer(freeC),
       loadavg     = attr(freeC, "loadavg")
     )
@@ -352,6 +354,7 @@ plan_psock_min <- function(
     data.frame(
       host        = lbl,                         # PRESERVE SSH NAME (not Sys.info()[["nodename"]])
       cores_total = cap$cores_total,
+      cores_physical = if (is.null(cap$cores_physical)) NA_integer_ else cap$cores_physical,
       free_est    = cap$free_est,
       loadavg_1   = unname(cap$loadavg["1min"]),
       loadavg_5   = unname(cap$loadavg["5min"]),
@@ -482,12 +485,14 @@ plan_psock_min <- function(
 #'
 #' @description
 #' Minimal HT-aware allocation:
-#' - `preHT_free = pmin(free_est, cores_total/2)`
+#' - `preHT_free = pmin(free_est, cores_physical)`; where `cores_physical` is absent or `NA`, it is
+#'   taken as `cores_total/2` (two threads per core), so a host without hyperthreading counts all its
+#'   cores as real only when the probe could see its topology ([.physicalCores()])
 #' - `HT_free    = pmax(free_est - preHT_free, 0)`
 #' - `weighted   = preHT_free + beta * HT_free`
 #' Proportional shares with integer rounding and caps ≤ `free_est`.
 #'
-#' @param nodes data.frame with `host`, `cores_total`, `free_est`.
+#' @param nodes data.frame with `host`, `cores_total`, `free_est`, and optionally `cores_physical`.
 #' @param total Integer total workers requested.
 #' @param beta Numeric penalty (0,1] for HT region.
 #' @return data.frame with `preHT_free`, `HT_free`, `weighted_free`, `assign`.
@@ -497,7 +502,9 @@ plan_psock_min <- function(
   C <- as.numeric(nodes$cores_total)
   F <- pmax(as.numeric(nodes$free_est), 0)
   
-  preHT_free <- pmin(F, C/2)
+  P <- if ("cores_physical" %in% names(nodes)) as.numeric(nodes$cores_physical) else rep(NA_real_, length(C))
+  P[is.na(P)] <- C[is.na(P)] / 2
+  preHT_free <- pmin(F, P)
   HT_free <- pmax(F - preHT_free, 0)
   weighted <- preHT_free + beta * HT_free
   

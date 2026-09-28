@@ -1,3 +1,12 @@
+# clusters 0.0.50
+
+* The worker allocator now counts each host's real cores from its CPU topology. It assumed every host had
+  two threads per core, so a machine without hyperthreading was weighted as half real cores and half
+  hyperthreads, and got a quarter less than its share (a 24-core host rated as 18). The probe now reports
+  `cores_physical` from `.physicalCores()`: the Linux topology in `/sys` (distinct `thread_siblings_list`),
+  then `/proc/cpuinfo`, and `parallel::detectCores(logical = FALSE)` elsewhere; it returns the logical count
+  on Linux, so it cannot be used there. A host that cannot report falls back to two threads per core.
+
 # clusters 0.0.49
 
 * SSH connections to workers now use `ServerAliveInterval`/`ServerAliveCountMax`, so a worker whose

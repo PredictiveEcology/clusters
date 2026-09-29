@@ -1,4 +1,4 @@
-## DEoptimIterative2() progress plots.
+## DEoptimIterative() progress plots.
 ##
 ## 2026-09-15, FireSense phase 2: no DEoptim progress plots or "Saved:" messages appeared, although
 ## the 2026-09-08 fits made them every iteration. Plotting ran only when reproducible::isUpdated()
@@ -31,7 +31,7 @@ runPlotted <- function(itermax, cachePath, iterStep, plotted, cacheIterations = 
     visualizeDE = function(...) NULL,
     .package = "clusters")
   msgs <- testthat::capture_messages(suppressWarnings(
-    clusters:::DEoptimIterative2(fn, lower = lower, upper = upper,
+    clusters:::DEoptimIterative(fn, lower = lower, upper = upper,
                                  control = list(NP = 8L, strategy = 2L, itermax = itermax, trace = FALSE),
                                  iterStep = iterStep, plotEvery = plotEvery,
                                  figurePath = withr::local_tempdir(), .plots = "png", cachePath = cachePath,
@@ -85,5 +85,5 @@ test_that("plotEvery counts generations when a chunk holds several", {
 })
 
 test_that("plotEvery defaults to 25", {
-  expect_identical(formals(clusters:::DEoptimIterative2)$plotEvery, 25L)
+  expect_identical(formals(clusters:::DEoptimIterative)$plotEvery, 25L)
 })

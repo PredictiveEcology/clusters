@@ -1,4 +1,4 @@
-## The early-stopping test in DEoptimIterative2() decides when a fit has converged.
+## The early-stopping test in DEoptimIterative() decides when a fit has converged.
 ##
 ## FireSense phase 2 (2026-09-16) found it could never fire. `bestvalit` from DEoptim is a monotone
 ## STEP function, not a noisy trend: one fit (ELF 4.3) had SEVEN unique values across 456 generations,
@@ -107,8 +107,8 @@ test_that(".deoptimPopulationConverged() takes its settings from options when no
   expect_false(.deoptimPopulationConverged(popvals, seq_along(popvals)))
 })
 
-test_that("DEoptimIterative2() decides convergence from the population, not from bestvalit", {
-  src <- paste(deparse(DEoptimIterative2), collapse = "\n")
+test_that("DEoptimIterative() decides convergence from the population, not from bestvalit", {
+  src <- paste(deparse(DEoptimIterative), collapse = "\n")
   expect_match(src, ".deoptimPopulationConverged(", fixed = TRUE)
   expect_false(grepl(".deoptimConverged(", src, fixed = TRUE))
 })

@@ -54,7 +54,9 @@ clusterSetup(
 \code{cluster} and \code{parallelType} are set here.}
 }
 \value{
-A list of items that can be passed to \code{DEoptim.control()}
+A list of items that can be passed to \code{DEoptim.control()}. When \code{objsNeeded} is given,
+it carries a digest of those objects as its \code{"objsDigest"} attribute (see
+\code{\link[=shippedObjectsDigest]{shippedObjectsDigest()}}), computed once, for cache keys.
 }
 \description{
 This includes copying files over to unique(cores) machines, then loading all objects from disk in

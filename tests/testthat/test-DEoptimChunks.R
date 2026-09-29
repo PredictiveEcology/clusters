@@ -1,8 +1,8 @@
-## DEoptimIterative2() runs `iterStep` generations in each DEoptim call, and records how long each
+## DEoptimIterative() runs `iterStep` generations in each DEoptim call, and records how long each
 ## evaluation takes.
 ##
 ## FireSense, 2026-09-15: fireSenseUtils::runDEoptim documents iterStep as the number of generations per
-## DEoptim call, but DEoptimIterative2 always ran one. DEoptim resets its CR/F adaptation (c > 0) at the
+## DEoptim call, but DEoptimIterative always ran one. DEoptim resets its CR/F adaptation (c > 0) at the
 ## start of every call (DEoptim src/de4_0.c), so one generation per call threw that adaptation away.
 ## Eliot: one parameter for the chunk and the plotting interval. Per-evaluation times show how long the
 ## slowest evaluations take -- they set the time of a generation -- to tune the long-tail cutoff.
@@ -25,7 +25,7 @@ runChunked <- function(itermax, iterStep, cachePath, calls, fn = function(par) s
                        reproducible.useCache = FALSE,       # what spades.useCache = "eventsOnly" does
                        clusters.cacheDEoptimIterations = TRUE)
   msgs <- testthat::capture_messages(suppressWarnings(
-    DE <- clusters:::DEoptimIterative2(fn, lower = lower, upper = upper,
+    DE <- clusters:::DEoptimIterative(fn, lower = lower, upper = upper,
                                        control = list(NP = 8L, strategy = 2L, itermax = itermax, trace = FALSE),
                                        iterStep = iterStep, figurePath = FALSE, .plots = NULL,
                                        cachePath = cachePath, runName = "chunks", .verbose = -1)))
@@ -68,7 +68,7 @@ test_that("a stopped chunked run resumes from its cached chunks, and another ite
 
 test_that("itermax given as 4 or 4L finds the same cached chunks", {
   ## the chunk length is in the cache key; computed from a double itermax it was a double, from an
-  ## integer an integer, and those digest differently (test-DEoptimIterative2 passes 1, then 2:4)
+  ## integer an integer, and those digest differently (test-DEoptimIterative passes 1, then 2:4)
   cp <- withr::local_tempdir()
   runChunked(itermax = 4, iterStep = 2, cachePath = cp, calls = newCalls())
   calls <- newCalls()

@@ -21,7 +21,9 @@
 #'   `DEoptim.control()` does not have is an error. `NP` is still the number of workers built, and
 #'   `cluster` and `parallelType` are set here.
 #' @export
-#' @returns A list of items that can be passed to `DEoptim.control()`
+#' @returns A list of items that can be passed to `DEoptim.control()`. When `objsNeeded` is given,
+#'   it carries a digest of those objects as its `"objsDigest"` attribute (see
+#'   [shippedObjectsDigest()]), computed once, for cache keys.
 #'
 #'
 clusterSetup <- function(messagePrefix = "DEoptim_",
@@ -152,6 +154,16 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
 
   ## NP is exactly the number of workers: DEoptim evaluates one population member per worker.
   control$NP <- .clusterNP(NP, nWorkers = if (is.null(cores)) 0L else length(cores))
+
+  ## The objects shipped to the workers are what the objective runs on, but they are not among its
+  ## arguments, so a cache key built from the arguments misses them: two fits that differ only in
+  ## the data shipped here (e.g. two cross-validation folds) shared every cached DEoptim generation
+  ## (FireSense, 2026-09-29). Digest them once, here, and carry the digest on `control` for
+  ## DEoptimIterative() and any caller's own cache key; see shippedObjectsDigest().
+  if (!missing(objsNeeded) && length(objsNeeded)) {
+    attr(control, "objsDigest") <-
+      reproducible::.robustDigest(mget(sort(unlist(objsNeeded)), envir = envir))
+  }
   
   if (!is.null(cores)) {
     message(paste0(

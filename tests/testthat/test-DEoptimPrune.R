@@ -71,7 +71,7 @@ test_that("the bound is added only AFTER the objective function's fixed digest i
   ## -- a value that changes every generation would enter every chunk's key and invalidate every
   ## cached generation of every running fit. That is a multi-day loss on a live campaign, and it
   ## would be silent: the fit would simply recompute. Assert the order.
-  src <- paste(deparse(DEoptimIterative2), collapse = "\n")
+  src <- paste(deparse(DEoptimIterative), collapse = "\n")
   atFixed <- regexpr("fixedDigest <- ", src, fixed = TRUE)
   atPrune <- regexpr("objFunArgs$pruneAbove <- ", src, fixed = TRUE)
   expect_gt(atFixed, 0L)
@@ -79,11 +79,11 @@ test_that("the bound is added only AFTER the objective function's fixed digest i
   expect_lt(atFixed, atPrune)
 })
 
-test_that("DEoptimIterative2() passes the bound to the objective function as pruneAbove", {
+test_that("DEoptimIterative() passes the bound to the objective function as pruneAbove", {
   ## Parsed, not run: a real call needs a cluster. `dotsList` is the objective function's argument
   ## list, and it is in `omitArgs`, so threading the bound through it cannot invalidate a cached
   ## chunk -- the bound changes every generation and must not become part of the chunk's key.
-  src <- paste(deparse(DEoptimIterative2), collapse = "\n")
+  src <- paste(deparse(DEoptimIterative), collapse = "\n")
   expect_match(src, "pruneAbove")
   expect_match(src, "\\.prunePopulationBound\\(popval\\)")
 })

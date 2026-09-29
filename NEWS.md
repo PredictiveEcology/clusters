@@ -1,3 +1,8 @@
+# clusters 0.0.51
+
+* `DEoptimIterative2()` is exported and documented. fireSenseUtils calls it for every FireSense
+  spread fit, until now as `clusters:::DEoptimIterative2()`.
+
 # clusters 0.0.50
 
 * The worker allocator now counts each host's real cores from its CPU topology. It assumed every host had

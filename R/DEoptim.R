@@ -169,6 +169,28 @@
   if (is.null(cl)) apply(pop, 1, f) else parallel::parApply(cl, pop, 1, f)
 }
 
+#' Run DEoptim in cached chunks of generations
+#'
+#' Runs [DEoptim::DEoptim()] a few generations at a time (`iterStep` in `...`, default 1),
+#' starting each call from the previous call's population, and caches every chunk with
+#' [reproducible::Cache()], so a fit that is interrupted resumes from its last finished chunk.
+#' Between chunks it can re-score the surviving population (`options(clusters.deoptimRescoreEvery)`),
+#' draws progress figures with `SpaDES.core::Plots()` when `figurePath` is a path, and stops early
+#' once the population has stopped improving (see `.deoptimPopulationConverged()`).
+#'
+#' @param fn The objective function, as for [DEoptim::DEoptim()].
+#' @param lower,upper Parameter bounds, as for [DEoptim::DEoptim()].
+#' @param control A list of [DEoptim::DEoptim.control()] settings. Only what is set here is used;
+#'   the rest get this function's defaults. `itermax` is the total number of generations.
+#' @param ... Passed to `fn`, except `iterStep` (generations per DEoptim call) and `rep`.
+#' @param .plots Passed to `SpaDES.core::Plots()` as `types` for the progress figures.
+#' @param figurePath Folder for the progress figures, or `FALSE` for none.
+#' @param cachePath Passed to the progress figures that read the cache.
+#' @param runName Distinguishes this fit's cached chunks from another fit's.
+#' @param .verbose Passed to [reproducible::Cache()].
+#'
+#' @return A list with one [DEoptim::DEoptim()] result per chunk run, in order.
+#' @export
 DEoptimIterative2 <- function(fn, lower, upper, control, ...,
                               # formulaToFit, covMinMax, tests, maxFireSpread, mutuallyExclusive,
                               # doObjFunAssertions, Nreps, objFunCoresInternal, thresh, rep,

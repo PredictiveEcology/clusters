@@ -24,7 +24,8 @@ DEoptimIterative2(...)
 \arguments{
 \item{fn}{The objective function, as for \code{\link[DEoptim:DEoptim]{DEoptim::DEoptim()}}.}
 
-\item{lower, upper}{Parameter bounds, as for \code{\link[DEoptim:DEoptim]{DEoptim::DEoptim()}}.}
+\item{lower, upper}{Parameter bounds, as for \code{\link[DEoptim:DEoptim]{DEoptim::DEoptim()}}. The names of \code{lower} label the
+parameters in the progress figures (V1, V2, ... when \code{lower} is unnamed).}
 
 \item{control}{A list of \code{\link[DEoptim:DEoptim.control]{DEoptim::DEoptim.control()}} settings. Only what is set here is used;
 the rest get this function's defaults. \code{itermax} is the total number of generations.}

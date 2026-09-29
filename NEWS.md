@@ -1,3 +1,13 @@
+# clusters 0.0.54
+
+* `DEoptimIterative()` labels the parameters in its progress figures with `names(lower)` (V1, V2, ...
+  when `lower` is unnamed). It no longer reads `formulaToFit` and `thresh` from the objective's
+  arguments and calls `termsInDEoptim()`, which named every non-formula parameter "logit1", "logit2",
+  ...: a FireSense fit labelled maxAsymptote, inflectionPoint1 and yearSpreadSD as logit1..logit3.
+* `termsInDEoptim()` is deprecated and will be removed in the next release.
+* `ggDEoptimFilename()`'s `subfolder` defaults to `""` (was `"fireSense_SpreadFit"`); every caller
+  already passed `""`.
+
 # clusters 0.0.53
 
 * The cache key of every `DEoptimIterative()` generation now includes the data shipped to the workers.

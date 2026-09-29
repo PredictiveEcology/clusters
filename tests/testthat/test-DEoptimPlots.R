@@ -87,3 +87,42 @@ test_that("plotEvery counts generations when a chunk holds several", {
 test_that("plotEvery defaults to 25", {
   expect_identical(formals(clusters:::DEoptimIterative)$plotEvery, 25L)
 })
+
+## 2026-09-29: a FireSense fit logged "3 logit terms" and labelled its figures logit1..logit3, when the
+## parameters were maxAsymptote, inflectionPoint1 and yearSpreadSD. The labels were invented from the
+## objective's `formulaToFit` argument; the real names were always on `lower`.
+labelsSeen <- function(lower, ...) {
+  seen <- new.env()
+  ## force the plotted object, so the histogram's visualizeDE() call is evaluated
+  testthat::local_mocked_bindings(Plots = function(data, ...) { force(data); invisible(NULL) },
+                                  .package = "SpaDES.core")
+  testthat::local_mocked_bindings(
+    visualizeDEoptimLines = function(d, terms, allPoints = FALSE) { seen$lines <- terms; NULL },
+    visualizeDE = function(DE, cachePath, titles, lower, upper) { seen$hists <- titles; NULL },
+    .package = "clusters")
+  cp <- withr::local_tempdir()
+  withr::local_options(reproducible.cachePath = cp, reproducible.useCache = FALSE)
+  suppressMessages(suppressWarnings(
+    clusters:::DEoptimIterative(function(par, ...) sum((par - 0.3)^2), lower = lower, upper = lower + 1,
+                                control = list(NP = 8L, strategy = 2L, itermax = 2, trace = FALSE),
+                                figurePath = withr::local_tempdir(), .plots = "png", cachePath = cp,
+                                runName = "labels", .verbose = -1, ...)))
+  seen
+}
+
+test_that("progress figures are labelled with names(lower), whatever the objective's arguments", {
+  lower <- c(maxAsymptote = 0.2, inflectionPoint1 = 0, CMD = 0, yearSpreadSD = 0)
+  seen <- labelsSeen(lower, formulaToFit = ~ 0 + CMD, thresh = 512)
+  expect_identical(seen$lines, names(lower))
+  expect_identical(seen$hists, names(lower))
+})
+
+test_that("an unnamed lower is labelled V1, V2, ...", {
+  seen <- labelsSeen(c(0, 0, 0))
+  expect_identical(seen$lines, c("V1", "V2", "V3"))
+  expect_identical(seen$hists, c("V1", "V2", "V3"))
+})
+
+test_that("termsInDEoptim() is deprecated", {
+  expect_warning(suppressMessages(clusters::termsInDEoptim(~ 0 + CMD, 512, 3)), "deprecated")
+})

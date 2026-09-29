@@ -179,7 +179,8 @@
 #' once the population has stopped improving (see `.deoptimPopulationConverged()`).
 #'
 #' @param fn The objective function, as for [DEoptim::DEoptim()].
-#' @param lower,upper Parameter bounds, as for [DEoptim::DEoptim()].
+#' @param lower,upper Parameter bounds, as for [DEoptim::DEoptim()]. The names of `lower` label the
+#'   parameters in the progress figures (V1, V2, ... when `lower` is unnamed).
 #' @param control A list of [DEoptim::DEoptim.control()] settings. Only what is set here is used;
 #'   the rest get this function's defaults. `itermax` is the total number of generations.
 #' @param ... Passed to `fn`, except `iterStep` (generations per DEoptim call) and `rep`.
@@ -463,10 +464,8 @@ DEoptimIterative <- function(fn, lower, upper, control, ...,
     if (!isFALSE(figurePath) && (finalChunk || (computedNow && reachesPlotEvery))) { # i.e., should be a path
       message(cli::col_green("Plotting DEoptim progress at iteration ", chunkEnds[iter], " (every ", plotEvery,
                              " iterations and the last) to ", figurePath))
-      if (!is.null(dots$formulaToFit))
-        terms <- suppressMessages(termsInDEoptim(dots$formulaToFit, dots$thresh, length(lower)))
-      else
-        terms <- names(lower)
+      ## the parameter names are the names of `lower`; an unnamed `lower` gets V1, V2, ...
+      terms <- names(lower)
       nVars <- NCOL(DE[[iter]]$member$pop)
       if (length(terms) != nVars )
         terms <- c(terms, paste0("V", seq(nVars - length(terms))))
@@ -636,7 +635,7 @@ ggPlotFnMeansAllPoints <- function(b) {
 
 
 
-ggDEoptimFilename <- function(visualizeDEoptim, rep, iter = NULL, subfolder = "fireSense_SpreadFit",
+ggDEoptimFilename <- function(visualizeDEoptim, rep, iter = NULL, subfolder = "",
                               text = "DE_hists_", time = FALSE) {
   if (is.numeric(rep))
     rep <- reproducible::paddedFloatToChar(rep, padL = 3)
@@ -702,6 +701,10 @@ visualizeDE <- function(DE, cachePath, titles, lower, upper) {
 
 #' `termsInDEoptim`
 #'
+#' Deprecated: it counted every parameter not in the formula as a "logit" term, so the per-year
+#' random effect `yearSpreadSD` was reported as a third logistic parameter. `DEoptimIterative()` now
+#' labels parameters with `names(lower)`.
+#'
 #' @param fireSense_spreadFormula The formula to be submitted to [DEoptim::DEoptim()],
 #'                                from e.g., `sim$fireSense_spreadFormula`.
 #'
@@ -712,6 +715,8 @@ visualizeDE <- function(DE, cachePath, titles, lower, upper) {
 #' @export
 #' @rdname runDEoptim
 termsInDEoptim <- function(fireSense_spreadFormula, thresh, numParams) {
+  .Deprecated(msg = paste0("clusters::termsInDEoptim() is deprecated; name the parameters with ",
+                           "names(lower) instead"))
   termsInForm <- attr(terms(as.formula(fireSense_spreadFormula, env = .GlobalEnv)), "term.labels")
   logitNumParams <- numParams - length(termsInForm)
   message("Using a ", logitNumParams, " parameter logistic equation")

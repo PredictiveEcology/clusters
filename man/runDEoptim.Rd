@@ -15,5 +15,7 @@ from e.g., \code{sim$fireSense_spreadFormula}.}
 \item{numParams}{The number of parameters (TODO: improve description)}
 }
 \description{
-\code{termsInDEoptim}
+Deprecated: it counted every parameter not in the formula as a "logit" term, so the per-year
+random effect \code{yearSpreadSD} was reported as a third logistic parameter. \code{DEoptimIterative()} now
+labels parameters with \code{names(lower)}.
 }

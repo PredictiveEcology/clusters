@@ -1,4 +1,4 @@
-## DEoptimIterative2() runs DEoptim one generation at a time and caches each generation.
+## DEoptimIterative() runs DEoptim one generation at a time and caches each generation.
 ## FireSense phase 2 (2026-09-15) found three problems:
 ##   * the caller's NP and strategy were replaced by this function's defaults, so NP was
 ##     10 x parameters (120) whatever the cluster size, and strategy was always 3;
@@ -36,7 +36,7 @@ runDE <- function(itermax, cachePath, counter, NP = 8L, strategy = 2L, cluster =
                        ## what spades.useCache = "eventsOnly" does to nested Cache() calls
                        reproducible.useCache = FALSE)
   suppressWarnings(suppressMessages(
-    clusters:::DEoptimIterative2(fn, lower = lower, upper = upper, control = control,
+    clusters:::DEoptimIterative(fn, lower = lower, upper = upper, control = control,
                                  figurePath = FALSE, .plots = NULL, cachePath = cachePath,
                                  runName = "test", .verbose = -1)
   ))
@@ -128,7 +128,7 @@ test_that("DEoptim settings passed to clusterSetup() reach DEoptim", {
     objsNeeded = character(0), controlArgs = args))
   fn <- function(par) sum((par - 0.3)^2)
   withr::local_options(reproducible.cachePath = withr::local_tempdir(), reproducible.useCache = FALSE)
-  DE <- suppressWarnings(suppressMessages(clusters:::DEoptimIterative2(
+  DE <- suppressWarnings(suppressMessages(clusters:::DEoptimIterative(
     fn, lower = lower, upper = upper, control = control,
     figurePath = FALSE, .plots = NULL, runName = "ctl", .verbose = -1)))
   for (nm in names(args)) expect_equal(seen$control[[nm]], args[[nm]], label = nm)
@@ -176,7 +176,7 @@ test_that("with a cluster, each generation after the first evaluates at most NP 
     sum((par - 0.3)^2)
   }
   withr::local_options(reproducible.cachePath = withr::local_tempdir(), reproducible.useCache = FALSE)
-  DE <- suppressWarnings(suppressMessages(clusters:::DEoptimIterative2(
+  DE <- suppressWarnings(suppressMessages(clusters:::DEoptimIterative(
     fnWorker, lower = lower, upper = upper,
     control = list(NP = 4L, strategy = 2L, itermax = 3, trace = FALSE, cluster = cl),
     figurePath = FALSE, .plots = NULL, runName = "cl", .verbose = -1)))
@@ -185,4 +185,14 @@ test_that("with a cluster, each generation after the first evaluates at most NP 
   expect_lte(calls, 4L + 4L + 2L * 4L)
   expect_gt(calls, 4L)                                  # the random initial population, at least
   expect_identical(nrow(DE[[3]]$member$pop), length(cl))
+})
+
+test_that("DEoptimIterative2() still works, with a deprecation warning", {
+  expect_true(exists("DEoptimIterative2", envir = asNamespace("clusters")))
+  called <- NULL
+  testthat::local_mocked_bindings(DEoptimIterative = function(...) { called <<- list(...); "ran" },
+                                  .package = "clusters")
+  expect_warning(out <- clusters::DEoptimIterative2(fn = sum, lower = 0), "DEoptimIterative")
+  expect_identical(out, "ran")
+  expect_identical(called$lower, 0)
 })

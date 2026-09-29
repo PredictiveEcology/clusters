@@ -1,4 +1,4 @@
-## DEoptimIterative2() runs `iterStep` generations in each DEoptim call; with iterStep > 1 it turns off DEoptim's CR/F
+## DEoptimIterative() runs `iterStep` generations in each DEoptim call; with iterStep > 1 it turns off DEoptim's CR/F
 ## adaptation (c = 0).
 ##
 ## DEoptim (2.2.8, src/de4_0.c) accumulates goodF only on successful trials, never resets it within a call, and after
@@ -40,7 +40,7 @@ runIterative <- function(iterStep, cc, seen) {
   withr::local_options(reproducible.cachePath = cachePath, reproducible.useCache = FALSE,
                        clusters.cacheDEoptimIterations = FALSE)
   testthat::capture_messages(suppressWarnings(
-    clusters:::DEoptimIterative2(noImprovementObjective(init, seen), lower = lower, upper = upper,
+    clusters:::DEoptimIterative(noImprovementObjective(init, seen), lower = lower, upper = upper,
                                  control = list(NP = 8L, strategy = 6L, itermax = 6, trace = FALSE, c = cc,
                                                 initialpop = init),
                                  iterStep = iterStep, figurePath = FALSE, .plots = NULL, cachePath = cachePath,

@@ -194,7 +194,7 @@
 #'
 #' @return A list with one [DEoptim::DEoptim()] result per chunk run, in order.
 #' @export
-DEoptimIterative2 <- function(fn, lower, upper, control, ...,
+DEoptimIterative <- function(fn, lower, upper, control, ...,
                               # formulaToFit, covMinMax, tests, maxFireSpread, mutuallyExclusive,
                               # doObjFunAssertions, Nreps, objFunCoresInternal, thresh, rep,
                               .plots, figurePath, cachePath, runName = 1, .verbose = TRUE,
@@ -239,6 +239,7 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
             parallelType = "none", packages = NULL, parVar = NULL, foreachArgs = list(),
             parallelArgs = NULL)
 
+  shippedDigest <- shippedObjectsDigest(control) # before as.list(), which drops attributes
   control <- modifyList(a, as.list(control))
 
   ## DEoptim (2.2.8, src/de4_0.c) adapts F with meanF = (1 - c) * meanF + c * goodF2 / goodF, and goodF only grows
@@ -255,8 +256,12 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
   on.exit(options(opts), add = TRUE)
 
   ## The objective function and its arguments are the same in every generation: digest them once
-  ## here, instead of Cache() digesting them again in each generation.
-  fixedDigest <- reproducible::.robustDigest(list(formals(fn), body(fn), objFunArgs))
+  ## here, instead of Cache() digesting them again in each generation. The data shipped to the workers
+  ## is part of what the objective computes on, so its digest (made once, by clusterSetup()) is in too:
+  ## without it, two fits differing only in that data shared every generation.
+  fixedDigest <- reproducible::.robustDigest(
+    if (is.null(shippedDigest)) list(formals(fn), body(fn), objFunArgs)
+    else list(formals(fn), body(fn), objFunArgs, shippedDigest))
   known <- list(keys = NULL, vals = NULL)
 
   cacheIds <- lapply(seq(itersToDo), function(x) NULL)
@@ -827,3 +832,26 @@ ggPlotFnMeansAllPoints <- function(b) {
 #                    ifelse(isTRUE(time), paste0("_", as.character(round(Sys.time(), 0))), ""), ".png"))
 # }
 
+
+
+#' Digest of the objects a cluster was given
+#'
+#' [clusterSetup()] ships `objsNeeded` to the workers and digests them once, attaching the digest to
+#' the `control` list it returns. Anything whose result depends on those objects, such as a cache
+#' key, should include this digest rather than digesting the objects again.
+#'
+#' @param control The list returned by [clusterSetup()].
+#' @return The digest, or `NULL` if `control` carries none (no `objsNeeded`).
+#' @export
+shippedObjectsDigest <- function(control) {
+  attr(control, "objsDigest", exact = TRUE)
+}
+
+
+#' @describeIn DEoptimIterative Deprecated: the former name of `DEoptimIterative()`, kept for one
+#'   release so callers built against it keep working.
+#' @export
+DEoptimIterative2 <- function(...) {
+  .Deprecated("DEoptimIterative", package = "clusters")
+  DEoptimIterative(...)
+}

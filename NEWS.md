@@ -1,3 +1,13 @@
+# clusters 0.0.53
+
+* The cache key of every `DEoptimIterative()` generation now includes the data shipped to the workers.
+  `clusterSetup()` digests `objsNeeded` once and carries the digest on the `control` list it returns
+  (`shippedObjectsDigest()`). Before, the key covered only the objective's arguments, so two fits that
+  differed only in the shipped data shared every cached generation: the two held-out folds of a
+  FireSense ELF ended with the same fit.
+* `DEoptimIterative2()` is renamed `DEoptimIterative()`. `DEoptimIterative2()` remains for one release
+  as a deprecated alias.
+
 # clusters 0.0.52
 
 * `DEoptimIterative2()` gains `plotEvery` (default 25): the six progress figures are drawn only for a

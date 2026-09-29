@@ -1,3 +1,11 @@
+# clusters 0.0.52
+
+* `DEoptimIterative2()` gains `plotEvery` (default 25): the six progress figures are drawn only for a
+  chunk that reaches a multiple of `plotEvery` generations, and always for the final chunk (converged or
+  `itermax`), even when that chunk is replayed from the cache. Drawing them after every generation took
+  8.3 s of each 53 s generation (16% of the wall time) in a FireSense fit, with every worker idle, and left
+  one histogram file per generation. `plotEvery = 1` gives the old behaviour.
+
 # clusters 0.0.51
 
 * `DEoptimIterative2()` is exported and documented. fireSenseUtils calls it for every FireSense

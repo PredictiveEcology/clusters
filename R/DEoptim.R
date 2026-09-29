@@ -188,14 +188,22 @@
 #' @param cachePath Passed to the progress figures that read the cache.
 #' @param runName Distinguishes this fit's cached chunks from another fit's.
 #' @param .verbose Passed to [reproducible::Cache()].
+#' @param plotEvery Generations between progress figures: a chunk's figures are drawn when its
+#'   generations include a multiple of `plotEvery`. The final chunk's figures are always drawn, even
+#'   when that chunk is replayed from the cache. `1` draws them after every chunk.
 #'
 #' @return A list with one [DEoptim::DEoptim()] result per chunk run, in order.
 #' @export
 DEoptimIterative2 <- function(fn, lower, upper, control, ...,
                               # formulaToFit, covMinMax, tests, maxFireSpread, mutuallyExclusive,
                               # doObjFunAssertions, Nreps, objFunCoresInternal, thresh, rep,
-                              .plots, figurePath, cachePath, runName = 1, .verbose = TRUE) {
+                              .plots, figurePath, cachePath, runName = 1, .verbose = TRUE,
+                              plotEvery = 25L) {
   DE <- list()
+  ## Progress figures are drawn by the master while every worker waits: 8.3 s of each 53 s generation
+  ## (16% of the wall time) in a FireSense fit (ELF 4.2.2, 2026-09-28). They are drawn only for a chunk
+  ## whose generations include a multiple of `plotEvery`, and always for the final chunk.
+  plotEvery <- max(1L, as.integer(plotEvery))
   ## progress plots are drawn with SpaDES.core::Plots(): say so now, not after the first generations
   if (!isFALSE(figurePath) && !requireNamespace("SpaDES.core", quietly = TRUE))
     stop("DEoptim progress plots use SpaDES.core::Plots(); install SpaDES.core or use figurePath = FALSE")
@@ -442,9 +450,14 @@ DEoptimIterative2 <- function(fn, lower, upper, control, ...,
     ## generations) finishes. Plotting used to require reproducible::isUpdated(), which is
     ## FALSE whenever nested Cache() is skipped (spades.useCache = "eventsOnly"), so no progress plots
     ## were made at all (FireSense phase 2, 2026-09-15; the 2026-09-08 fits still had them).
-    if (!isFALSE(figurePath) && computedNow) { # i.e., should be a path
-      message(cli::col_green("Plotting DEoptim progress at iteration ", chunkEnds[iter], " (every ", iterStep,
-                             " iterations) to ", figurePath))
+    ## Only chunks that reach a multiple of `plotEvery` are plotted. The final chunk (converged or
+    ## itermax) is always plotted, even when replayed from the cache: DE holds every generation either
+    ## way, so a finished fit always has its final figures.
+    finalChunk <- converged || iter == length(itersToDo)
+    reachesPlotEvery <- chunkEnds[iter] %/% plotEvery > (chunkEnds[iter] - chunkLengths[iter]) %/% plotEvery
+    if (!isFALSE(figurePath) && (finalChunk || (computedNow && reachesPlotEvery))) { # i.e., should be a path
+      message(cli::col_green("Plotting DEoptim progress at iteration ", chunkEnds[iter], " (every ", plotEvery,
+                             " iterations and the last) to ", figurePath))
       if (!is.null(dots$formulaToFit))
         terms <- suppressMessages(termsInDEoptim(dots$formulaToFit, dots$thresh, length(lower)))
       else

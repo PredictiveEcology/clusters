@@ -14,7 +14,8 @@ DEoptimIterative2(
   figurePath,
   cachePath,
   runName = 1,
-  .verbose = TRUE
+  .verbose = TRUE,
+  plotEvery = 25L
 )
 }
 \arguments{
@@ -36,6 +37,10 @@ the rest get this function's defaults. \code{itermax} is the total number of gen
 \item{runName}{Distinguishes this fit's cached chunks from another fit's.}
 
 \item{.verbose}{Passed to \code{\link[reproducible:Cache]{reproducible::Cache()}}.}
+
+\item{plotEvery}{Generations between progress figures: a chunk's figures are drawn when its
+generations include a multiple of \code{plotEvery}. The final chunk's figures are always drawn, even
+when that chunk is replayed from the cache. \code{1} draws them after every chunk.}
 }
 \value{
 A list with one \code{\link[DEoptim:DEoptim]{DEoptim::DEoptim()}} result per chunk run, in order.

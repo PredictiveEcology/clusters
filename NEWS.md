@@ -1,3 +1,26 @@
+# clusters 0.0.55
+
+* One dead worker no longer hangs a fit. A PSOCK worker that dies without closing its socket left the
+  master blocked in `unserialize()` for parallelly's 30-day socket timeout (FireSense, 2026-09-29: 35+
+  minutes at 0% CPU in a 40-worker fit, until interrupted by hand). `clusterSetup()` and
+  `DEoptimIterative()` now set the sockets' timeout to `options(clusters.workerTimeout)` (default 3600
+  seconds, far above a FireSense evaluation).
+* `plan_psock_min()` now passes `ExitOnForwardFailure=yes` to ssh (`.sshTunnelOpts()`). It passed its own
+  `rshopts` to `makeClusterPSOCK()`, which replaced that function's default, so "remote port forwarding
+  failed for listen port N" was only a warning: the worker started with no tunnel and died.
+* `plan_psock_min()` sends every worker of the cluster it builds a trivial call and replaces one that
+  does not answer (`clusters.pingTimeout`, default 30 s; `clusters.workerRetries`, default 2 tries) on a
+  new port. If it cannot, it stops naming the host, or drops the worker with
+  `options(clusters.onDeadWorker = "drop")`.
+* When a worker connection fails during a `DEoptimIterative()` generation, the cluster is rebuilt
+  (started again, packages loaded, objects re-sent) and that generation runs again from the same
+  random-number state, up to `clusters.workerRetries` times; then it stops with an error naming the
+  workers. The rest of the cluster is not reused because the other workers' replies are still in their
+  sockets. The generation's cache key is unchanged, and a run with no dead worker is identical. An error
+  raised by the objective function is not retried. The caller's own handle on the cluster is the old,
+  closed one; the rebuilt cluster stops when it is garbage collected.
+* Internal: `clusterSetup()`'s loading of packages and objects on the workers is `.shipToWorkers()`.
+
 # clusters 0.0.54
 
 * `DEoptimIterative()` labels the parameters in its progress figures with `names(lower)` (V1, V2, ...

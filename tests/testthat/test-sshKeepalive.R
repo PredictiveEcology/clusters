@@ -67,6 +67,17 @@ test_that("plan_psock_min() and makeClusterPSOCK() both default to the keepalive
     f <- get(fn, envir = asNamespace("clusters"))
     paste(deparse(formals(f)$rshopts), collapse = " ")
   }
-  expect_true(grepl("sshKeepaliveOpts", defaultFor("plan_psock_min")))
-  expect_true(grepl("sshKeepaliveOpts", defaultFor("makeClusterPSOCK")))
+  expect_true(grepl("sshTunnelOpts", defaultFor("plan_psock_min")))
+  expect_true(grepl("sshTunnelOpts", defaultFor("makeClusterPSOCK")))
+})
+
+test_that("the tunnel options fail a worker whose reverse tunnel cannot be set up", {
+  ## Without ExitOnForwardFailure ssh only warns "remote port forwarding failed for listen port N",
+  ## stays up with no tunnel, and the worker never reaches the master (FireSense, 2026-09-29).
+  ## plan_psock_min() passed its own rshopts to makeClusterPSOCK(), replacing that wrapper's default.
+  o <- .sshTunnelOpts()
+  expect_true("ExitOnForwardFailure=yes" %in% o)
+  expect_true(any(grepl("^ServerAliveInterval=", o)))
+  expect_identical(eval(formals(plan_psock_min)$rshopts), o)
+  expect_identical(eval(formals(makeClusterPSOCK)$rshopts), o)
 })

@@ -48,12 +48,23 @@
 ## `member$popval`, which seeds the next chunk, also when this chunk is loaded from the cache; every
 ## new evaluation's seconds and value as `member$evaluations`.
 .DEoptimChunk <- function(fn, lower, upper, control, known, dotsList) {
-  cl <- control$cluster
-  invisible(.deoptimRecordTakeAll(cl))   # nothing left over from an interrupted chunk
   memoFn <- .memoObjFun(fn, known$keys, known$vals)
-  out <- do.call(DEoptim::DEoptim,
-                 c(list(fn = memoFn, lower = lower, upper = upper, control = control), dotsList))
-  recs <- .deoptimRecordTakeAll(cl)
+  seed <- if (exists(".Random.seed", envir = globalenv(), inherits = FALSE)) get(".Random.seed", envir = globalenv())
+  ## If a worker dies, the chunk runs again on a rebuilt cluster (see .runWithRebuild()), from the same
+  ## random-number state, so it draws the same trial vectors.
+  attempt <- function(cl) {
+    if (!is.null(seed)) assign(".Random.seed", seed, envir = globalenv())
+    invisible(.deoptimRecordTakeAll(cl))   # nothing left over from an interrupted chunk
+    if (!is.null(cl)) control$cluster <- cl
+    out <- do.call(DEoptim::DEoptim,
+                   c(list(fn = memoFn, lower = lower, upper = upper, control = control), dotsList))
+    list(out = out, recs = .deoptimRecordTakeAll(cl))
+  }
+  ran <- .runWithRebuild(control$cluster, attempt)
+  ## the caller carries on with the rebuilt cluster (DEoptimIterative() collects it)
+  if (!identical(ran$cluster, control$cluster)) .deoptimRecord$cluster <- ran$cluster
+  out <- ran$value$out
+  recs <- ran$value$recs
   keys <- c(known$keys, recs$keys)
   vals <- c(known$vals, recs$vals)
   out$member$popval <- unname(vals[match(apply(out$member$pop, 1, .parKey), keys)])
@@ -242,6 +253,8 @@ DEoptimIterative <- function(fn, lower, upper, control, ...,
 
   shippedDigest <- shippedObjectsDigest(control) # before as.list(), which drops attributes
   control <- modifyList(a, as.list(control))
+  ## a cluster the caller built has parallelly's 30-day socket timeout: bound the wait for a dead worker
+  if (!is.null(control$cluster)) .setWorkerTimeout(control$cluster)
 
   ## DEoptim (2.2.8, src/de4_0.c) adapts F with meanF = (1 - c) * meanF + c * goodF2 / goodF, and goodF only grows
   ## on a successful trial and is not reset within a call: when a call's first generation has no successful trial,
@@ -314,6 +327,11 @@ DEoptimIterative <- function(fn, lower, upper, control, ...,
         useCache = getOption("clusters.cacheDEoptimIterations", TRUE),
         verbose = .verbose
       )
+      ## a worker died in this generation: go on with the cluster that replaced it
+      if (!is.null(.deoptimRecord$cluster)) {
+        control$cluster <- .deoptimRecord$cluster
+        .deoptimRecord$cluster <- NULL
+      }
       ## Was this generation computed in this session, or replayed from the cache? isUpdated() alone
       ## cannot tell when the per-generation cache is off: it is FALSE for a skipped Cache() too.
       computedNow <- !isTRUE(getOption("clusters.cacheDEoptimIterations", TRUE)) ||

@@ -12,7 +12,7 @@ makeClusterPSOCK(
   rscript = NULL,
   default_packages = c("datasets", "utils", "grDevices", "graphics", "stats", "methods"),
   port = NULL,
-  rshopts = .sshKeepaliveOpts(c("-o", "ForwardX11=no", "-o", "ExitOnForwardFailure=yes")),
+  rshopts = .sshTunnelOpts(),
   tries = 5L,
   delay = 5,
   renice = 20,

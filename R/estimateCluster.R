@@ -24,7 +24,9 @@
 #' @param install_repos Character vector of CRAN-like repos tried in order
 #'   (default `c("https://cloud.r-project.org","https://cran.r-project.org")`).
 #' @param rshopts Character vector of SSH options passed by parallelly. Defaults to
-#'   [.sshKeepaliveOpts()], which bounds how long the master waits on a worker that has died.
+#'   [.sshTunnelOpts()]: [.sshKeepaliveOpts()], which bounds how long the master waits on a worker that
+#'   has died, and `ExitOnForwardFailure=yes`, so a reverse tunnel that cannot be set up fails and is
+#'   retried on another port.
 #' @param rscript Character; path to `Rscript` on workers (default `"Rscript"`).
 #' @param logPath Optional local file to append compact bootstrap / probe info.
 #' @param libPath Optional site library path to prepend and use if writable.
@@ -69,7 +71,7 @@ plan_psock_min <- function(
   pkgsNeeded = c("parallelly","future","foreach"),
   user_lib_template = "~/.local/R/%v/library",
   install_repos = c("https://cloud.r-project.org","https://cran.r-project.org"),
-  rshopts = .sshKeepaliveOpts(),
+  rshopts = .sshTunnelOpts(),
   rscript = "Rscript",
   auto_stop = TRUE,
   logPath = NULL,
@@ -435,7 +437,8 @@ plan_psock_min <- function(
                                collapse = ", "), " clusters")
     message("Starting main parallel cluster ...")
     
-    st <- system.time(cl <- makeClusterPSOCK(
+    ## How a worker is started, here and when one has to be replaced (see .replaceDeadNodes()).
+    startNodes <- function(workers, autoStop = auto_stop) makeClusterPSOCK(
       workers = workers,                # SSH aliases
       rscript = rscript,
       homogeneous = FALSE,
@@ -448,16 +451,25 @@ plan_psock_min <- function(
       setup_strategy = ifelse(isRstudio(), "sequential", "parallel"),
       connectTimeout = 2 * 60,
       timeout = 30 * 24 * 60 * 60,
-      autoStop = auto_stop
+      autoStop = autoStop
     )
-    )
+    st <- system.time(cl <- startNodes(workers))
     message(
       "it took ", round(st[3], 2), "s to start ",
       paste(paste(names(table(workers))), "x", table(workers), collapse = ", "), " threads"
     )
     
+    ## Never hand back a cluster with a node that cannot answer: replace it on a new port, or drop it
+    ## (options(clusters.onDeadWorker = "drop")), or stop.
+    checked <- .replaceDeadNodes(cl, function(host) startNodes(host, autoStop = FALSE))
+    cl <- checked$cluster
+    if (length(checked$dropped)) workers <- workers[-checked$dropped]
+    res$workers <- workers
+    res$startNodes <- startNodes
+
     on.exit()
-    on.exitAny(stopCluster(cl), 3)
+    # try(): after a mid-run rebuild (see .runWithRebuild()) this cluster's connections are closed
+    on.exitAny(try(stopCluster(cl), silent = TRUE), 3)
 
     # Record what this build took, so a concurrent builder sizing its own cluster
     # subtracts it instead of re-claiming the same cores from a stale load
@@ -587,4 +599,18 @@ on.exitAny <- function(expr, outerLevel = 2, envir = sys.frame(-abs(outerLevel))
     "-o", paste0("ServerAliveInterval=", as.integer(interval)),
     "-o", paste0("ServerAliveCountMax=", as.integer(countMax)),
     extra)
+}
+
+#' SSH options for a PSOCK worker behind a reverse tunnel
+#'
+#' [.sshKeepaliveOpts()] plus `ForwardX11=no` and `ExitOnForwardFailure=yes`. Without the last, ssh
+#' prints "Warning: remote port forwarding failed for listen port N" and stays connected with no
+#' tunnel: the worker starts, cannot reach the master, and dies, and the master waits on it.
+#' [plan_psock_min()] passed its own `rshopts` to [makeClusterPSOCK()], which replaced this default,
+#' so its workers never carried the option (FireSense, 2026-09-29, port 28216).
+#'
+#' @return A character vector of SSH options for `rshopts`.
+#' @export
+.sshTunnelOpts <- function() {
+  .sshKeepaliveOpts(c("-o", "ForwardX11=no", "-o", "ExitOnForwardFailure=yes"))
 }

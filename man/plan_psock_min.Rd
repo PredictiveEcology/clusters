@@ -13,7 +13,7 @@ plan_psock_min(
   pkgsNeeded = c("parallelly", "future", "foreach"),
   user_lib_template = "~/.local/R/\%v/library",
   install_repos = c("https://cloud.r-project.org", "https://cran.r-project.org"),
-  rshopts = .sshKeepaliveOpts(),
+  rshopts = .sshTunnelOpts(),
   rscript = "Rscript",
   auto_stop = TRUE,
   logPath = NULL,
@@ -42,7 +42,9 @@ plan_psock_min(
 (default \code{c("https://cloud.r-project.org","https://cran.r-project.org")}).}
 
 \item{rshopts}{Character vector of SSH options passed by parallelly. Defaults to
-\code{\link[=.sshKeepaliveOpts]{.sshKeepaliveOpts()}}, which bounds how long the master waits on a worker that has died.}
+\code{\link[=.sshTunnelOpts]{.sshTunnelOpts()}}: \code{\link[=.sshKeepaliveOpts]{.sshKeepaliveOpts()}}, which bounds how long the master waits on a worker that
+has died, and \code{ExitOnForwardFailure=yes}, so a reverse tunnel that cannot be set up fails and is
+retried on another port.}
 
 \item{rscript}{Character; path to \code{Rscript} on workers (default \code{"Rscript"}).}
 

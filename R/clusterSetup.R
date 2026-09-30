@@ -272,98 +272,13 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
     #   # )
     # })
     
-    message("loading packages in cluster nodes")
-    parallel::clusterExport(clThird, "pkgsNeeded", envir = environment())
-    stPackages <- system.time(parallel::clusterEvalQ(
-      clThird,
-      {
-        for (i in pkgsNeeded) {
-          library(i, character.only = TRUE)
-        }
-        message("loading ", i, " at ", Sys.time())
-      }
-    ))
-    message("it took ", round(stPackages[3], 2), "s to load packages")
-
-    ## Workers are fresh R sessions, so they are at terra's defaults regardless of what
-    ## the master set: memfrac 0.5 -- half of TOTAL RAM, per worker -- memmax 16 GB and
-    ## todisk FALSE. With nCoresNeeded in the hundreds that is not a policy anyone chose.
-    mirrored <- mirrorTerraOptions(clThird)
-    if (length(mirrored))
-      message("terra options given to nodes: ",
-              paste(names(mirrored), unlist(mirrored), sep = "=", collapse = " "))
-    
-    message("Moving objects to each node in cluster")
-    stMoveObjects <- try({
-      system.time({
-        objsToCopy <- mget(unlist(objsNeeded), envir = envir)
-        FileBackendsToCopy <- reproducible::Filenames(objsToCopy)
-        hasFilename <- nzchar(FileBackendsToCopy)
-        if (any(hasFilename)) {
-          objsToMem <- names(FileBackendsToCopy)[hasFilename]
-          objsToCopy[objsToMem] <-
-            lapply(objsToCopy[objsToMem],
-                   function(x) terra::toMemory(x))
-        }
-        objsToCopy <- reproducible::.wrap(objsToCopy)
-        filenameForTransfer <- normalizePath(tempfile(fileext = ".qs2"), mustWork = FALSE, winslash = "/")
-        dir.create(dirname(filenameForTransfer), recursive = TRUE, showWarnings = FALSE) # during development, this was deleted accidentally
-        qs2::qs_save(objsToCopy, file = filenameForTransfer)
-        stExport <- system.time({
-          outExp <- parallel::clusterExport(clThird, varlist = "filenameForTransfer", envir = environment())
-        })
-        ## Each job gets its OWN transfer directory. This used to be a single shared
-        ## "/tmp/fireSense_SpreadFit", and the cleanup below removes `dirname(therePath)`
-        ## recursively -- so a second job starting while a first was still reading would have the
-        ## directory deleted underneath it. `qs_read()` then failed, the `try()` fallback returned
-        ## a try-error, and `.unwrap()` produced objects whose terra external pointers were invalid;
-        ## the workers died with "external pointer is not valid" at the first evaluation, far from
-        ## the real cause. Observed 2026-09-19: 3 of 5 concurrent DEoptim arms died this way.
-        ## `basename(tempfile())` is unique per master process, so concurrent jobs no longer collide.
-        transferDir <- transferDirName()
-        parallel::clusterExport(clThird, varlist = "transferDir", envir = environment())
-        out11 <- parallel::clusterEvalQ(clThird, {
-          therePath <- file.path(transferDir, basename(filenameForTransfer))
-          dir.create(dirname(therePath), recursive = TRUE, showWarnings = FALSE)
-          therePath
-        })
-        dfThere <- data.table(nonLocalhostCores = cores, therePath = unlist(out11))
-        dfThere <- unique(dfThere, on = c("nonLocalhostCores", "therePath"))
-        dfThere <- dfThere[ !nonLocalhostCores %in% "localhost", ]
-        # nonLocalhostCores <- setdiff(unique(cores), "localhost")
-        
-        if (NROW(dfThere))
-          out <- Map(ip = dfThere$nonLocalhostCores, therePath = dfThere$therePath, 
-                     function(ip, therePath) {
-            rsync <- Sys.which("rsync")
-            st1 <- system.time(system(paste0(rsync, " -av ",
-                                             filenameForTransfer, " ", ip, ":",
-                                             therePath)))
-          })
-        out <- parallel::clusterEvalQ(clThird, {
-          out <- clusters::readTransferredObjects(therePath, filenameForTransfer)
-          out <- reproducible::.unwrap(out, cachePath = NULL)
-          list2env(out, envir = .GlobalEnv)
-        })
-        # Delete the file
-        notDups <- !duplicated(cores)
-        out <- parallel::clusterEvalQ(clThird[notDups], {
-          if (dir.exists(dirname(filenameForTransfer))) {
-            try(unlink(dirname(filenameForTransfer), recursive = TRUE), silent = TRUE)
-          }
-          if (dir.exists(dirname(therePath))) {
-            try(unlink(dirname(therePath), recursive = TRUE), silent = TRUE)
-          }
-        })
-      })
-    })
-    
-    if (is(stMoveObjects, "try-error")) {
-      message("The attempt to move objects to cluster using rsync and qs2 failed; trying clusterExport")
-      stMoveObjects <- system.time(parallel::clusterExport(clThird, objsNeeded, envir = envir))
-      list2env(mget(unlist(objsNeeded), envir = envir), envir = .GlobalEnv)
-    }
-    message("it took ", round(stMoveObjects[3], 2), "s to move objects to nodes")
+    .shipToWorkers(clThird, cores, pkgsNeeded, objsNeeded, envir)
+    ## From here on a socket read that waits longer than this is an error, not a 30-day hang.
+    .setWorkerTimeout(clThird)
+    ## Given to DEoptimIterative(), which calls it to replace the cluster when a worker dies mid-run.
+    attr(clThird, "restartCluster") <- .restartClusterFn(
+      plan$startNodes, cores, pkgsNeeded, objsNeeded, envir, shippedObjectsDigest(control),
+      attr(clThird, "reservationToken", exact = TRUE))
     control$cluster <- clThird
   }
   if (any(cores == "localhost") || is.null(cores))
@@ -602,7 +517,7 @@ makeClusterPSOCK <- function(
     rscript = NULL,
     default_packages = c("datasets", "utils", "grDevices", "graphics", "stats", "methods"),
     port = NULL,
-    rshopts = .sshKeepaliveOpts(c("-o", "ForwardX11=no", "-o", "ExitOnForwardFailure=yes")),
+    rshopts = .sshTunnelOpts(),
     tries = 5L,
     delay = 5,
     renice = 20,
@@ -684,4 +599,101 @@ readTransferredObjects <- function(therePath, filenameForTransfer) {
 #' @export
 transferDirName <- function() {
   paste0("/tmp/clusters_transfer_", basename(tempfile("")))
+}
+
+## Load the packages on the workers and move the objects they need to them; see .restartClusterFn()
+.shipToWorkers <- function(cl, cores, pkgsNeeded, objsNeeded, envir) {
+    message("loading packages in cluster nodes")
+    parallel::clusterExport(cl, "pkgsNeeded", envir = environment())
+    stPackages <- system.time(parallel::clusterEvalQ(
+      cl,
+      {
+        for (i in pkgsNeeded) {
+          library(i, character.only = TRUE)
+        }
+        message("loading ", i, " at ", Sys.time())
+      }
+    ))
+    message("it took ", round(stPackages[3], 2), "s to load packages")
+
+    ## Workers are fresh R sessions, so they are at terra's defaults regardless of what
+    ## the master set: memfrac 0.5 -- half of TOTAL RAM, per worker -- memmax 16 GB and
+    ## todisk FALSE. With nCoresNeeded in the hundreds that is not a policy anyone chose.
+    mirrored <- mirrorTerraOptions(cl)
+    if (length(mirrored))
+      message("terra options given to nodes: ",
+              paste(names(mirrored), unlist(mirrored), sep = "=", collapse = " "))
+    
+    message("Moving objects to each node in cluster")
+    stMoveObjects <- try({
+      system.time({
+        objsToCopy <- mget(unlist(objsNeeded), envir = envir)
+        FileBackendsToCopy <- reproducible::Filenames(objsToCopy)
+        hasFilename <- nzchar(FileBackendsToCopy)
+        if (any(hasFilename)) {
+          objsToMem <- names(FileBackendsToCopy)[hasFilename]
+          objsToCopy[objsToMem] <-
+            lapply(objsToCopy[objsToMem],
+                   function(x) terra::toMemory(x))
+        }
+        objsToCopy <- reproducible::.wrap(objsToCopy)
+        filenameForTransfer <- normalizePath(tempfile(fileext = ".qs2"), mustWork = FALSE, winslash = "/")
+        dir.create(dirname(filenameForTransfer), recursive = TRUE, showWarnings = FALSE) # during development, this was deleted accidentally
+        qs2::qs_save(objsToCopy, file = filenameForTransfer)
+        stExport <- system.time({
+          outExp <- parallel::clusterExport(cl, varlist = "filenameForTransfer", envir = environment())
+        })
+        ## Each job gets its OWN transfer directory. This used to be a single shared
+        ## "/tmp/fireSense_SpreadFit", and the cleanup below removes `dirname(therePath)`
+        ## recursively -- so a second job starting while a first was still reading would have the
+        ## directory deleted underneath it. `qs_read()` then failed, the `try()` fallback returned
+        ## a try-error, and `.unwrap()` produced objects whose terra external pointers were invalid;
+        ## the workers died with "external pointer is not valid" at the first evaluation, far from
+        ## the real cause. Observed 2026-09-19: 3 of 5 concurrent DEoptim arms died this way.
+        ## `basename(tempfile())` is unique per master process, so concurrent jobs no longer collide.
+        transferDir <- transferDirName()
+        parallel::clusterExport(cl, varlist = "transferDir", envir = environment())
+        out11 <- parallel::clusterEvalQ(cl, {
+          therePath <- file.path(transferDir, basename(filenameForTransfer))
+          dir.create(dirname(therePath), recursive = TRUE, showWarnings = FALSE)
+          therePath
+        })
+        dfThere <- data.table(nonLocalhostCores = cores, therePath = unlist(out11))
+        dfThere <- unique(dfThere, on = c("nonLocalhostCores", "therePath"))
+        dfThere <- dfThere[ !nonLocalhostCores %in% "localhost", ]
+        # nonLocalhostCores <- setdiff(unique(cores), "localhost")
+        
+        if (NROW(dfThere))
+          out <- Map(ip = dfThere$nonLocalhostCores, therePath = dfThere$therePath, 
+                     function(ip, therePath) {
+            rsync <- Sys.which("rsync")
+            st1 <- system.time(system(paste0(rsync, " -av ",
+                                             filenameForTransfer, " ", ip, ":",
+                                             therePath)))
+          })
+        out <- parallel::clusterEvalQ(cl, {
+          out <- clusters::readTransferredObjects(therePath, filenameForTransfer)
+          out <- reproducible::.unwrap(out, cachePath = NULL)
+          list2env(out, envir = .GlobalEnv)
+        })
+        # Delete the file
+        notDups <- !duplicated(cores)
+        out <- parallel::clusterEvalQ(cl[notDups], {
+          if (dir.exists(dirname(filenameForTransfer))) {
+            try(unlink(dirname(filenameForTransfer), recursive = TRUE), silent = TRUE)
+          }
+          if (dir.exists(dirname(therePath))) {
+            try(unlink(dirname(therePath), recursive = TRUE), silent = TRUE)
+          }
+        })
+      })
+    })
+    
+    if (is(stMoveObjects, "try-error")) {
+      message("The attempt to move objects to cluster using rsync and qs2 failed; trying clusterExport")
+      stMoveObjects <- system.time(parallel::clusterExport(cl, objsNeeded, envir = envir))
+      list2env(mget(unlist(objsNeeded), envir = envir), envir = .GlobalEnv)
+    }
+    message("it took ", round(stMoveObjects[3], 2), "s to move objects to nodes")
+  invisible(cl)
 }

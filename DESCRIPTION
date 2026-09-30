@@ -44,7 +44,8 @@ Suggests:
     withr
 Remotes:
     PredictiveEcology/reproducible@development,
-    PredictiveEcology/Require@development
+    PredictiveEcology/Require@development,
+    PredictiveEcology/SpaDES.core@development
 Encoding: UTF-8
 Language: en-CA
 License: GPL-3

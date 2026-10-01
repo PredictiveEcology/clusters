@@ -1,3 +1,7 @@
+# clusters 0.0.58
+
+* Removed a second, identical copy of the `ggPlotFn*()` plotting helpers in `R/DEoptim.R`; no behaviour change.
+
 # clusters 0.0.57
 
 * The evaluation-record field list is defined once (`.deoptimRecordFields`); no behaviour change.

@@ -620,48 +620,6 @@ controlForCache <- function(controlArgs) {
 # }
 
 
-ggPlotFnMeans <- function(bmerged) {
-  ggplot(bmerged, aes(iter, value)) +
-    geom_point() +
-    geom_smooth(se = TRUE) +
-    # geom_ribbon(aes(ymin = lower95, ymax = upper95)) +
-    facet_wrap(facets = "variable", scales = "free")
-}
-
-ggPlotFnSimple <- function(bmerged) {
-  ggplot(bmerged, aes(iter, bestValue)) +
-    geom_point() +
-    geom_smooth(se = TRUE)
-}
-
-ggPlotFnDif <- function(bmerged) {
-  ggplot(bmerged, aes(iter, dif)) +
-    geom_point() +
-    geom_smooth(se = TRUE) +
-    # geom_ribbon(aes(ymin = lower95, ymax = upper95)) +
-    facet_wrap(facets = "variable", scales = "free")
-}
-
-ggPlotFnVars <- function(bmerged) {
-  ggplot(bmerged, aes(iter, var)) +
-    geom_point() +
-    geom_smooth(se = TRUE) +
-    # geom_ribbon(aes(ymin = lower95, ymax = upper95)) +
-    facet_wrap(facets = "variable", scales = "free")
-}
-
-
-ggPlotFnMeansAllPoints <- function(b) {
-  ggplot(b, aes(iter, value)) +
-    # geom_point() +
-    geom_jitter(size = 0.05, width = 0.2, col = "grey") +
-    geom_smooth(se = TRUE) +
-    # geom_ribbon(aes(ymin = lower95, ymax = upper95)) +
-    facet_wrap(facets = "variable", scales = "free")
-}
-
-
-
 ggDEoptimFilename <- function(visualizeDEoptim, rep, iter = NULL, subfolder = "",
                               text = "DE_hists_", time = FALSE) {
   if (is.numeric(rep))

@@ -1,4 +1,4 @@
-# clusters 0.0.59
+# clusters 0.0.60
 
 * A cluster started with `autoStop = TRUE` (`plan_psock_min()`'s default `auto_stop`) and then stopped
   by clusters is no longer stopped a second time when it is garbage collected. That second stop sent
@@ -11,6 +11,8 @@
 
 * The tests no longer write the real core-reservation ledger or `hostSpeed.rds`: a setup file points
   `clusters.reservationsPath` at a temporary folder for the whole suite.
+
+# clusters 0.0.59
 
 * Tests that run DEoptim on local PSOCK workers now give the workers this session's library paths
   (`localTestCluster()` in a test helper), so the workers load the clusters under test; under covr they

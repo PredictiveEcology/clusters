@@ -29,6 +29,13 @@ test_that("hosts without a record are kept, and absent records change nothing", 
   expect_equal(out$free_est, c(10, 10, 10))
 })
 
+test_that("a ratio that is not a number (all evaluations took 0 s) is no record, not a block", {
+  ## 2026-10-01: test runs recorded median 0, ratio NaN; one such row made the host's mean NaN
+  nodes <- nodesFor(c(a = 10, b = 10, c = 10))
+  speeds <- speedsFor(c(NaN, 2, NaN, Inf), host = c("a", "a", "b", "c"))
+  expect_equal(suppressMessages(.excludeSlowHosts(nodes, speeds, total = 10))$free_est, c(0, 10, 10))
+})
+
 test_that("recorded ratios are averaged weighted by n, and old records are ignored", {
   nodes <- nodesFor(c(a = 10, b = 10))
   ## a: (900 * 1 + 100 * 3) / 1000 = 1.2, not slow; with n = 100 for the first row it is 2, slow
@@ -109,7 +116,6 @@ test_that("DEoptimIterative() on a local PSOCK cluster writes hostSpeed.rds", {
 ## Slow hosts are used last, and only for the shortfall.
 
 test_that("a slow host is used only for the shortfall of the fast hosts", {
-  withr::local_options(clusters.reservationsPath = withr::local_tempdir())
   nodes <- nodesFor(c(a = 10, b = 10, c = 10))
   speeds <- speedsFor(c(a = 1, b = 1, c = 1.6))
   expect_message(out <- .excludeSlowHosts(nodes, speeds, total = 25, maxRatio = 1.25), "capped")
@@ -119,7 +125,6 @@ test_that("a slow host is used only for the shortfall of the fast hosts", {
 })
 
 test_that("two slow hosts are added back least slow first", {
-  withr::local_options(clusters.reservationsPath = withr::local_tempdir())
   nodes <- nodesFor(c(a = 10, b = 10, c = 10, d = 10))
   speeds <- speedsFor(c(a = 1, b = 2, c = 1.5, d = 1))
   expect_equal(suppressMessages(.excludeSlowHosts(nodes, speeds, total = 23))$free_est, c(10, 0, 3, 10))
@@ -128,7 +133,6 @@ test_that("two slow hosts are added back least slow first", {
 })
 
 test_that("the allocator never gives a capped host more than its cap, and fills fast hosts first", {
-  withr::local_options(clusters.reservationsPath = withr::local_tempdir())
   nodesA <- function(free, cores) data.frame(host = names(free), nodename = names(free),
                                              cores_total = cores, free_est = unname(free),
                                              stringsAsFactors = FALSE)
@@ -144,7 +148,6 @@ test_that("the allocator never gives a capped host more than its cap, and fills 
 })
 
 test_that("rows with NaN or 0 speed are ignored, and a host with only such rows has no record", {
-  withr::local_options(clusters.reservationsPath = withr::local_tempdir())
   nodes <- nodesFor(c(a = 10, b = 10))
   speeds <- speedsFor(c(a = 3, b = 1), n = 100L)
   speeds$ratio[1] <- NaN
@@ -155,7 +158,6 @@ test_that("rows with NaN or 0 speed are ignored, and a host with only such rows 
 })
 
 test_that("rows from a lightly used host do not clear its slow flag", {
-  withr::local_options(clusters.reservationsPath = withr::local_tempdir())
   nodes <- nodesFor(c(a = 10, b = 10))
   speeds <- rbind(speedsFor(c(a = 2, a = 1), n = c(100L, 5000L), host = "a"), speedsFor(c(b = 1)))
   speeds$workers <- c(28L, 4L, 28L)    # the large light-load row would average a to ~1.02
@@ -168,7 +170,6 @@ test_that("rows from a lightly used host do not clear its slow flag", {
 })
 
 test_that("old rows without workers count as full load", {
-  withr::local_options(clusters.reservationsPath = withr::local_tempdir())
   nodes <- nodesFor(c(a = 10, b = 10))
   speeds <- speedsFor(c(a = 2, b = 1))
   expect_false("workers" %in% names(speeds))
@@ -178,7 +179,6 @@ test_that("old rows without workers count as full load", {
 })
 
 test_that(".recordHostSpeed stores the number of distinct workers per host", {
-  withr::local_options(clusters.reservationsPath = withr::local_tempdir())
   ev <- data.frame(seconds = c(1, 1, 1, 3), value = 0, host = c("a", "a", "a", "b"), pid = c(1L, 2L, 2L, 7L))
   .recordHostSpeed(list(ev), id = "w")
   got <- readRDS(.hostSpeedFile())
@@ -186,7 +186,6 @@ test_that(".recordHostSpeed stores the number of distinct workers per host", {
 })
 
 test_that("the allocator assigns every free core when the total equals the free cores", {
-  withr::local_options(clusters.reservationsPath = withr::local_tempdir())
   set.seed(1)
   for (i in 1:200) {
     k <- sample(2:5, 1)

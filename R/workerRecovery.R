@@ -39,7 +39,24 @@
   paste(paste0(names(table(hosts)), " x", as.integer(table(hosts))), collapse = ", ")
 }
 
+## A cluster made with parallelly's autoStop = TRUE is stopped again when it is garbage collected. If it
+## was already stopped, that second stop sends "DONE" to, and closes, whatever connections now have its
+## old connection numbers: R reuses them, and close() does not check that a connection object is current
+## (CI, 2026-10-01: a test's live worker got "invalid connection"). Every stop here disarms it first.
+.disarmAutoStop <- function(cl) {
+  gcMe <- attr(cl, "gcMe")
+  if (is.environment(gcMe)) gcMe$cluster <- structure(list(), class = c("SOCKcluster", "cluster"))
+  invisible(cl)
+}
+
+.stopCluster <- function(cl) {
+  .disarmAutoStop(cl)
+  try(parallel::stopCluster(cl), silent = TRUE)
+  invisible(NULL)
+}
+
 .stopNodes <- function(cl) {
+  .disarmAutoStop(cl)
   for (node in cl) try(close(node$con), silent = TRUE)
   invisible(NULL)
 }
@@ -98,6 +115,9 @@
     cl <- cl[-dropped]
     for (a in setdiff(names(kept), c("names", "class"))) attr(cl, a) <- kept[[a]]
   }
+  ## autoStop (see .disarmAutoStop()) must stop these nodes, not the closed ones they replaced
+  gcMe <- attr(cl, "gcMe")
+  if (is.environment(gcMe)) gcMe$cluster <- cl
   list(cluster = cl, dropped = dropped)
 }
 

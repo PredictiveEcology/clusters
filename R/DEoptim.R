@@ -221,6 +221,7 @@ DEoptimIterative <- function(fn, lower, upper, control, ...,
                               .plots, figurePath, cachePath, runName = 1, .verbose = TRUE,
                               plotEvery = 25L) {
   DE <- list()
+  ranEvaluations <- list()   # evaluations computed in this call, not replayed from the cache
   ## Progress figures are drawn by the master while every worker waits: 8.3 s of each 53 s generation
   ## (16% of the wall time) in a FireSense fit (ELF 4.2.2, 2026-09-28). They are drawn only for a chunk
   ## whose generations include a multiple of `plotEvery`, and always for the final chunk.
@@ -350,9 +351,11 @@ DEoptimIterative <- function(fn, lower, upper, control, ...,
       firstGeneration <- chunkEnds[iter] - chunkLengths[iter] + 1L
       message(cli::col_green(if (chunkLengths[iter] == 1L) paste0("Iteration ", chunkEnds[iter], " done!")
                              else paste0("Iterations ", firstGeneration, "-", chunkEnds[iter], " done!")))
-      if (computedNow && !is.null(DE[[iter]]$member$evaluations))
+      if (computedNow && !is.null(DE[[iter]]$member$evaluations)) {
+        ranEvaluations[[length(ranEvaluations) + 1L]] <- DE[[iter]]$member$evaluations
         message(.evaluationTimes(DE[[iter]]$member$evaluations, chunkLengths[iter],
                                  proc.time()[["elapsed"]] - chunkStarted))
+      }
     } else {
       # This is for testing --> it is fast
       # fn <- function(par, x) {
@@ -541,6 +544,7 @@ DEoptimIterative <- function(fn, lower, upper, control, ...,
       break
     }
   }
+  .recordHostSpeed(ranEvaluations, id = paste0(runName, "_", basename(tempfile())))
   DE
 }
 
@@ -898,6 +902,16 @@ DEoptimIterative2 <- function(...) {
 #'   generations), a list of `member$evaluations` data frames, or one such data frame. Records made
 #'   before `host` was recorded are skipped.
 #' @param by `"host"` (default) or `"worker"` (host and process, which tells apart two workers on one host).
+#'
+#' @section Host speeds saved by DEoptimIterative():
+#' At the end of every [DEoptimIterative()] call, the evaluations it computed (not chunks replayed from
+#' the cache) are summarised with `workerSpeed(by = "host")`, the table is shown with `message()`, and its
+#' rows are appended to `hostSpeed.rds` in the folder of the core-reservation ledger
+#' (`dirname(reservationsPath())`, option `clusters.reservationsPath`), with the time and a run id.
+#' Rows older than the option `clusters.hostSpeedDays` (default 30 days) are dropped at each write.
+#' When [plan_psock_min()] builds a cluster it averages each host's recorded ratios, weighted by `n`,
+#' and gives a host whose ratio is above the option `clusters.slowHostRatio` (default 1.25) no workers,
+#' slowest first, as long as the other hosts' free cores still cover the workers requested.
 #'
 #' @return A data frame with one row per host (or worker), slowest first: `host` (and `pid` if
 #'   `by = "worker"`), `n` evaluations, `median` and `p90` seconds, and `ratio`, the host's median

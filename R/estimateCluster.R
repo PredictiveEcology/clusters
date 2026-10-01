@@ -341,6 +341,7 @@ plan_psock_min <- function(
     maxC  <- parallelly::availableCores()
     freeC <- parallelly::freeCores(memory = load_memory, fraction = fraction)
     list(
+      nodename = Sys.info()[["nodename"]],
       cores_total = as.integer(maxC),
       # NA if the host cannot say (or runs an older clusters): the allocator then assumes 2 threads/core
       cores_physical = tryCatch(clusters:::.availablePhysicalCores(maxC), error = function(e) NA_integer_),
@@ -355,6 +356,7 @@ plan_psock_min <- function(
   nodes <- do.call(rbind, Map(function(lbl, cap) {
     data.frame(
       host        = lbl,                         # PRESERVE SSH NAME (not Sys.info()[["nodename"]])
+      nodename    = cap$nodename,                # what the evaluation records call this host
       cores_total = cap$cores_total,
       cores_physical = if (is.null(cap$cores_physical)) NA_integer_ else cap$cores_physical,
       free_est    = cap$free_est,
@@ -391,9 +393,11 @@ plan_psock_min <- function(
               paste0(nodes$host[nodes$reserved > 0], "=", nodes$reserved[nodes$reserved > 0],
                      collapse = ", "))
   }
+  nodes <- .excludeSlowHosts(nodes, hostSpeeds, total = total)
   nodes <<- nodes
   nodes
   }
+  hostSpeeds <- .readHostSpeeds()
   alloc_df <- .allocateWhenAvailable(probeCapacity, total = total, beta = beta,
                                      minFraction = getOption("clusters.minWorkersFraction", 1),
                                      waitSeconds = getOption("clusters.waitForCores", 0))

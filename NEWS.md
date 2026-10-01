@@ -1,3 +1,12 @@
+# clusters (development version)
+
+* `DEoptimIterative()` now saves each fit's per-host evaluation speed (`workerSpeed(by = "host")`, also shown
+  with `message()`) to `hostSpeed.rds`, beside the core-reservation ledger. `plan_psock_min()` reads it and
+  leaves out hosts whose ratio is above `getOption("clusters.slowHostRatio", 1.25)`, slowest first, while the
+  other hosts' free cores still cover the requested workers. Records older than
+  `getOption("clusters.hostSpeedDays", 30)` days are ignored and dropped. The probe now also returns each
+  host's `nodename`.
+
 # clusters 0.0.57
 
 * The evaluation-record field list is defined once (`.deoptimRecordFields`); no behaviour change.

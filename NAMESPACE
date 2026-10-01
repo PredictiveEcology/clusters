@@ -31,6 +31,7 @@ export(termsInDEoptim)
 export(transferDirName)
 export(verifyClusterHosts)
 export(visualizeDE)
+export(workerSpeed)
 import(ggplot2)
 importFrom(data.table,
   ":=",

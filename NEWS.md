@@ -1,3 +1,10 @@
+# clusters (development version)
+
+* Every `DEoptimIterative()` evaluation record (`member$evaluations`) now also holds `host`, `pid`, `start`
+  and `end` of the evaluation, taken on the worker that ran it, so slow workers can be found. Columns are
+  added only; results, random numbers and cache keys are unchanged. New `workerSpeed()` summarises the
+  records per host: evaluations, median and 90th-percentile seconds, and the ratio to the overall median.
+
 # clusters 0.0.55
 
 * One dead worker no longer hangs a fit. A PSOCK worker that dies without closing its socket left the

@@ -1,3 +1,13 @@
+# clusters (development version)
+
+* `DEoptimIterative()` now saves the per-host evaluation speed (`workerSpeed(by = "host")`) of every chunk
+  of generations it computes to `hostSpeed.rds`, beside the core-reservation ledger, and shows the table
+  for the whole fit at its end. `plan_psock_min()` reads it and
+  leaves out hosts whose ratio is above `getOption("clusters.slowHostRatio", 1.25)`, slowest first, while the
+  other hosts' free cores still cover the requested workers. Records older than
+  `getOption("clusters.hostSpeedDays", 30)` days are ignored and dropped. The probe now also returns each
+  host's `nodename`.
+
 # clusters 0.0.58
 
 * Removed a second, identical copy of the `ggPlotFn*()` plotting helpers in `R/DEoptim.R`; no behaviour change.

@@ -23,3 +23,16 @@ over the median of all evaluations.
 it (\code{member$evaluations} of each cached generation). A generation lasts as long as its slowest
 evaluation, so a host that is consistently slower than the rest costs every generation.
 }
+\section{Host speeds saved by DEoptimIterative()}{
+
+After every chunk of generations \code{\link[=DEoptimIterative]{DEoptimIterative()}} computes (not chunks replayed from the
+cache), its evaluations are summarised with \code{workerSpeed(by = "host")} and the rows are appended
+to \code{hostSpeed.rds} in the folder of the core-reservation ledger (\code{dirname(reservationsPath())},
+option \code{clusters.reservationsPath}), with the time and a run id, so a fit that is killed still
+leaves its records. The table for the whole fit is shown with \code{message()} at its end.
+Rows older than the option \code{clusters.hostSpeedDays} (default 30 days) are dropped at each write.
+When \code{\link[=plan_psock_min]{plan_psock_min()}} builds a cluster it averages each host's recorded ratios, weighted by \code{n},
+and gives a host whose ratio is above the option \code{clusters.slowHostRatio} (default 1.25) no workers,
+slowest first, as long as the other hosts' free cores still cover the workers requested.
+}
+

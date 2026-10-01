@@ -2,16 +2,16 @@
 
 ## A per-process record of objective-function evaluations. DEoptim() returns the final population
 ## but not its objective values, so each new evaluation -- its value and how long it took -- is
-## recorded where it runs (this process, or a PSOCK worker) and gathered after every chunk.
+## recorded where it runs (this process, or a PSOCK worker) and gathered after every chunk: seconds,
+## value, the host and process that ran it, and its start and end time (that machine's clock).
 .deoptimRecord <- new.env(parent = emptyenv())
 
 .parKey <- function(par) paste(sprintf("%a", as.numeric(par)), collapse = ",")
 
 .deoptimRecordTake <- function() {
-  out <- list(keys = .deoptimRecord$keys, vals = .deoptimRecord$vals, secs = .deoptimRecord$secs)
-  .deoptimRecord$keys <- NULL
-  .deoptimRecord$vals <- NULL
-  .deoptimRecord$secs <- NULL
+  fields <- c("keys", "vals", "secs", "hosts", "pids", "starts", "ends")
+  out <- mget(fields, envir = .deoptimRecord, ifnotfound = list(NULL))
+  rm(list = intersect(fields, names(.deoptimRecord)), envir = .deoptimRecord)
   out
 }
 
@@ -20,8 +20,8 @@
   recs <- list(.deoptimRecordTake())
   if (!is.null(cl))
     recs <- c(recs, parallel::clusterCall(cl, .deoptimRecordTake))
-  list(keys = unlist(lapply(recs, `[[`, "keys")), vals = unlist(lapply(recs, `[[`, "vals")),
-       secs = unlist(lapply(recs, `[[`, "secs")))
+  fields <- c("keys", "vals", "secs", "hosts", "pids", "starts", "ends")
+  stats::setNames(lapply(fields, function(f) unlist(lapply(recs, `[[`, f))), fields)
 }
 
 ## `fn`, except that a parameter set whose value is already known returns that value instead of
@@ -34,7 +34,12 @@
     hit <- match(key, knownKeys)
     if (!is.na(hit)) return(knownVals[[hit]])
     started <- proc.time()[["elapsed"]]
+    startedAt <- as.numeric(Sys.time())
     val <- fn(par, ...)
+    .deoptimRecord$hosts <- c(.deoptimRecord$hosts, Sys.info()[["nodename"]])
+    .deoptimRecord$pids <- c(.deoptimRecord$pids, Sys.getpid())
+    .deoptimRecord$starts <- c(.deoptimRecord$starts, startedAt)
+    .deoptimRecord$ends <- c(.deoptimRecord$ends, as.numeric(Sys.time()))
     .deoptimRecord$secs <- c(.deoptimRecord$secs, proc.time()[["elapsed"]] - started)
     .deoptimRecord$keys <- c(.deoptimRecord$keys, key)
     .deoptimRecord$vals <- c(.deoptimRecord$vals, val)
@@ -46,7 +51,7 @@
 ## evaluations: DEoptim evaluates its initial population first, and the carried population's values
 ## (`known`) come from the lookup instead. The final population's values are returned as
 ## `member$popval`, which seeds the next chunk, also when this chunk is loaded from the cache; every
-## new evaluation's seconds and value as `member$evaluations`.
+## new evaluation's seconds, value, host, pid, start and end as `member$evaluations`.
 .DEoptimChunk <- function(fn, lower, upper, control, known, dotsList) {
   memoFn <- .memoObjFun(fn, known$keys, known$vals)
   seed <- if (exists(".Random.seed", envir = globalenv(), inherits = FALSE)) get(".Random.seed", envir = globalenv())
@@ -68,7 +73,10 @@
   keys <- c(known$keys, recs$keys)
   vals <- c(known$vals, recs$vals)
   out$member$popval <- unname(vals[match(apply(out$member$pop, 1, .parKey), keys)])
-  out$member$evaluations <- data.frame(seconds = as.numeric(recs$secs), value = as.numeric(recs$vals))
+  out$member$evaluations <- data.frame(
+    seconds = as.numeric(recs$secs), value = as.numeric(recs$vals),
+    host = as.character(recs$hosts), pid = as.integer(recs$pids),
+    start = as.POSIXct(recs$starts, origin = "1970-01-01"), end = as.POSIXct(recs$ends, origin = "1970-01-01"))
   out
 }
 
@@ -877,4 +885,39 @@ shippedObjectsDigest <- function(control) {
 DEoptimIterative2 <- function(...) {
   .Deprecated("DEoptimIterative", package = "clusters")
   DEoptimIterative(...)
+}
+
+#' Which workers are slow? Summarise the evaluation records of a fit by host
+#'
+#' [DEoptimIterative()] keeps, for every objective-function evaluation, the host and process that ran
+#' it (`member$evaluations` of each cached generation). A generation lasts as long as its slowest
+#' evaluation, so a host that is consistently slower than the rest costs every generation.
+#'
+#' @param evaluations The `DE` list returned by [DEoptimIterative()] (one element per chunk of
+#'   generations), a list of `member$evaluations` data frames, or one such data frame. Records made
+#'   before `host` was recorded are skipped.
+#' @param by `"host"` (default) or `"worker"` (host and process, which tells apart two workers on one host).
+#'
+#' @return A data frame with one row per host (or worker), slowest first: `host` (and `pid` if
+#'   `by = "worker"`), `n` evaluations, `median` and `p90` seconds, and `ratio`, the host's median
+#'   over the median of all evaluations.
+#' @export
+workerSpeed <- function(evaluations, by = c("host", "worker")) {
+  by <- match.arg(by)
+  if (is.data.frame(evaluations)) evaluations <- list(evaluations)
+  evs <- lapply(evaluations, function(x) if (is.data.frame(x)) x else x$member$evaluations)
+  evs <- Filter(function(x) is.data.frame(x) && all(c("seconds", "host") %in% names(x)), evs)
+  if (!length(evs)) stop("No evaluation record has a `host` column (records made before it was added do not).")
+  ev <- do.call(rbind, lapply(evs, function(x) x[, intersect(c("seconds", "host", "pid"), names(x)), drop = FALSE]))
+  keys <- if (by == "worker" && "pid" %in% names(ev)) c("host", "pid") else "host"
+  grp <- interaction(ev[keys], drop = TRUE, lex.order = TRUE)
+  overall <- stats::median(ev$seconds)
+  out <- do.call(rbind, lapply(split(seq_len(nrow(ev)), grp), function(i) {
+    s <- ev$seconds[i]
+    cbind(ev[i[1], keys, drop = FALSE], n = length(s), median = stats::median(s),
+          p90 = unname(stats::quantile(s, 0.9)), ratio = stats::median(s) / overall)
+  }))
+  out <- out[order(-out$ratio), , drop = FALSE]
+  rownames(out) <- NULL
+  out
 }

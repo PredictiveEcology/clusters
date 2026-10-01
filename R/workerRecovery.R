@@ -49,15 +49,22 @@
   invisible(cl)
 }
 
+## Is this node's connection still open? Once closed, its number can be given to a new connection, and
+## close() or a "DONE" sent through the old connection object reaches that one instead.
+.nodeOpen <- function(node) {
+  isTRUE(tryCatch(identical(attr(getConnection(as.integer(node$con)), "conn_id"), attr(node$con, "conn_id")),
+                  error = function(e) FALSE))
+}
+
 .stopCluster <- function(cl) {
   .disarmAutoStop(cl)
-  try(parallel::stopCluster(cl), silent = TRUE)
+  try(parallel::stopCluster(cl[vapply(cl, .nodeOpen, logical(1))]), silent = TRUE)
   invisible(NULL)
 }
 
 .stopNodes <- function(cl) {
   .disarmAutoStop(cl)
-  for (node in cl) try(close(node$con), silent = TRUE)
+  for (node in Filter(.nodeOpen, cl)) try(close(node$con), silent = TRUE)
   invisible(NULL)
 }
 
@@ -155,6 +162,12 @@
     .setWorkerTimeout(fresh)
     attr(fresh, "reservationToken") <- token
     attr(fresh, "restartCluster") <- self
+    ## plan_psock_min()'s exit handler stops whichever cluster this is (see "currentCluster" there)
+    current <- attr(old, "currentCluster", exact = TRUE)
+    if (is.environment(current)) {
+      attr(fresh, "currentCluster") <- current
+      current$cluster <- fresh
+    }
     ok <- TRUE
     fresh
   }

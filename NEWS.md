@@ -6,6 +6,14 @@
   worker could fail with "invalid connection". A cluster whose dead nodes were replaced is now auto-stopped
   with its replacement nodes. This was the test-coverage failure since PR #28.
 
+* After a mid-run rebuild, the cluster `plan_psock_min()` stops when its caller's frame exits is now the
+  rebuilt one. It used to stop the original cluster, whose connections the rebuild had closed, and so
+  closed whatever connections had since been given their numbers. clusters also no longer closes a
+  connection it has already closed.
+
+* `clusterSetup()` puts the file of objects it sends to the workers in a folder of its own. Local workers
+  remove that folder when done, and it was the master's `tempdir()`, with everything in it.
+
 * `.excludeSlowHosts()` ignores speed records whose ratio is `NaN` or `Inf` (every evaluation took 0 s);
   one such row made the host's average `NaN`, and the host was never left out.
 

@@ -353,6 +353,7 @@ DEoptimIterative <- function(fn, lower, upper, control, ...,
                              else paste0("Iterations ", firstGeneration, "-", chunkEnds[iter], " done!")))
       if (computedNow && !is.null(DE[[iter]]$member$evaluations)) {
         ranEvaluations[[length(ranEvaluations) + 1L]] <- DE[[iter]]$member$evaluations
+        .recordHostSpeed(list(DE[[iter]]$member$evaluations), id = paste0(runName, "_", iter))
         message(.evaluationTimes(DE[[iter]]$member$evaluations, chunkLengths[iter],
                                  proc.time()[["elapsed"]] - chunkStarted))
       }
@@ -544,7 +545,7 @@ DEoptimIterative <- function(fn, lower, upper, control, ...,
       break
     }
   }
-  .recordHostSpeed(ranEvaluations, id = paste0(runName, "_", basename(tempfile())))
+  .showHostSpeed(ranEvaluations)
   DE
 }
 
@@ -622,48 +623,6 @@ controlForCache <- function(controlArgs) {
 #   dots["controlForCache"] <- NULL
 #   do.call(DEoptim, dots)
 # }
-
-
-ggPlotFnMeans <- function(bmerged) {
-  ggplot(bmerged, aes(iter, value)) +
-    geom_point() +
-    geom_smooth(se = TRUE) +
-    # geom_ribbon(aes(ymin = lower95, ymax = upper95)) +
-    facet_wrap(facets = "variable", scales = "free")
-}
-
-ggPlotFnSimple <- function(bmerged) {
-  ggplot(bmerged, aes(iter, bestValue)) +
-    geom_point() +
-    geom_smooth(se = TRUE)
-}
-
-ggPlotFnDif <- function(bmerged) {
-  ggplot(bmerged, aes(iter, dif)) +
-    geom_point() +
-    geom_smooth(se = TRUE) +
-    # geom_ribbon(aes(ymin = lower95, ymax = upper95)) +
-    facet_wrap(facets = "variable", scales = "free")
-}
-
-ggPlotFnVars <- function(bmerged) {
-  ggplot(bmerged, aes(iter, var)) +
-    geom_point() +
-    geom_smooth(se = TRUE) +
-    # geom_ribbon(aes(ymin = lower95, ymax = upper95)) +
-    facet_wrap(facets = "variable", scales = "free")
-}
-
-
-ggPlotFnMeansAllPoints <- function(b) {
-  ggplot(b, aes(iter, value)) +
-    # geom_point() +
-    geom_jitter(size = 0.05, width = 0.2, col = "grey") +
-    geom_smooth(se = TRUE) +
-    # geom_ribbon(aes(ymin = lower95, ymax = upper95)) +
-    facet_wrap(facets = "variable", scales = "free")
-}
-
 
 
 ggDEoptimFilename <- function(visualizeDEoptim, rep, iter = NULL, subfolder = "",
@@ -904,10 +863,11 @@ DEoptimIterative2 <- function(...) {
 #' @param by `"host"` (default) or `"worker"` (host and process, which tells apart two workers on one host).
 #'
 #' @section Host speeds saved by DEoptimIterative():
-#' At the end of every [DEoptimIterative()] call, the evaluations it computed (not chunks replayed from
-#' the cache) are summarised with `workerSpeed(by = "host")`, the table is shown with `message()`, and its
-#' rows are appended to `hostSpeed.rds` in the folder of the core-reservation ledger
-#' (`dirname(reservationsPath())`, option `clusters.reservationsPath`), with the time and a run id.
+#' After every chunk of generations [DEoptimIterative()] computes (not chunks replayed from the
+#' cache), its evaluations are summarised with `workerSpeed(by = "host")` and the rows are appended
+#' to `hostSpeed.rds` in the folder of the core-reservation ledger (`dirname(reservationsPath())`,
+#' option `clusters.reservationsPath`), with the time and a run id, so a fit that is killed still
+#' leaves its records. The table for the whole fit is shown with `message()` at its end.
 #' Rows older than the option `clusters.hostSpeedDays` (default 30 days) are dropped at each write.
 #' When [plan_psock_min()] builds a cluster it averages each host's recorded ratios, weighted by `n`,
 #' and gives a host whose ratio is above the option `clusters.slowHostRatio` (default 1.25) no workers,

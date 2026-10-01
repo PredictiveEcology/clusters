@@ -45,7 +45,8 @@ test_that("recorded ratios are averaged weighted by n, and old records are ignor
   expect_equal(suppressMessages(.excludeSlowHosts(nodes, speeds, total = 10))$free_est, c(0, 10))
   speeds$time[2] <- Sys.time() - 40 * 86400
   expect_equal(suppressMessages(.excludeSlowHosts(nodes, speeds, total = 10))$free_est, c(10, 10))
-  expect_equal(suppressMessages(.excludeSlowHosts(nodes, speeds, total = 10, days = 50))$free_est, c(0, 10))
+  withr::local_options(clusters.hostSpeedDays = 50)
+  expect_equal(suppressMessages(.excludeSlowHosts(nodes, speeds, total = 10))$free_est, c(0, 10))
 })
 
 mkEv <- function(host, sec) data.frame(seconds = sec, value = 0, host = host, pid = 1L)
@@ -56,7 +57,7 @@ test_that("recording appends rows, trims by age, and skips evaluations without h
   file <- file.path(d, "hostSpeed.rds")
   suppressMessages(.recordHostSpeed(list(data.frame(seconds = 1, value = 0)), id = "none"))
   expect_false(file.exists(file))
-  expect_message(.recordHostSpeed(list(mkEv(c("a", "a", "b"), c(1, 1, 3))), id = "r1"), "Evaluation speed")
+  .recordHostSpeed(list(mkEv(c("a", "a", "b"), c(1, 1, 3))), id = "r1")
   suppressMessages(.recordHostSpeed(list(mkEv("a", 1)), id = "r2"))
   got <- readRDS(file)
   expect_setequal(names(got), c("host", "n", "median", "p90", "ratio", "time", "id"))
@@ -67,6 +68,16 @@ test_that("recording appends rows, trims by age, and skips evaluations without h
   saveRDS(got, file)
   suppressMessages(.recordHostSpeed(list(mkEv("a", 1)), id = "r3"))
   expect_equal(readRDS(file)$id, c("r2", "r3"))
+  ## the same chunk recorded again replaces its rows
+  suppressMessages(.recordHostSpeed(list(mkEv(c("a", "b"), c(1, 2))), id = "r3"))
+  got <- readRDS(file)
+  expect_equal(got$id, c("r2", "r3", "r3"))
+  expect_setequal(got$host[got$id == "r3"], c("a", "b"))
+})
+
+test_that("the end-of-fit table is shown once for all evaluations", {
+  expect_message(.showHostSpeed(list(mkEv(c("a", "b"), c(1, 3)), mkEv("a", 1))), "Evaluation speed")
+  expect_silent(.showHostSpeed(list(data.frame(seconds = 1, value = 0))))
 })
 
 test_that("a failed write is a warning, not an error", {
@@ -90,14 +101,15 @@ test_that("DEoptimIterative() on a local PSOCK cluster writes hostSpeed.rds", {
                                 figurePath = FALSE, .plots = NULL, cachePath = cachePath,
                                 runName = "hs", .verbose = -1)))
   got <- readRDS(file.path(d, "hostSpeed.rds"))
-  expect_equal(got$host, Sys.info()[["nodename"]])
-  expect_gt(got$n, 0L)
-  expect_match(got$id, "^hs_")
+  expect_true(all(got$host == Sys.info()[["nodename"]]))   # one row per computed chunk
+  expect_true(all(got$n > 0L))
+  expect_match(got$id, "^hs_[0-9]+$")
+  expect_false(anyDuplicated(got[c("id", "host")]) > 0)
   ## a rerun replays the cached chunks: nothing was computed, so nothing is added
   suppressWarnings(suppressMessages(
     clusters:::DEoptimIterative(fn, lower = c(a = 0, b = 0), upper = c(a = 1, b = 1),
                                 control = list(NP = 8L, itermax = 2L, trace = FALSE, cluster = cl),
                                 figurePath = FALSE, .plots = NULL, cachePath = cachePath,
                                 runName = "hs", .verbose = -1)))
-  expect_equal(nrow(readRDS(file.path(d, "hostSpeed.rds"))), 1L)
+  expect_equal(nrow(readRDS(file.path(d, "hostSpeed.rds"))), nrow(got))
 })

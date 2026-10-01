@@ -12,27 +12,41 @@
 .hostSpeedRecent <- function(speeds, days = getOption("clusters.hostSpeedDays", 30), now = Sys.time())
   speeds[as.numeric(difftime(now, speeds$time, units = "days")) <= days, , drop = FALSE]
 
-## Summarise the evaluations computed in one fit, show the table, and append it to hostSpeed.rds.
-## `evaluations` is a list of `member$evaluations` data frames. Never fails the fit.
+## The evaluation records that say which host ran them
+.withHost <- function(evaluations)
+  Filter(function(x) is.data.frame(x) && "host" %in% names(x), evaluations)
+
+## Append the per-host speeds of one chunk of evaluations to hostSpeed.rds. Called after every computed
+## chunk, so a fit that is killed still leaves its records. `id` names the chunk (runName and chunk
+## number): a chunk computed again, e.g. after a restart, replaces its earlier rows instead of adding a
+## duplicate. `evaluations` is a list of
+## `member$evaluations` data frames. Never fails the fit.
 .recordHostSpeed <- function(evaluations, id, path = getOption("clusters.reservationsPath")) {
   tryCatch({
-    evaluations <- Filter(function(x) is.data.frame(x) && "host" %in% names(x), evaluations)
+    evaluations <- .withHost(evaluations)
     if (!length(evaluations)) return(invisible(NULL))
     tab <- workerSpeed(evaluations, by = "host")
-    message("Evaluation speed by host (ratio: host median over the median of all evaluations):")
-    reproducible::messageDF(tab)
     file <- .hostSpeedFile(path)
-    new <- cbind(tab[c("host", "n", "median", "p90", "ratio")], time = Sys.time(), id = id,
+    new <- cbind(tab[setdiff(.hostSpeedColumns, c("time", "id"))], time = Sys.time(), id = id,
                  stringsAsFactors = FALSE)
     .withReservationLock(file, {
       old <- if (file.exists(file)) tryCatch(readRDS(file), error = function(e) NULL)
-      saveRDS(.hostSpeedRecent(rbind(old[.hostSpeedColumns], new)), file)
+      old <- old[!old$id %in% id, .hostSpeedColumns, drop = FALSE]
+      saveRDS(.hostSpeedRecent(rbind(old, new)), file)
     })
     invisible(new)
   }, error = function(e) {
     warning("Could not record host speeds: ", conditionMessage(e), call. = FALSE)
     invisible(NULL)
   })
+}
+
+## Show the per-host speeds of all the evaluations a fit computed
+.showHostSpeed <- function(evaluations) {
+  evaluations <- .withHost(evaluations)
+  if (!length(evaluations)) return(invisible(NULL))
+  message("Evaluation speed by host (ratio: host median over the median of all evaluations):")
+  reproducible::messageDF(workerSpeed(evaluations, by = "host"))
 }
 
 ## The recorded speeds, or NULL when there is no file
@@ -52,17 +66,15 @@
 #' @param speeds The data frame saved in `hostSpeed.rds` (`host`, `n`, `ratio`, `time`), or `NULL`.
 #' @param total Workers requested.
 #' @param maxRatio Ratio above which a host is slow; `getOption("clusters.slowHostRatio", 1.25)`.
-#' @param days Age window in days of the records used.
 #' @return `nodes`, with `free_est` set to 0 for the excluded hosts.
 #' @keywords internal
 .excludeSlowHosts <- function(nodes, speeds, total,
-                              maxRatio = getOption("clusters.slowHostRatio", 1.25),
-                              days = getOption("clusters.hostSpeedDays", 30)) {
+                              maxRatio = getOption("clusters.slowHostRatio", 1.25)) {
   if (!NROW(speeds)) {
     message("No host speed records: no host left out.")
     return(nodes)
   }
-  speeds <- .hostSpeedRecent(speeds, days)
+  speeds <- .hostSpeedRecent(speeds)
   ratio <- vapply(nodes$nodename, function(h) {
     s <- speeds[speeds$host %in% h, , drop = FALSE]
     if (NROW(s)) stats::weighted.mean(s$ratio, s$n) else NA_real_

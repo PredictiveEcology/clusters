@@ -8,8 +8,7 @@
   nodes,
   speeds,
   total,
-  maxRatio = getOption("clusters.slowHostRatio", 1.25),
-  days = getOption("clusters.hostSpeedDays", 30)
+  maxRatio = getOption("clusters.slowHostRatio", 1.25)
 )
 }
 \arguments{
@@ -20,8 +19,6 @@
 \item{total}{Workers requested.}
 
 \item{maxRatio}{Ratio above which a host is slow; \code{getOption("clusters.slowHostRatio", 1.25)}.}
-
-\item{days}{Age window in days of the records used.}
 }
 \value{
 \code{nodes}, with \code{free_est} set to 0 for the excluded hosts.

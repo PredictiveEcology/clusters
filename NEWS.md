@@ -1,4 +1,4 @@
-# clusters (development version)
+# clusters 0.0.56
 
 * Every `DEoptimIterative()` evaluation record (`member$evaluations`) now also holds `host`, `pid`, `start`
   and `end` of the evaluation, taken on the worker that ran it, so slow workers can be found. Columns are

@@ -1,4 +1,8 @@
-# clusters (development version)
+# clusters 0.0.59
+
+* Tests that run DEoptim on local PSOCK workers now give the workers this session's library paths
+  (`localTestCluster()` in a test helper), so the workers load the clusters under test; under covr they
+  loaded an older installed copy and failed with "object '.deoptimRecordFields' not found".
 
 * `DEoptimIterative()` now saves the per-host evaluation speed (`workerSpeed(by = "host")`) of every chunk
   of generations it computes to `hostSpeed.rds`, beside the core-reservation ledger, and shows the table

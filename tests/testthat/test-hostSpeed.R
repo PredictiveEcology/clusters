@@ -92,8 +92,7 @@ test_that("DEoptimIterative() on a local PSOCK cluster writes hostSpeed.rds", {
   d <- withr::local_tempdir()
   cachePath <- withr::local_tempdir()
   withr::local_options(clusters.reservationsPath = d, reproducible.cachePath = cachePath)
-  cl <- parallel::makeCluster(2)
-  on.exit(parallel::stopCluster(cl), add = TRUE)
+  cl <- localTestCluster(2)
   fn <- function(par) sum((par - 0.3)^2)
   suppressWarnings(suppressMessages(
     clusters:::DEoptimIterative(fn, lower = c(a = 0, b = 0), upper = c(a = 1, b = 1),

@@ -7,8 +7,7 @@ skip_on_cran()
 skip_if_not_installed("DEoptim")
 
 test_that("an evaluation run on a PSOCK worker records that worker's host and pid", {
-  cl <- parallel::makeCluster(2)
-  on.exit(parallel::stopCluster(cl), add = TRUE)
+  cl <- localTestCluster(2)
   wpid <- unlist(parallel::clusterCall(cl, Sys.getpid))
   whost <- unlist(parallel::clusterCall(cl, function() Sys.info()[["nodename"]]))
   out <- suppressWarnings(clusters:::.DEoptimChunk(

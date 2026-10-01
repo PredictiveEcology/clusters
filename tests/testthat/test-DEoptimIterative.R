@@ -160,10 +160,7 @@ test_that("with a cluster, each generation after the first evaluates at most NP 
   skip_if(nzchar(limit) && !identical(limit, "false"),
           "R CMD check limits child processes to 2; this test needs 4 workers")
   skip_if(isTRUE(parallel::detectCores() < 4L), "needs 4 cores")
-  cl <- parallel::makeCluster(4L)
-  on.exit(parallel::stopCluster(cl), add = TRUE)
-  ## the workers must load this version of clusters to run the recording wrapper
-  parallel::clusterCall(cl, function(libs) .libPaths(libs), .libPaths())
+  cl <- localTestCluster(4L)
   ok <- unlist(parallel::clusterCall(cl, function() {
     requireNamespace("clusters", quietly = TRUE) &&
       exists(".deoptimRecord", envir = asNamespace("clusters"), inherits = FALSE)

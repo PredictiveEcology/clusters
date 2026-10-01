@@ -153,3 +153,11 @@ test_that(".pidAlive answers correctly on whatever platform is running the tests
   expect_false(clusters:::.pidAlive(NA_integer_))
   expect_equal(clusters:::.pidAlive(c(Sys.getpid(), 999999L)), c(TRUE, FALSE))
 })
+
+test_that("the test suite never uses the real per-user ledger folder", {
+  ## setup-userState.R points clusters.reservationsPath at a temporary folder for the whole suite
+  real <- normalizePath(tools::R_user_dir("clusters", "data"), mustWork = FALSE)
+  expect_false(is.null(getOption("clusters.reservationsPath")))
+  expect_false(startsWith(normalizePath(reservationsPath(), mustWork = FALSE), real))
+  expect_false(startsWith(normalizePath(clusters:::.hostSpeedFile(), mustWork = FALSE), real))
+})

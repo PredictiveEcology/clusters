@@ -121,7 +121,7 @@ plan_psock_min <- function(
   )
   # try(): a probe node that has already gone (host OOM, dropped ssh) must not
   # turn a normal exit -- or the real error -- into "invalid connection".
-  on.exit(try(parallel::stopCluster(cl_probe), silent = TRUE), add = TRUE)
+  on.exit(.stopCluster(cl_probe), add = TRUE)
   
   # Export packages list (minimal, no diagnostics)
   parallel::clusterExport(cl_probe, varlist = "pkgsNeeded", envir = environment())
@@ -268,7 +268,7 @@ plan_psock_min <- function(
         rscript_startup = startup_lines, rshopts = rshopts, revtunnel = TRUE,
         setup_strategy = ifelse(isRstudio(), "sequential", "parallel"),
         connectTimeout = 2 * 60, timeout = 30 * 24 * 60 * 60, autoStop = auto_stop)
-      on.exit(try(parallel::stopCluster(cl_verify), silent = TRUE), add = TRUE)
+      on.exit(.stopCluster(cl_verify), add = TRUE)
     }
     # Same alignment rule as above: one worker per element of `hosts`.
     verifiedHosts <- verifyClusterHosts(cl_verify, hosts = hosts, pkgs = pkgsTopLevel,
@@ -424,7 +424,7 @@ plan_psock_min <- function(
   
   # Stop probe cluster and continue. try(): see the on.exit above (2026-09-08,
   # a job died here with "invalid connection" after its work was done).
-  try(parallel::stopCluster(cl_probe), silent = TRUE)
+  .stopCluster(cl_probe)
   
   res <- list(
     probe = nodes,
@@ -473,7 +473,7 @@ plan_psock_min <- function(
 
     on.exit()
     # try(): after a mid-run rebuild (see .runWithRebuild()) this cluster's connections are closed
-    on.exitAny(try(stopCluster(cl), silent = TRUE), 3)
+    on.exitAny(.stopCluster(cl), 3)
 
     # Record what this build took, so a concurrent builder sizing its own cluster
     # subtracts it instead of re-claiming the same cores from a stale load

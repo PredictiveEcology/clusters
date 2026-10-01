@@ -75,6 +75,8 @@
     return(nodes)
   }
   speeds <- .hostSpeedRecent(speeds)
+  ## a ratio from evaluations that all took 0 seconds is NaN or Inf: no record, else the host's mean is NaN
+  speeds <- speeds[is.finite(speeds$ratio), , drop = FALSE]
   ratio <- vapply(nodes$nodename, function(h) {
     s <- speeds[speeds$host %in% h, , drop = FALSE]
     if (NROW(s)) stats::weighted.mean(s$ratio, s$n) else NA_real_

@@ -50,7 +50,7 @@ test_that("mirrorTerraOptions sends the settings, not the cluster", {
   cl <- try(do.call(function(big) parallelly::makeClusterPSOCK(1L, autoStop = TRUE),
                     list(big = runif(2e6))), silent = TRUE)
   skip_if(inherits(cl, "try-error"), "cannot start a local cluster")
-  on.exit(try(parallel::stopCluster(cl), silent = TRUE), add = TRUE)
+  on.exit(clusters:::.stopCluster(cl), add = TRUE)   # autoStop: see .disarmAutoStop()
   ## the premise: this cluster object is large
   expect_gt(length(serialize(cl, NULL)), 10 * 2^20)
 

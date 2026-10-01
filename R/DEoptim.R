@@ -6,12 +6,13 @@
 ## value, the host and process that ran it, and its start and end time (that machine's clock).
 .deoptimRecord <- new.env(parent = emptyenv())
 
+.deoptimRecordFields <- c("keys", "vals", "secs", "hosts", "pids", "starts", "ends")
+
 .parKey <- function(par) paste(sprintf("%a", as.numeric(par)), collapse = ",")
 
 .deoptimRecordTake <- function() {
-  fields <- c("keys", "vals", "secs", "hosts", "pids", "starts", "ends")
-  out <- mget(fields, envir = .deoptimRecord, ifnotfound = list(NULL))
-  rm(list = intersect(fields, names(.deoptimRecord)), envir = .deoptimRecord)
+  out <- mget(.deoptimRecordFields, envir = .deoptimRecord, ifnotfound = list(NULL))
+  rm(list = intersect(.deoptimRecordFields, names(.deoptimRecord)), envir = .deoptimRecord)
   out
 }
 
@@ -20,8 +21,8 @@
   recs <- list(.deoptimRecordTake())
   if (!is.null(cl))
     recs <- c(recs, parallel::clusterCall(cl, .deoptimRecordTake))
-  fields <- c("keys", "vals", "secs", "hosts", "pids", "starts", "ends")
-  stats::setNames(lapply(fields, function(f) unlist(lapply(recs, `[[`, f))), fields)
+  stats::setNames(lapply(.deoptimRecordFields, function(f) unlist(lapply(recs, `[[`, f))),
+                  .deoptimRecordFields)
 }
 
 ## `fn`, except that a parameter set whose value is already known returns that value instead of

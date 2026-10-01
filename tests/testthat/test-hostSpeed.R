@@ -36,6 +36,13 @@ test_that("hosts without a record are kept, and absent records change nothing", 
   expect_equal(out$free_est, c(10, 10, 10))
 })
 
+test_that("a ratio that is not a number (all evaluations took 0 s) is no record, not a block", {
+  ## 2026-10-01: test runs recorded median 0, ratio NaN; one such row made the host's mean NaN
+  nodes <- nodesFor(c(a = 10, b = 10, c = 10))
+  speeds <- speedsFor(c(NaN, 2, NaN, Inf), host = c("a", "a", "b", "c"))
+  expect_equal(suppressMessages(.excludeSlowHosts(nodes, speeds, total = 10))$free_est, c(0, 10, 10))
+})
+
 test_that("recorded ratios are averaged weighted by n, and old records are ignored", {
   nodes <- nodesFor(c(a = 10, b = 10))
   ## a: (900 * 1 + 100 * 3) / 1000 = 1.2, not slow; with n = 100 for the first row it is 2, slow

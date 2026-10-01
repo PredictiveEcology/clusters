@@ -10,7 +10,7 @@ skip_if(nzchar(tolower(Sys.getenv("_R_CHECK_LIMIT_CORES_"))) &&
         "R CMD check limits child processes to 2")
 
 for (f in c(".replaceDeadNodes", ".deadNodes", ".runWithRebuild", ".setWorkerTimeout", ".stopNodes",
-            ".workerTimeout", ".sshTunnelOpts"))
+            ".stopCluster", ".workerTimeout", ".sshTunnelOpts"))
   assign(f, getFromNamespace(f, "clusters"))
 
 localCluster <- function(n) {
@@ -143,6 +143,38 @@ test_that(".setWorkerTimeout() replaces the 30-day socket timeout", {
   withr::local_options(clusters.workerTimeout = -1)
   expect_error(.workerTimeout(), "positive")
   parallel::stopCluster(cl)
+})
+
+test_that("a stopped autoStop cluster, when garbage collected, leaves alone the connections that reuse its numbers", {
+  ## CI, 2026-10-01: parallelly's autoStop finalizer stopped an already-stopped cluster again and closed a
+  ## later test's live connection, which had been given the same number ("invalid connection")
+  for (stopper in list(.stopCluster, .stopNodes)) {
+    old <- parallelly::makeClusterPSOCK(1L, autoStop = TRUE)
+    stopper(old)
+    cl <- localCluster(1L)
+    withr::defer(killAll(attr(cl, "pids")))
+    skip_if_not(identical(as.integer(cl[[1]]$con), as.integer(old[[1]]$con)), "R did not reuse the number")
+    rm(old)
+    invisible(gc())
+    expect_equal(unlist(parallel::clusterCall(cl, function() 1L)), 1L)
+    parallel::stopCluster(cl)
+  }
+})
+
+test_that("autoStop stops a cluster's replacement nodes, not the closed ones they replaced", {
+  cl <- parallelly::makeClusterPSOCK(2L, autoStop = TRUE)
+  pids <- unlist(parallel::clusterCall(cl, Sys.getpid))
+  withr::defer(killAll(pids))
+  tools::pskill(pids[2], tools::SIGKILL)
+  Sys.sleep(0.5)
+  start <- function(host) {
+    new <- localCluster(1L)
+    pids <<- c(pids, attr(new, "pids"))
+    new
+  }
+  out <- suppressMessages(.replaceDeadNodes(cl, start, seconds = 5, tries = 2L, action = "stop"))
+  expect_identical(attr(out$cluster, "gcMe")$cluster, out$cluster)
+  .stopCluster(out$cluster)
 })
 
 test_that("DEoptimIterative() finishes with the result of a run with no dead worker when one worker stops", {

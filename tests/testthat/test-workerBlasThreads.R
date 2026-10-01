@@ -62,7 +62,7 @@ test_that("a worker launched through clusters' makeClusterPSOCK starts, capped a
   cl <- clusters::makeClusterPSOCK(
     1L, rscript = clusters:::.workerRscript(file.path(R.home("bin"), "Rscript"), blasThreads = 1L),
     autoStop = TRUE)
-  on.exit(parallel::stopCluster(cl), add = TRUE)
+  on.exit(clusters:::.stopCluster(cl), add = TRUE)   # autoStop: see .disarmAutoStop()
   got <- parallel::clusterEvalQ(cl, list(env = Sys.getenv("OPENBLAS_NUM_THREADS"), search = search()))[[1]]
   expect_identical(got$env, "1")
   expect_true(all(paste0("package:", c("stats", "utils", "methods")) %in% got$search))
@@ -74,7 +74,7 @@ test_that("a worker started this way has one OpenBLAS thread", {
   cl <- parallelly::makeClusterPSOCK(
     1L, rscript = clusters:::.workerRscript(file.path(R.home("bin"), "Rscript"), blasThreads = 1L),
     autoStop = TRUE)
-  on.exit(parallel::stopCluster(cl), add = TRUE)
+  on.exit(clusters:::.stopCluster(cl), add = TRUE)
   got <- parallel::clusterEvalQ(cl, list(env = Sys.getenv("OPENBLAS_NUM_THREADS"),
                                          threads = length(list.files("/proc/self/task"))))[[1]]
   expect_identical(got$env, "1")

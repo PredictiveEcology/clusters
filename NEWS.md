@@ -1,5 +1,17 @@
 # clusters 0.0.59
 
+* A cluster started with `autoStop = TRUE` (`plan_psock_min()`'s default `auto_stop`) and then stopped
+  by clusters is no longer stopped a second time when it is garbage collected. That second stop sent
+  "DONE" to, and closed, whatever connections had since been given its old connection numbers, so a live
+  worker could fail with "invalid connection". A cluster whose dead nodes were replaced is now auto-stopped
+  with its replacement nodes. This was the test-coverage failure since PR #28.
+
+* `.excludeSlowHosts()` ignores speed records whose ratio is `NaN` or `Inf` (every evaluation took 0 s);
+  one such row made the host's average `NaN`, and the host was never left out.
+
+* The tests no longer write the real core-reservation ledger or `hostSpeed.rds`: a setup file points
+  `clusters.reservationsPath` at a temporary folder for the whole suite.
+
 * Tests that run DEoptim on local PSOCK workers now give the workers this session's library paths
   (`localTestCluster()` in a test helper), so the workers load the clusters under test; under covr they
   loaded another installed copy, or none, and the test failed.

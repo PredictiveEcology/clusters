@@ -1,3 +1,16 @@
+# clusters (development version)
+
+* Slow hosts (`getOption("clusters.slowHostRatio", 1.25)`) are now used last and only for the shortfall:
+  fast hosts keep their free cores, and when those cover the requested workers every slow host is left
+  out; otherwise slow hosts are added back, least slow first, each capped to the remaining shortfall
+  (a memory-bandwidth benchmark showed slow hosts run at normal speed unless heavily loaded).
+  `hostSpeed.rds` now also records `workers`, the distinct worker pids per host in the chunk, and a host's
+  slowness is judged only from rows where it carried a full load (`workers` at least
+  `getOption("clusters.hostSpeedFullLoad", 0.5)` of its largest recorded); rows without `workers` count
+  as full load, and rows with a NaN or 0 median or ratio are ignored.
+  `.ht_allocate_min()` now hands out the rounding remainder until it is used up or no host has a free core
+  left; it used to fall short, or fail, when `total` equalled the free cores.
+
 # clusters 0.0.59
 
 * Tests that run DEoptim on local PSOCK workers now give the workers this session's library paths

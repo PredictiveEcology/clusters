@@ -472,8 +472,12 @@ plan_psock_min <- function(
     res$startNodes <- startNodes
 
     on.exit()
-    # try(): after a mid-run rebuild (see .runWithRebuild()) this cluster's connections are closed
-    on.exitAny(.stopCluster(cl), 3)
+    ## Stops the cluster current at exit: a mid-run rebuild (see .restartClusterFn()) replaces it, and
+    ## stopping this one then would close whatever connections had since been given its numbers
+    current <- new.env(parent = emptyenv())
+    attr(cl, "currentCluster") <- current
+    current$cluster <- cl
+    on.exitAny(.stopCluster(current$cluster), 3)
 
     # Record what this build took, so a concurrent builder sizing its own cluster
     # subtracts it instead of re-claiming the same cores from a stale load

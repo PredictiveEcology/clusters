@@ -161,6 +161,19 @@ test_that("a stopped autoStop cluster, when garbage collected, leaves alone the 
   }
 })
 
+test_that("stopping a cluster a second time leaves alone the connections that reuse its numbers", {
+  old <- localCluster(1L)
+  withr::defer(killAll(attr(old, "pids")))
+  .stopCluster(old)
+  cl <- localCluster(1L)
+  withr::defer(killAll(attr(cl, "pids")))
+  skip_if_not(identical(as.integer(cl[[1]]$con), as.integer(old[[1]]$con)), "R did not reuse the number")
+  .stopCluster(old)
+  .stopNodes(old)
+  expect_equal(unlist(parallel::clusterCall(cl, function() 1L)), 1L)
+  .stopCluster(cl)
+})
+
 test_that("autoStop stops a cluster's replacement nodes, not the closed ones they replaced", {
   cl <- parallelly::makeClusterPSOCK(2L, autoStop = TRUE)
   pids <- unlist(parallel::clusterCall(cl, Sys.getpid))

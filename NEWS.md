@@ -1,3 +1,7 @@
+# clusters 0.0.57
+
+* The evaluation-record field list is defined once (`.deoptimRecordFields`); no behaviour change.
+
 # clusters 0.0.56
 
 * Every `DEoptimIterative()` evaluation record (`member$evaluations`) now also holds `host`, `pid`, `start`

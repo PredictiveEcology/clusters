@@ -1,4 +1,4 @@
-# clusters 0.0.64
+# clusters (development version)
 
 * Workers are placed where they run fastest (`.speedAllocate()`), by builds and rebalances alike. A worker
   runs at full speed while its host's workers (every cluster's, and other load) are no more than its
@@ -11,6 +11,8 @@
   although they run at full speed up to about 6 (memory-bandwidth benchmark, 2026-10-01), and the
   proportional split of `.ht_allocate_min()`.
 * Every host keeps `getOption("clusters.keepFreeCores", 2)` cores for its other users.
+# clusters 0.0.64
+
 * A build books its workers the moment they are allocated, and every build's probe, allocation and
   booking, and every rebalance's decision and re-booking, run under one lock (`allocation.lock` beside the
   reservation ledger). A build used to book only after its cluster had started and every worker had

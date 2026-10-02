@@ -10,7 +10,7 @@
   physical,
   threads,
   beta,
-  memExponent = getOption("clusters.memoryExponent", 1)
+  memExponent = getOption("clusters.memoryExponent", 0.2)
 )
 }
 \arguments{
@@ -23,7 +23,7 @@ physical cores half of \code{threads}.}
 
 \item{beta}{What a hyperthread adds to a core, \verb{(0, 1]}.}
 
-\item{memExponent}{How steeply speed falls past the memory modules; \code{getOption("clusters.memoryExponent", 1)}.}
+\item{memExponent}{How steeply speed falls past the memory modules; \code{getOption("clusters.memoryExponent", 0.2)}.}
 }
 \value{
 Speeds in \verb{(0, 1]}, one per element of \code{n}.
@@ -32,8 +32,10 @@ Speeds in \verb{(0, 1]}, one per element of \code{n}.
 A worker runs at full speed while the host's workers are no more than its memory modules (\code{dimms}) and its
 physical cores. Past the modules they share memory bandwidth: speed \code{(dimms / n)^memExponent}. Past the
 physical cores two workers share a core: speed \code{(cores_physical + beta * (n - cores_physical)) / n}. The
-lower of the two applies. A memory-bandwidth benchmark (2026-10-01) gave per-thread bandwidth of
-\code{dimms / n} past the modules: hosts with 6 modules ran 12 threads at 0.49 of one thread's speed, hosts
-with 16 ran 48 at 0.33.
+lower of the two applies. A memory-bandwidth benchmark (2026-10-01) gave \code{dimms / n} per thread
+(exponent 1), but FireSense evaluations also compute: fitted to 74,031 host x generation evaluation
+medians from 7,231 generations on 15 hosts, with the workers booked on each host (2026-10-02), the
+exponent is 0.2 and \code{beta} 0.75 (hosts with 8 modules ran 1.11-1.12x the generation median at 48
+workers, hosts with 16 ran 0.91-0.95x). Exponent 1 fit more than twice as badly.
 }
 \keyword{internal}

@@ -3,7 +3,8 @@
 * Workers are placed where they run fastest (`.speedAllocate()`), by builds and rebalances alike. A worker
   runs at full speed while its host's workers (every cluster's, and other load) are no more than its
   memory modules and its physical cores; past the modules its speed is `(dimms / n)^memExponent`
-  (`getOption("clusters.memoryExponent", 1)`), past the physical cores two workers share a core. Each
+  (`getOption("clusters.memoryExponent", 0.2)`), past the physical cores two workers share a core
+  (`plan_psock_min(beta = 0.75)`), both fitted to FireSense evaluation times on 15 hosts. Each
   worker goes to the host where the workers would then be fastest, so every host is filled to its modules
   and cores before any goes past its own, and a host with few modules still gets as many as keep it level
   with the others. The probe reports each host's memory modules from the kernel's EDAC records. This

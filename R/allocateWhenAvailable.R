@@ -28,7 +28,7 @@
 #'   (`.withAllocationLock()`), so no other cluster decides between this probe and this booking.
 #' @return The allocation data.frame from [.speedAllocate()].
 #' @keywords internal
-.allocateWhenAvailable <- function(probe, total, beta = 0.5,
+.allocateWhenAvailable <- function(probe, total, beta = 0.75,
                                    minFraction = getOption("clusters.minWorkersFraction", 1),
                                    waitSeconds = getOption("clusters.waitForCores", 0),
                                    interval = 60, sleep = Sys.sleep, now = Sys.time, book = NULL) {

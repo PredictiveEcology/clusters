@@ -14,7 +14,7 @@
 #'
 #' @param hosts Character vector of hostnames reachable by SSH.
 #' @param total Integer total desired workers (default 100).
-#' @param beta Numeric in (0,1], HT penalty beyond 50% logical occupancy (default 0.5).
+#' @param beta What a hyperthread adds to a core, in (0,1] (see [.workerSpeed()]); 0.75, fitted to FireSense evaluation times.
 #' @param load_memory Character; `"1min"|"5min"|"15min"` window for `freeCores()` (default `"5min"`).
 #' @param fraction Numeric ≥ 0; headroom scale for `freeCores()` (default 0.9).
 #' @param pkgsNeeded Character vector of packages to ensure on workers
@@ -65,7 +65,7 @@
 plan_psock_min <- function(
   hosts,
   total = 100L,
-  beta = 0.5,
+  beta = 0.75,
   load_memory = "5min",
   fraction = 0.9,
   pkgsNeeded = c("parallelly","future","foreach"),
@@ -536,20 +536,22 @@ plan_psock_min <- function(
 #' A worker runs at full speed while the host's workers are no more than its memory modules (`dimms`) and its
 #' physical cores. Past the modules they share memory bandwidth: speed `(dimms / n)^memExponent`. Past the
 #' physical cores two workers share a core: speed `(cores_physical + beta * (n - cores_physical)) / n`. The
-#' lower of the two applies. A memory-bandwidth benchmark (2026-10-01) gave per-thread bandwidth of
-#' `dimms / n` past the modules: hosts with 6 modules ran 12 threads at 0.49 of one thread's speed, hosts
-#' with 16 ran 48 at 0.33.
+#' lower of the two applies. A memory-bandwidth benchmark (2026-10-01) gave `dimms / n` per thread
+#' (exponent 1), but FireSense evaluations also compute: fitted to 74,031 host x generation evaluation
+#' medians from 7,231 generations on 15 hosts, with the workers booked on each host (2026-10-02), the
+#' exponent is 0.2 and `beta` 0.75 (hosts with 8 modules ran 1.11-1.12x the generation median at 48
+#' workers, hosts with 16 ran 0.91-0.95x). Exponent 1 fit more than twice as badly.
 #'
 #' @param n Workers on the host, all clusters'.
 #' @param dimms,physical Memory modules and physical cores; `NA` dimms means no memory limit, `NA`
 #'   physical cores half of `threads`.
 #' @param threads The host's threads (`cores_total`).
 #' @param beta What a hyperthread adds to a core, `(0, 1]`.
-#' @param memExponent How steeply speed falls past the memory modules; `getOption("clusters.memoryExponent", 1)`.
+#' @param memExponent How steeply speed falls past the memory modules; `getOption("clusters.memoryExponent", 0.2)`.
 #' @return Speeds in `(0, 1]`, one per element of `n`.
 #' @keywords internal
 .workerSpeed <- function(n, dimms, physical, threads, beta,
-                         memExponent = getOption("clusters.memoryExponent", 1)) {
+                         memExponent = getOption("clusters.memoryExponent", 0.2)) {
   physical <- ifelse(is.na(physical), threads / 2, physical)
   mem <- ifelse(is.na(dimms) | n <= dimms, 1, (dimms / pmax(n, 1))^memExponent)
   ht <- ifelse(n <= physical, 1, (physical + beta * (n - physical)) / pmax(n, 1))

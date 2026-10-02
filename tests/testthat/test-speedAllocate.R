@@ -7,9 +7,12 @@ host <- function(name, dimms, physical = 24, threads = 48, free = threads)
 
 test_that("worker speed: full to the memory modules and physical cores, then dimms/n and shared cores", {
   sp <- getFromNamespace(".workerSpeed", "clusters")
-  expect_equal(sp(c(1, 6, 12, 48), dimms = 6, physical = 24, threads = 48, beta = 0.5), c(1, 1, 0.5, 0.125))
+  expect_equal(sp(c(1, 6, 12, 48), dimms = 6, physical = 24, threads = 48, beta = 0.5, memExponent = 1),
+               c(1, 1, 0.5, 0.125))
+  ## the calibrated default (2026-10-02): a gentle decline past the modules
+  expect_equal(sp(48, dimms = 8, physical = 24, threads = 48, beta = 0.75), min((8 / 48)^0.2, (24 + 0.75 * 24) / 48))
   expect_equal(sp(36, dimms = NA, physical = 24, threads = 48, beta = 0.5), (24 + 0.5 * 12) / 36)
-  expect_equal(sp(30, dimms = 16, physical = 24, threads = 48, beta = 0.5), 16 / 30)  # memory is the lower
+  expect_equal(sp(30, dimms = 16, physical = 24, threads = 48, beta = 0.5, memExponent = 1), 16 / 30)  # memory is the lower
   expect_equal(sp(30, dimms = 16, physical = 24, threads = 48, beta = 0.5, memExponent = 0.5), sqrt(16 / 30))
 })
 

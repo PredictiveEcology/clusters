@@ -21,7 +21,9 @@ objectsOnWorkers <- function() {
 
 localClusterOptions <- function(env = parent.frame()) {
   withr::local_options(clusters.reservationsPath = withr::local_tempfile(fileext = ".rds", .local_envir = env),
-                       clusters.waitForCores = 0, clusters.minWorkersFraction = 1, .local_envir = env)
+                       clusters.waitForCores = 0, clusters.minWorkersFraction = 1,
+                       ## R CMD check gives localhost 2 cores; keeping 2 free for other users would leave none
+                       clusters.keepFreeCores = 0, .local_envir = env)
   ## clusterSetup() refuses fewer than 4 workers (DEoptim's minimum population), but R CMD check
   ## allows 2 processes; these tests are about moving objects, not the population size.
   testthat::local_mocked_bindings(.clusterNP = function(NP, nWorkers) nWorkers, .package = "clusters", .env = env)

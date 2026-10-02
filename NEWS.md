@@ -1,4 +1,4 @@
-# clusters (development version)
+# clusters 0.0.65
 
 * DEoptim's early stop now needs the population to have stopped moving in two ways over the last
   `getOption("clusters.deoptimConvergenceWindow", 300)` generations (was 200): its median improved by less

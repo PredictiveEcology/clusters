@@ -1,4 +1,4 @@
-# clusters (development version)
+# clusters 0.0.64
 
 * A build books its workers the moment they are allocated, and every build's probe, allocation and
   booking, and every rebalance's decision and re-booking, run under one lock (`allocation.lock` beside the

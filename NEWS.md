@@ -1,4 +1,4 @@
-# clusters (development version)
+# clusters 0.0.63
 
 * A running DEoptim cluster now moves its workers to where a new build would put them, every
   `getOption("clusters.rebalanceEvery", 100)` generations (0 turns it off), by the same rule as a build:

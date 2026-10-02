@@ -7,7 +7,7 @@
 .allocateWhenAvailable(
   probe,
   total,
-  beta = 0.5,
+  beta = 0.75,
   minFraction = getOption("clusters.minWorkersFraction", 1),
   waitSeconds = getOption("clusters.waitForCores", 0),
   interval = 60,
@@ -22,7 +22,7 @@ with reservations already subtracted.}
 
 \item{total}{Workers requested.}
 
-\item{beta}{Weight of hyperthreads in \code{\link[=.ht_allocate_min]{.ht_allocate_min()}}.}
+\item{beta}{What a hyperthread adds to a core, in \code{\link[=.speedAllocate]{.speedAllocate()}}.}
 
 \item{minFraction}{Smallest fraction of \code{total} to start with; 1 (the default, from
 \code{options(clusters.minWorkersFraction)}) means the whole population.}
@@ -38,10 +38,10 @@ allocation and booking runs under one lock shared with every other build and reb
 (\code{.withAllocationLock()}), so no other cluster decides between this probe and this booking.}
 }
 \value{
-The allocation data.frame from \code{\link[=.ht_allocate_min]{.ht_allocate_min()}}.
+The allocation data.frame from \code{\link[=.speedAllocate]{.speedAllocate()}}.
 }
 \description{
-Probes the hosts, allocates with \code{\link[=.ht_allocate_min]{.ht_allocate_min()}} (real cores before hyperthreads),
+Probes the hosts, allocates with \code{\link[=.speedAllocate]{.speedAllocate()}} (where workers run fastest),
 and returns as soon as at least \code{ceiling(minFraction * total)} workers can be assigned.
 Otherwise it waits \code{interval} seconds and probes again, until \code{waitSeconds} have passed,
 and then stops with the shortfall rather than starting with fewer workers. A request

@@ -7,7 +7,7 @@
 plan_psock_min(
   hosts,
   total = 100L,
-  beta = 0.5,
+  beta = 0.75,
   load_memory = "5min",
   fraction = 0.9,
   pkgsNeeded = c("parallelly", "future", "foreach"),
@@ -26,7 +26,7 @@ plan_psock_min(
 
 \item{total}{Integer total desired workers (default 100).}
 
-\item{beta}{Numeric in (0,1], HT penalty beyond 50\% logical occupancy (default 0.5).}
+\item{beta}{What a hyperthread adds to a core, in (0,1] (see \code{\link[=.workerSpeed]{.workerSpeed()}}); 0.75, fitted to FireSense evaluation times.}
 
 \item{load_memory}{Character; \code{"1min"|"5min"|"15min"} window for \code{freeCores()} (default \code{"5min"}).}
 

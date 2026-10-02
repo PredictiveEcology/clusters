@@ -1,3 +1,25 @@
+# clusters (development version)
+
+* DEoptim's early stop now needs the population to have stopped moving in two ways over the last
+  `getOption("clusters.deoptimConvergenceWindow", 300)` generations (was 200): its median improved by less
+  than `clusters.deoptimConvergenceSE` (1) standard errors, and its spread (the MAD, which one lucky
+  member does not move) changed by less than `getOption("clusters.deoptimConvergenceSDChange", 0.1)` of
+  the earlier spread. FireSense 14.3 fold 2 stopped
+  at generation 496 on a flat patch of the median; run on, its median and best kept improving with an
+  unchanged SD.
+* Workers are placed where they run fastest (`.speedAllocate()`), by builds and rebalances alike. A worker
+  runs at full speed while its host's workers (every cluster's, and other load) are no more than its
+  memory modules and its physical cores; past the modules its speed is `(dimms / n)^memExponent`
+  (`getOption("clusters.memoryExponent", 0.2)`), past the physical cores two workers share a core
+  (`plan_psock_min(beta = 0.75)`), both fitted to FireSense evaluation times on 15 hosts. Each
+  worker goes to the host where the workers would then be fastest, so every host is filled to its modules
+  and cores before any goes past its own, and a host with few modules still gets as many as keep it level
+  with the others. The probe reports each host's memory modules from the kernel's EDAC records. This
+  replaces the slow-host rule (`clusters.slowHostRatio`), which gave hosts with 6 modules no workers
+  although they run at full speed up to about 6 (memory-bandwidth benchmark, 2026-10-01), and the
+  proportional split of `.ht_allocate_min()`.
+* Every host keeps `getOption("clusters.keepFreeCores", 2)` cores for its other users.
+
 # clusters 0.0.64
 
 * A build books its workers the moment they are allocated, and every build's probe, allocation and

@@ -547,10 +547,11 @@ DEoptimIterative <- function(fn, lower, upper, control, ...,
     # indistinguishable from a crash in the log
     if (converged) {
       message(cli::col_green(
-        "Converged: the population median improved by less than ",
-        getOption("clusters.deoptimConvergenceSE", 1), " standard error(s) over the last ",
-        getOption("clusters.deoptimConvergenceWindow", 200L), " generations (",
-        nGenerations, " run); stopping before itermax"))
+        "Converged: over the last ", getOption("clusters.deoptimConvergenceWindow", 300L),
+        " generations the population median improved by less than ",
+        getOption("clusters.deoptimConvergenceSE", 1), " standard error(s) and its spread changed by less than ",
+        100 * getOption("clusters.deoptimConvergenceSDChange", 0.1), "% (", nGenerations,
+        " run); stopping before itermax"))
       break
     }
   }
@@ -561,9 +562,19 @@ DEoptimIterative <- function(fn, lower, upper, control, ...,
 
 #' Has the DEoptim population stopped improving?
 #'
-#' The median of the population's values is compared with the median `window` generations earlier. The
-#' fit has converged when it improved by less than `seMultiplier` standard errors of the current median
-#' (`1.2533 * sd / sqrt(n)`, which needs no random numbers).
+#' The population `window` generations earlier is compared with the current one. The fit has converged
+#' when both have stopped moving: the median improved by less than `seMultiplier` standard errors of the
+#' current median (`1.2533 * sd / sqrt(n)`, which needs no random numbers), and the population's spread
+#' changed by less than `sdChange` of the earlier spread. The median says whether the population is still
+#' getting better; the spread, whether it is still closing in. The spread is the MAD, which is the SD for a
+#' normal population but not moved by one member's lucky record.
+#'
+#' Why a 300-generation window and the SD (2026-10-02): FireSense 14.3 fold 2 stopped at generation 496
+#' under the 200-generation, median-only rule. Run on, its median kept falling (1791 to 1777 by 794), its
+#' best went from 1704 to 1688 at 637, and its median's drop over 200 generations went back up to 1.8 SE:
+#' the stop had come at a flat patch. Its SD stayed at 28-32 throughout, so the SE stayed at about 6.3 and
+#' the SE threshold acted as a fixed one. With a 300-generation window the rule would not have stopped
+#' either 14.3 fold by generation 905.
 #'
 #' Why the population and not the best value: DE never evaluates a surviving member again, so on a
 #' noisy objective the best value is usually a lucky draw, and each new lucky record restarted the old
@@ -580,13 +591,16 @@ DEoptimIterative <- function(fn, lower, upper, control, ...,
 #' @param window integer; generations over which the median must have stopped improving.
 #' @param minGenerations integer; never converge before this many generations have run.
 #' @param seMultiplier numeric; the improvement allowed, in standard errors of the median.
+#' @param sdChange numeric; the change in the population's spread (MAD) allowed, as a fraction of the
+#'   earlier spread.
 #' @return `TRUE` when the fit should stop early.
 #' @keywords internal
 #' @noRd
 .deoptimPopulationConverged <- function(popvals, gens,
-                                        window = getOption("clusters.deoptimConvergenceWindow", 200L),
+                                        window = getOption("clusters.deoptimConvergenceWindow", 300L),
                                         minGenerations = getOption("clusters.deoptimMinGenerations", 350L),
-                                        seMultiplier = getOption("clusters.deoptimConvergenceSE", 1)) {
+                                        seMultiplier = getOption("clusters.deoptimConvergenceSE", 1),
+                                        sdChange = getOption("clusters.deoptimConvergenceSDChange", 0.1)) {
   if (!length(popvals)) return(FALSE)
   usable <- function(v) { v <- suppressWarnings(as.numeric(v)); v[is.finite(v) & v < 1e6] }
   now <- length(popvals)
@@ -597,7 +611,13 @@ DEoptimIterative <- function(fn, lower, upper, control, ...,
   old <- usable(popvals[[max(ref)]])
   if (length(cur) < 4L || length(old) < 4L) return(FALSE)
   se <- 1.2533 * stats::sd(cur) / sqrt(length(cur))
-  (stats::median(old) - stats::median(cur)) < seMultiplier * se
+  medianStill <- (stats::median(old) - stats::median(cur)) < seMultiplier * se
+  ## the spread is the MAD (scaled to the SD of a normal population): one member with a lucky record
+  ## moves the SD by itself, and would hold open a population that has otherwise stopped
+  spreadCur <- stats::mad(cur)
+  spreadOld <- stats::mad(old)
+  spreadStill <- spreadOld > 0 && abs(spreadCur - spreadOld) / spreadOld < sdChange
+  medianStill && spreadStill
 }
 
 controlSet <- function(control, ...) {

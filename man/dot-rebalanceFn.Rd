@@ -12,7 +12,7 @@
 \item{digest}{What \code{\link[=shippedObjectsDigest]{shippedObjectsDigest()}} gave at set-up: the objects must not have changed since.}
 }
 \description{
-Probes the hosts as the build did, works out with \code{.fitCapacity()} and \code{\link[=.ht_allocate_min]{.ht_allocate_min()}} where this
+Probes the hosts as the build did, works out with \code{.fitCapacity()} and \code{\link[=.speedAllocate]{.speedAllocate()}} where this
 cluster's workers belong, counting every other cluster's reservation but not its own, and moves the
 workers that are elsewhere: new workers are started and given what \code{\link[=clusterSetup]{clusterSetup()}} gave the first ones
 (as \code{\link[=.restartClusterFn]{.restartClusterFn()}} does), then swapped in for the old, which are stopped. The reservation is

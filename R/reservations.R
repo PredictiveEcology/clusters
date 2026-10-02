@@ -187,7 +187,8 @@ releaseCores <- function(id = NULL, pid = Sys.getpid(),
 #'   while each generation's slowest evaluation finishes, so a host carrying 50 booked workers showed a
 #'   load of 30-35 (2026-10-02). Read as free, that gap was booked by every later build, until hosts
 #'   with 48 threads carried 50-52 workers. So `free_est` is also capped at `cores_total` less every
-#'   worker booked on the host, absorbed or not, when `nodes` has `cores_total`.
+#'   worker booked on the host, absorbed or not, and less `getOption("clusters.keepFreeCores", 2)` cores
+#'   left for the host's other users, when `nodes` has `cores_total`.
 #' @param exclude Reservation ids not to count: a cluster asking where its own workers should be
 #'   counts every cluster but itself (see [.rebalanceFn()]).
 #' @return `nodes` with `free_est` reduced by the unabsorbed share of every live
@@ -211,7 +212,9 @@ freeCoresLessReserved <- function(nodes,
   }
   nodes$reserved <- as.integer(reserved)
   free <- as.numeric(nodes$free_est) - round(subtract, 3)
-  if (!is.null(nodes$cores_total)) free <- pmin(free, as.numeric(nodes$cores_total) - reserved)
+  ## every host keeps getOption("clusters.keepFreeCores", 2) cores for its other users, whatever its load
+  if (!is.null(nodes$cores_total))
+    free <- pmin(free, as.numeric(nodes$cores_total) - getOption("clusters.keepFreeCores", 2) - reserved)
   nodes$free_est <- pmax(free, 0)
   nodes
 }

@@ -14,7 +14,7 @@
 #'
 #' @param hosts Character vector of hostnames reachable by SSH.
 #' @param total Integer total desired workers (default 100).
-#' @param beta Numeric in (0,1], HT penalty beyond 50% logical occupancy (default 0.5).
+#' @param beta What a hyperthread adds to a core, in (0,1] (see [.workerSpeed()]); 0.75, fitted to FireSense evaluation times.
 #' @param load_memory Character; `"1min"|"5min"|"15min"` window for `freeCores()` (default `"5min"`).
 #' @param fraction Numeric ≥ 0; headroom scale for `freeCores()` (default 0.9).
 #' @param pkgsNeeded Character vector of packages to ensure on workers
@@ -65,7 +65,7 @@
 plan_psock_min <- function(
   hosts,
   total = 100L,
-  beta = 0.5,
+  beta = 0.75,
   load_memory = "5min",
   fraction = 0.9,
   pkgsNeeded = c("parallelly","future","foreach"),
@@ -339,11 +339,10 @@ plan_psock_min <- function(
     nodes <- .probeNodes(cl_probe, hosts, load_memory, fraction)
     # Hosts that failed verification (action = "drop") must not be allocated.
     if (!allLocalhost) nodes <- nodes[nodes$host %in% verifiedHosts, , drop = FALSE]
-    nodes <- .fitCapacity(nodes, total, load_memory, hostSpeeds)
+    nodes <- .fitCapacity(nodes, total, load_memory)
     nodes <<- nodes
     nodes
   }
-  hostSpeeds <- .readHostSpeeds()
   # Book the workers the moment they are allocated, not once the cluster has started: the start and the
   # check of every worker took 5 minutes (2026-10-02), and a build deciding in those minutes took the same
   # cores. Given back if this build fails; re-booked below if workers are dropped.
@@ -429,7 +428,7 @@ plan_psock_min <- function(
     res$startProbe <- function() startProbe(verifiedHosts)
     res$capacity <- function(probe, own = NULL, ownId = NULL)
       .fitCapacity(.probeNodes(probe, verifiedHosts, load_memory, fraction), total, load_memory,
-                   .readHostSpeeds(), own = own, ownId = ownId)
+                   own = own, ownId = ownId)
     res$beta <- beta
 
     on.exit()
@@ -483,6 +482,8 @@ plan_psock_min <- function(
       cores_total = as.integer(maxC),
       # NA if the host cannot say (or runs an older clusters): the allocator then assumes 2 threads/core
       cores_physical = tryCatch(clusters:::.availablePhysicalCores(maxC), error = function(e) NA_integer_),
+      # memory modules, from the kernel's EDAC records (readable without root); 0 where it has none
+      dimms       = length(Sys.glob("/sys/devices/system/edac/mc/mc*/dimm*")),
       free_est    = as.integer(freeC),
       loadavg     = attr(freeC, "loadavg")
     )
@@ -493,6 +494,7 @@ plan_psock_min <- function(
       nodename    = cap$nodename,                # what the evaluation records call this host
       cores_total = cap$cores_total,
       cores_physical = if (is.null(cap$cores_physical)) NA_integer_ else cap$cores_physical,
+      dimms       = if (isTRUE(cap$dimms > 0)) as.integer(cap$dimms) else NA_integer_,
       free_est    = cap$free_est,
       loadavg_1   = unname(cap$loadavg["1min"]),
       loadavg_5   = unname(cap$loadavg["5min"]),
@@ -503,15 +505,17 @@ plan_psock_min <- function(
 }
 
 ## The cores each host can give one cluster: the probed free cores, less what other clusters booked (see
-## freeCoresLessReserved()), with slow hosts last (see .excludeSlowHosts()). The rule of a new build and of
-## a running cluster deciding where its workers belong (.rebalanceFn()): `own`, that cluster's workers by
-## host, are added back, since moving them frees what they use, and its own reservation `ownId` is not
-## counted. A new build has neither.
-.fitCapacity <- function(nodes, total, load_memory, hostSpeeds, own = NULL, ownId = NULL) {
-  if (length(own)) {
-    mine <- as.numeric(own[nodes$host])
-    nodes$free_est <- as.numeric(nodes$free_est) + ifelse(is.na(mine), 0, mine)
-  }
+## freeCoresLessReserved()), and `busy`, the workers already on the host: other clusters' bookings or the
+## load average, whichever is larger. The rule of a new build and of a running cluster deciding where its
+## workers belong (.rebalanceFn()): `own`, that cluster's workers by host, are added back to the free cores
+## and taken off the load, since moving them frees what they use, and its own reservation `ownId` is not
+## counted. A new build has neither. Where the workers go within these cores is .speedAllocate()'s.
+.fitCapacity <- function(nodes, total, load_memory, own = NULL, ownId = NULL) {
+  mine <- if (length(own)) as.numeric(own[nodes$host]) else rep(NA_real_, NROW(nodes))
+  mine[is.na(mine)] <- 0
+  nodes$free_est <- as.numeric(nodes$free_est) + mine
+  load <- nodes[[paste0("loadavg_", sub("min$", "", load_memory))]]
+  nodes$busy <- round(pmax(if (is.null(load)) 0 else as.numeric(load) - mine, 0))
   # freeCores() reads a trailing load average, so a cluster built moments ago
   # is under-represented in it; without this, concurrent builders double-book
   # the same cores. See ?reservations.
@@ -522,62 +526,72 @@ plan_psock_min <- function(
       message("Cores reserved by other live cluster builds: ",
               paste0(nodes$host[nodes$reserved > 0], "=", nodes$reserved[nodes$reserved > 0],
                      collapse = ", "))
+    nodes$busy <- pmax(nodes$busy, nodes$reserved)
   }
-  .excludeSlowHosts(nodes, hostSpeeds, total = total)
+  nodes
 }
 
-#' Internal (minimal): HT-aware allocation heuristic
+#' How fast each worker on a host runs, relative to one worker alone
 #'
-#' @description
-#' Minimal HT-aware allocation:
-#' - `preHT_free = pmin(free_est, cores_physical)`; where `cores_physical` is absent or `NA`, it is
-#'   taken as `cores_total/2` (two threads per core), so a host without hyperthreading counts all its
-#'   cores as real only when the probe could see its topology ([.physicalCores()])
-#' - `HT_free    = pmax(free_est - preHT_free, 0)`
-#' - `weighted   = preHT_free + beta * HT_free`
-#' Proportional shares with integer rounding and caps ≤ `free_est`.
+#' A worker runs at full speed while the host's workers are no more than its memory modules (`dimms`) and its
+#' physical cores. Past the modules they share memory bandwidth: speed `(dimms / n)^memExponent`. Past the
+#' physical cores two workers share a core: speed `(cores_physical + beta * (n - cores_physical)) / n`. The
+#' lower of the two applies. A memory-bandwidth benchmark (2026-10-01) gave `dimms / n` per thread
+#' (exponent 1), but FireSense evaluations also compute: fitted to 74,031 host x generation evaluation
+#' medians from 7,231 generations on 15 hosts, with the workers booked on each host (2026-10-02), the
+#' exponent is 0.2 and `beta` 0.75 (hosts with 8 modules ran 1.11-1.12x the generation median at 48
+#' workers, hosts with 16 ran 0.91-0.95x). Exponent 1 fit more than twice as badly.
 #'
-#' @param nodes data.frame with `host`, `cores_total`, `free_est`, and optionally `cores_physical`.
-#' @param total Integer total workers requested.
-#' @param beta Numeric penalty (0,1] for HT region.
-#' @return data.frame with `preHT_free`, `HT_free`, `weighted_free`, `assign`.
+#' @param n Workers on the host, all clusters'.
+#' @param dimms,physical Memory modules and physical cores; `NA` dimms means no memory limit, `NA`
+#'   physical cores half of `threads`.
+#' @param threads The host's threads (`cores_total`).
+#' @param beta What a hyperthread adds to a core, `(0, 1]`.
+#' @param memExponent How steeply speed falls past the memory modules; `getOption("clusters.memoryExponent", 0.2)`.
+#' @return Speeds in `(0, 1]`, one per element of `n`.
 #' @keywords internal
-.ht_allocate_min <- function(nodes, total, beta) {
-  stopifnot(all(c("host","cores_total","free_est") %in% names(nodes)))
+.workerSpeed <- function(n, dimms, physical, threads, beta,
+                         memExponent = getOption("clusters.memoryExponent", 0.2)) {
+  physical <- ifelse(is.na(physical), threads / 2, physical)
+  mem <- ifelse(is.na(dimms) | n <= dimms, 1, (dimms / pmax(n, 1))^memExponent)
+  ht <- ifelse(n <= physical, 1, (physical + beta * (n - physical)) / pmax(n, 1))
+  pmin(1, mem, ht)
+}
+
+#' Place a cluster's workers where they run fastest
+#'
+#' A DEoptim generation lasts as long as its slowest evaluation, so a cluster is as fast as its slowest
+#' worker. Workers are placed one at a time, each on the host where the workers would then run fastest
+#' ([.workerSpeed()]), counting the workers already there (`busy`: other clusters' and other load; when
+#' `nodes` has no `busy`, `cores_total - free_est`), and never past a host's `free_est`. A host is filled up to its memory modules and
+#' physical cores before any host goes past its own; a host with few modules still gets workers, as many
+#' as keep its speed level with the others'.
+#'
+#' @param nodes data.frame with `host`, `cores_total`, `free_est`, and optionally `busy`, `cores_physical`
+#'   and `dimms`.
+#' @param total Integer total workers requested.
+#' @param beta What a hyperthread adds to a core, `(0, 1]` (see [.workerSpeed()]).
+#' @return data.frame with `host`, `cores_total`, `free_est`, `busy` (workers already there), `assign` and
+#'   `speed` (of every worker on the host once these are added), and attributes `total_requested` and
+#'   `total_assigned`.
+#' @keywords internal
+.speedAllocate <- function(nodes, total, beta) {
+  stopifnot(all(c("host", "cores_total", "free_est") %in% names(nodes)))
   C <- as.numeric(nodes$cores_total)
-  F <- pmax(as.numeric(nodes$free_est), 0)
-  
+  free <- floor(pmax(as.numeric(nodes$free_est), 0))
+  busy <- if ("busy" %in% names(nodes)) pmax(as.numeric(nodes$busy), 0) else pmax(C - pmax(as.numeric(nodes$free_est), 0), 0)
   P <- if ("cores_physical" %in% names(nodes)) as.numeric(nodes$cores_physical) else rep(NA_real_, length(C))
-  P[is.na(P)] <- C[is.na(P)] / 2
-  preHT_free <- pmin(F, P)
-  HT_free <- pmax(F - preHT_free, 0)
-  weighted <- preHT_free + beta * HT_free
-  
-  total_needed <- min(as.integer(total), sum(F))
-  alloc <- if (sum(weighted) > 0) total_needed * (weighted / sum(weighted)) else rep(0, length(F))
-  alloc <- pmin(alloc, F)
-  
-  floor_alloc <- floor(alloc)
-  remainder <- total_needed - sum(floor_alloc)
-  frac <- alloc - floor_alloc
-  while (remainder > 0) {   # one more worker to the largest fractions, among hosts with a free core left
-    open <- which(floor_alloc < F)
-    if (!length(open)) break
-    open <- utils::head(open[order(frac[open], decreasing = TRUE)], remainder)
-    floor_alloc[open] <- floor_alloc[open] + 1L
-    remainder <- remainder - length(open)
+  D <- if ("dimms" %in% names(nodes)) as.numeric(nodes$dimms) else rep(NA_real_, length(C))
+  total_needed <- min(as.integer(total), sum(free))
+  assign <- integer(length(C))
+  for (k in seq_len(total_needed)) {
+    s <- ifelse(assign < free, .workerSpeed(busy + assign + 1, D, P, C, beta), -Inf)
+    i <- which(s == max(s))
+    i <- i[which.max(free[i] - assign[i])]    # a tie goes to the host with the most room left
+    assign[i] <- assign[i] + 1L
   }
-  
-  out <- data.frame(
-    host = nodes$host,
-    cores_total = C,
-    free_est = F,
-    preHT_free = preHT_free,
-    HT_free = HT_free,
-    weighted_free = weighted,
-    assign = as.integer(floor_alloc),
-    stringsAsFactors = FALSE
-  )
+  out <- data.frame(host = nodes$host, cores_total = C, free_est = free, busy = busy, assign = assign,
+                    speed = round(.workerSpeed(busy + assign, D, P, C, beta), 3), stringsAsFactors = FALSE)
   attr(out, "total_requested") <- total_needed
   attr(out, "total_assigned")  <- sum(out$assign)
   out

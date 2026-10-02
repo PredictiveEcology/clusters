@@ -45,22 +45,17 @@ test_that("available physical cores scale with the cores this session may use", 
   expect_identical(clusters:::.availablePhysicalCores(48, logical = 48, physical = NA_integer_), NA_integer_)
 })
 
-test_that("a host without hyperthreading counts all its cores as real", {
+test_that("a host without hyperthreading takes workers to its last core at full speed", {
   nodes <- data.frame(host = c("ht48", "noHT24"), cores_total = c(48, 24), free_est = c(48, 24),
                       cores_physical = c(24, 24))
-  a <- clusters:::.ht_allocate_min(nodes, total = 60, beta = 0.5)
-  expect_equal(a$preHT_free, c(24, 24))
-  expect_equal(a$weighted_free, c(36, 24))
-  expect_equal(sum(a$assign), 60L)
+  a <- clusters:::.speedAllocate(nodes, total = 60, beta = 0.5)
   expect_equal(a$assign, c(36L, 24L))
+  expect_equal(a$speed, c(round((24 + 0.5 * 12) / 36, 3), 1))
 })
 
-test_that("without cores_physical the allocation is unchanged (two threads per core assumed)", {
+test_that("without cores_physical a host is taken to have two threads per core", {
   nodes <- data.frame(host = c("ht48", "noHT24"), cores_total = c(48, 24), free_est = c(48, 24))
-  a <- clusters:::.ht_allocate_min(nodes, total = 60, beta = 0.5)
-  expect_equal(a$preHT_free, c(24, 12))
-  expect_equal(a$weighted_free, c(36, 18))
-  nodes$cores_physical <- c(24, NA)            # one host that could not say
-  b <- clusters:::.ht_allocate_min(nodes, total = 60, beta = 0.5)
-  expect_equal(b$weighted_free, c(36, 18))
+  a <- clusters:::.speedAllocate(nodes, total = 36, beta = 0.5)
+  expect_equal(a$assign, c(24L, 12L))       # each to its assumed physical cores, both at full speed
+  expect_equal(a$speed, c(1, 1))
 })

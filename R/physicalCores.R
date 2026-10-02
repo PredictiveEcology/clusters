@@ -1,6 +1,6 @@
 #' Number of physical cores on this machine
 #'
-#' [.ht_allocate_min()] gives a host's real cores full weight and its hyperthreads less, so it needs
+#' [.speedAllocate()] slows a worker once its host's workers pass its physical cores, so it needs
 #' the physical count. `parallel::detectCores(logical = FALSE)` does not give it on Linux: it returns
 #' the logical count there. On Linux this reads the kernel's CPU topology instead: each logical CPU
 #' lists the logical CPUs it shares a core with (`thread_siblings_list`), so the number of distinct

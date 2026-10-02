@@ -1,5 +1,12 @@
 # clusters (development version)
 
+* DEoptim's early stop now needs the population to have stopped moving in two ways over the last
+  `getOption("clusters.deoptimConvergenceWindow", 300)` generations (was 200): its median improved by less
+  than `clusters.deoptimConvergenceSE` (1) standard errors, and its spread (the MAD, which one lucky
+  member does not move) changed by less than `getOption("clusters.deoptimConvergenceSDChange", 0.1)` of
+  the earlier spread. FireSense 14.3 fold 2 stopped
+  at generation 496 on a flat patch of the median; run on, its median and best kept improving with an
+  unchanged SD.
 * Workers are placed where they run fastest (`.speedAllocate()`), by builds and rebalances alike. A worker
   runs at full speed while its host's workers (every cluster's, and other load) are no more than its
   memory modules and its physical cores; past the modules its speed is `(dimms / n)^memExponent`

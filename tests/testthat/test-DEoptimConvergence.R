@@ -112,3 +112,36 @@ test_that("DEoptimIterative() decides convergence from the population, not from 
   expect_match(src, ".deoptimPopulationConverged(", fixed = TRUE)
   expect_false(grepl(".deoptimConverged(", src, fixed = TRUE))
 })
+
+## 2026-10-02: 14.3 fold 2 stopped at 496 at a flat patch; its median kept falling ~1.8 SE per 200
+## generations with an unchanging SD. The rule now looks over 300 generations and also asks whether the SD
+## has settled.
+
+test_that("a population whose SD is still shrinking has not converged, however flat its median", {
+  popvals <- lapply(1:500, function(g) pop(9800, sd = 400 - g / 2))   # median flat, SD 400 -> 150
+  expect_false(.deoptimPopulationConverged(popvals, seq_along(popvals), window = 300L, minGenerations = 350L))
+  expect_true(.deoptimPopulationConverged(popvals, seq_along(popvals), window = 300L, minGenerations = 350L,
+                                          sdChange = 1))
+})
+
+test_that("a steady drift with a settled SD keeps the fit going (14.3 fold 2 after generation 496)", {
+  ## SE of 40 values with sd 31: 1.2533 * 31 / sqrt(40) = 6.1; the median falls 11 per 200 generations
+  popvals <- lapply(1:800, function(g) pop(1800 - g * 11 / 200, sd = 31, n = 40))
+  expect_false(.deoptimPopulationConverged(popvals, seq_along(popvals), window = 300L, minGenerations = 350L))
+  ## flat median and settled SD: converged
+  flat <- lapply(1:800, function(g) pop(1780, sd = 31, n = 40))
+  expect_true(.deoptimPopulationConverged(flat, seq_along(flat), window = 300L, minGenerations = 350L))
+})
+
+test_that("the window is 300 generations and the SD tolerance 10% by default", {
+  withr::local_options(clusters.deoptimConvergenceWindow = NULL, clusters.deoptimConvergenceSDChange = NULL,
+                       clusters.deoptimConvergenceSE = NULL, clusters.deoptimMinGenerations = NULL)
+  popvals <- lapply(1:500, function(g) pop(if (g <= 250) 10000 - g else 9750))   # flat for the last 250
+  expect_false(.deoptimPopulationConverged(popvals, seq_along(popvals)))          # 300 back reaches the fall
+  popvals <- lapply(1:700, function(g) pop(if (g <= 250) 10000 - g else 9750))   # flat for the last 450
+  expect_true(.deoptimPopulationConverged(popvals, seq_along(popvals)))
+  sdShift <- lapply(1:700, function(g) pop(9750, sd = if (g <= 500) 100 else 89))   # spread 11% lower, inside the window
+  expect_false(.deoptimPopulationConverged(sdShift, seq_along(sdShift)))
+  sdShift <- lapply(1:700, function(g) pop(9750, sd = if (g <= 500) 100 else 92))   # 8% lower: settled enough
+  expect_true(.deoptimPopulationConverged(sdShift, seq_along(sdShift)))
+})

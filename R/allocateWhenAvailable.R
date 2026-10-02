@@ -23,21 +23,30 @@
 #' @param waitSeconds How long to keep waiting (`options(clusters.waitForCores)`).
 #' @param interval Seconds between probes.
 #' @param sleep,now Clock functions, replaceable in tests.
+#' @param book `NULL`, or a function of the allocation that books it (see [reserveCores()]). Each probe,
+#'   allocation and booking runs under one lock shared with every other build and rebalance
+#'   (`.withAllocationLock()`), so no other cluster decides between this probe and this booking.
 #' @return The allocation data.frame from [.ht_allocate_min()].
 #' @keywords internal
 .allocateWhenAvailable <- function(probe, total, beta = 0.5,
                                    minFraction = getOption("clusters.minWorkersFraction", 1),
                                    waitSeconds = getOption("clusters.waitForCores", 0),
-                                   interval = 60, sleep = Sys.sleep, now = Sys.time) {
+                                   interval = 60, sleep = Sys.sleep, now = Sys.time, book = NULL) {
   stopifnot(is.function(probe), is.numeric(minFraction), length(minFraction) == 1L,
             minFraction > 0, minFraction <= 1)
   needed <- as.integer(ceiling(minFraction * total))
   started <- now()
   deadline <- started + waitSeconds
-  repeat {
+  attempt <- function() {
     nodes <- probe()
     alloc <- .ht_allocate_min(nodes, total = total, beta = beta)
     got <- as.integer(sum(alloc$assign))
+    if (got >= needed && is.function(book)) book(alloc)
+    list(nodes = nodes, alloc = alloc, got = got)
+  }
+  repeat {
+    a <- if (is.function(book)) .withAllocationLock(attempt()) else attempt()
+    nodes <- a$nodes; alloc <- a$alloc; got <- a$got
     if (got >= needed) return(alloc)
 
     freeByHost <- paste0(nodes$host, "=", nodes$free_est, "/", nodes$cores_total, collapse = ", ")

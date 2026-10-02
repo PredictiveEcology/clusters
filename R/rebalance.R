@@ -42,8 +42,8 @@
 #' cluster's workers belong, counting every other cluster's reservation but not its own, and moves the
 #' workers that are elsewhere: new workers are started and given what [clusterSetup()] gave the first ones
 #' (as [.restartClusterFn()] does), then swapped in for the old, which are stopped. The reservation is
-#' re-booked before the new workers start, so another cluster deciding at the same time sees it, and only
-#' one cluster decides at a time (a lock beside the reservation ledger). Nothing moves when fewer than
+#' re-booked before the new workers start, under the lock every build allocates under, so no other build
+#' or rebalance decides between this cluster's probe and its re-booking. Nothing moves when fewer than
 #' `options(clusters.rebalanceMinMoves)` workers (default a tenth of the cluster) would. A failure leaves
 #' the cluster as it was, with a warning: a fit must not stop because its workers could not move.
 #' Stored on the cluster as the attribute `"rebalance"`; [DEoptimIterative()] calls it every
@@ -59,34 +59,35 @@
     orig <- cl   # handed back unchanged if anything fails
     hosts <- vapply(cl, function(node) as.character(node$host)[1], character(1))
     minMoves <- getOption("clusters.rebalanceMinMoves", ceiling(length(cl) / 10))
-    lockFile <- file.path(dirname(reservationsPath()), "rebalance.lock")
-    lck <- filelock::lock(lockFile, timeout = 5 * 60 * 1000)
-    if (is.null(lck)) {
-      message("clusters: another cluster held the rebalancing lock for 5 minutes; workers stay where they are")
-      return(cl)
-    }
-    on.exit(try(filelock::unlock(lck), silent = TRUE), add = TRUE)
     token <- attr(cl, "reservationToken", exact = TRUE)
     ownId <- if (is.environment(token)) token$id
     out <- tryCatch({
+      if (!is.null(digest) &&
+          !identical(reproducible::.robustDigest(mget(sort(unlist(objsNeeded)), envir = envir)), digest))
+        stop("the objects sent to the workers have changed since clusterSetup()")
       probe <- plan$startProbe()
       on.exit(.stopCluster(probe), add = TRUE)
-      nodes <- plan$capacity(probe, own = table(hosts), ownId = ownId)
-      target <- .ht_allocate_min(nodes, total = length(cl), beta = plan$beta)
-      moves <- .rebalanceMoves(hosts, stats::setNames(target$assign, target$host))
+      ## decided and re-booked under the lock every build allocates under (.withAllocationLock())
+      moves <- .withAllocationLock({
+        nodes <- plan$capacity(probe, own = table(hosts), ownId = ownId)
+        target <- .ht_allocate_min(nodes, total = length(cl), beta = plan$beta)
+        m <- .rebalanceMoves(hosts, stats::setNames(target$assign, target$host))
+        if (length(m$remove) >= max(1, minMoves) && !is.null(ownId)) {
+          newHosts <- hosts
+          newHosts[m$remove] <- m$add
+          booked <- as.data.frame(table(host = newHosts), stringsAsFactors = FALSE)
+          names(booked)[2] <- "assign"
+          .rebookCores(ownId, booked)
+        }
+        m
+      })
       if (length(moves$remove) < max(1, minMoves)) {
         message("clusters: ", length(moves$remove), " worker(s) would move (fewer than ", max(1, minMoves),
                 "); workers stay where they are (", .nodeHosts(cl), ")")
         return(cl)
       }
-      if (!is.null(digest) &&
-          !identical(reproducible::.robustDigest(mget(sort(unlist(objsNeeded)), envir = envir)), digest))
-        stop("the objects sent to the workers have changed since clusterSetup()")
       newHosts <- hosts
       newHosts[moves$remove] <- moves$add
-      booked <- as.data.frame(table(host = newHosts), stringsAsFactors = FALSE)
-      names(booked)[2] <- "assign"
-      if (!is.null(ownId)) .rebookCores(ownId, booked)
       fresh <- NULL
       done <- FALSE
       on.exit(if (!done) {

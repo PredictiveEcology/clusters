@@ -344,9 +344,17 @@ plan_psock_min <- function(
     nodes
   }
   hostSpeeds <- .readHostSpeeds()
+  # Book the workers the moment they are allocated, not once the cluster has started: the start and the
+  # check of every worker took 5 minutes (2026-10-02), and a build deciding in those minutes took the same
+  # cores. Given back if this build fails; re-booked below if workers are dropped.
+  resvId <- NULL
+  book <- if (isTRUE(build_final_cluster) && isTRUE(getOption("clusters.useReservations", TRUE)))
+    function(alloc) resvId <<- reserveCores(alloc)
   alloc_df <- .allocateWhenAvailable(probeCapacity, total = total, beta = beta,
                                      minFraction = getOption("clusters.minWorkersFraction", 1),
-                                     waitSeconds = getOption("clusters.waitForCores", 0))
+                                     waitSeconds = getOption("clusters.waitForCores", 0),
+                                     book = book)
+  on.exit(if (!is.null(resvId)) try(releaseCores(id = resvId), silent = TRUE), add = TRUE)
 
   # Build workers vector using SSH aliases preserved in allocation$host
   workers <- unlist(
@@ -433,19 +441,20 @@ plan_psock_min <- function(
     ## and releases its reservation then, not when R collects the token: free cores are capped by every
     ## worker booked (see freeCoresLessReserved()), so a stopped cluster's booking counted in full
     ## against the next build until garbage collection
-    resvId <- NULL
     on.exitAny({
       .stopCluster(current$cluster)
       if (!is.null(resvId)) try(releaseCores(id = resvId), silent = TRUE)
     }, 3)
 
-    # Record what this build took, so a concurrent builder sizing its own cluster
-    # subtracts it instead of re-claiming the same cores from a stale load
-    # average. Released when this process ends -- liveReservations() drops
-    # entries whose owning pid is gone -- so a killed master cannot leak, but
-    # release explicitly too so a long-lived master frees cores promptly.
-    if (isTRUE(getOption("clusters.useReservations", TRUE))) {
-      resvId <- reserveCores(alloc_df)
+    # The booking made at allocation: released when this process ends -- liveReservations() drops
+    # entries whose owning pid is gone -- so a killed master cannot leak, and explicitly when the
+    # cluster stops (above). Workers dropped at start-up are given back.
+    if (!is.null(resvId)) {
+      if (length(checked$dropped)) {
+        kept <- as.data.frame(table(host = workers), stringsAsFactors = FALSE)
+        names(kept)[2] <- "assign"
+        .rebookCores(resvId, kept)
+      }
       # Tie the release to the lifetime of the cluster object: when it is garbage
       # collected, or R exits, this reservation goes with it. liveReservations()
       # additionally drops entries whose owning process is gone, so a master that

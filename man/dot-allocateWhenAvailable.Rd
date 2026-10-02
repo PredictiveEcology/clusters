@@ -12,7 +12,8 @@
   waitSeconds = getOption("clusters.waitForCores", 0),
   interval = 60,
   sleep = Sys.sleep,
-  now = Sys.time
+  now = Sys.time,
+  book = NULL
 )
 }
 \arguments{
@@ -31,6 +32,10 @@ with reservations already subtracted.}
 \item{interval}{Seconds between probes.}
 
 \item{sleep, now}{Clock functions, replaceable in tests.}
+
+\item{book}{\code{NULL}, or a function of the allocation that books it (see \code{\link[=reserveCores]{reserveCores()}}). Each probe,
+allocation and booking runs under one lock shared with every other build and rebalance
+(\code{.withAllocationLock()}), so no other cluster decides between this probe and this booking.}
 }
 \value{
 The allocation data.frame from \code{\link[=.ht_allocate_min]{.ht_allocate_min()}}.

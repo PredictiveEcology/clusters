@@ -55,6 +55,22 @@ reservationsPath <- function(path = getOption("clusters.reservationsPath")) {
   force(expr)
 }
 
+## One allocation decision at a time, across processes: a build's probe -> allocate -> book, or a running
+## cluster's probe -> decide -> re-book (.rebalanceFn()). Without it two builds deciding within the same
+## few minutes saw the same free cores and both took them (2026-10-02: a build decided at 13:01:36, 9 s
+## before the previous build booked the workers it had chosen at 12:56:20, and hosts with 48 threads
+## got 49 workers).
+.withAllocationLock <- function(expr, path = getOption("clusters.reservationsPath"),
+                                timeoutMinutes = getOption("clusters.allocationLockMinutes", 5)) {
+  file <- file.path(dirname(reservationsPath(path)), "allocation.lock")
+  lck <- filelock::lock(file, timeout = timeoutMinutes * 60 * 1000)
+  if (is.null(lck))
+    stop("another cluster held the allocation lock (", file, ") for ", timeoutMinutes, " minutes",
+         call. = FALSE)
+  on.exit(filelock::unlock(lck), add = TRUE)
+  force(expr)
+}
+
 ## Is this process still running? Wrong in either direction costs real work: a
 ## dead owner reported alive holds cores hostage until someone notices, and a
 ## live owner reported dead lets a second builder take cores that are in use.

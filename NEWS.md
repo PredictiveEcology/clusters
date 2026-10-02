@@ -11,6 +11,7 @@
   although they run at full speed up to about 6 (memory-bandwidth benchmark, 2026-10-01), and the
   proportional split of `.ht_allocate_min()`.
 * Every host keeps `getOption("clusters.keepFreeCores", 2)` cores for its other users.
+
 # clusters 0.0.64
 
 * A build books its workers the moment they are allocated, and every build's probe, allocation and

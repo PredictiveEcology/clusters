@@ -1,4 +1,4 @@
-# clusters (development version)
+# clusters 0.0.62
 
 * Slow hosts (`getOption("clusters.slowHostRatio", 1.25)`) are now used last and only for the shortfall:
   fast hosts keep their free cores, and when those cover the requested workers every slow host is left

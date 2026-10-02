@@ -1,4 +1,4 @@
-# clusters (development version)
+# clusters 0.0.64
 
 * Workers are placed where they run fastest (`.speedAllocate()`), by builds and rebalances alike. A worker
   runs at full speed while its host's workers (every cluster's, and other load) are no more than its

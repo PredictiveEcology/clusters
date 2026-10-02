@@ -1,4 +1,4 @@
-# clusters (development version)
+# clusters 0.0.61
 
 * After a mid-run rebuild, the cluster `plan_psock_min()` stops when its caller's frame exits is now the
   rebuilt one. It used to stop the original cluster, whose connections the rebuild had closed, and so

@@ -8,7 +8,8 @@ freeCoresLessReserved(
   nodes,
   path = getOption("clusters.reservationsPath"),
   loadWindowMinutes = 5,
-  graceMinutes = 2
+  graceMinutes = 2,
+  exclude = NULL
 )
 }
 \arguments{
@@ -24,11 +25,14 @@ freeCoresLessReserved(
 full. A reservation is recorded when the cluster has started, but its workers
 only load the hosts once objects are copied to them and the work begins (2.5-4
 minutes for the FireSense spread fits).}
+
+\item{exclude}{Reservation ids not to count: a cluster asking where its own workers should be
+counts every cluster but itself (see \code{\link[=.rebalanceFn]{.rebalanceFn()}}).}
 }
 \value{
 \code{nodes} with \code{free_est} reduced by the unabsorbed share of every live
-reservation on that host, floored at zero, plus a \code{reserved} column (the
-reserved workers, for reporting). Reservations held by this process count
+reservation on that host and capped at \code{cores_total} less all of them, floored at zero, plus a
+\code{reserved} column (the reserved workers). Reservations held by this process count
 too: a master that already built one cluster is genuinely using those cores
 while it builds the next.
 }
@@ -44,4 +48,10 @@ therefore subtracted only by the share the average has not absorbed yet,
 \code{workers * exp(-max(age - graceMinutes, 0) / loadWindowMinutes)}: all of it for a
 cluster built moments ago, which is what stops concurrent builds double-booking,
 and almost none of it for a cluster that has been running for half an hour.
+
+The load average is not a full account of a running cluster either: a DEoptim worker waits, idle,
+while each generation's slowest evaluation finishes, so a host carrying 50 booked workers showed a
+load of 30-35 (2026-10-02). Read as free, that gap was booked by every later build, until hosts
+with 48 threads carried 50-52 workers. So \code{free_est} is also capped at \code{cores_total} less every
+worker booked on the host, absorbed or not, when \code{nodes} has \code{cores_total}.
 }

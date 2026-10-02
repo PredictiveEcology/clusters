@@ -105,8 +105,9 @@ plan_psock_min <- function(
   
   # 1) Probe cluster (one worker per host), minimal robust options
   
-  cl_probe <- makeClusterPSOCK(
-    workers = hosts,
+  ## also used, after the build, by .rebalanceFn() to probe the hosts again
+  startProbe <- function(workers = hosts) makeClusterPSOCK(
+    workers = workers,
     rscript = rscript,
     homogeneous = FALSE,
     rscript_libs = master_libs,
@@ -119,6 +120,7 @@ plan_psock_min <- function(
     timeout = 30 * 24 * 60 * 60,
     autoStop = auto_stop
   )
+  cl_probe <- startProbe()
   # try(): a probe node that has already gone (host OOM, dropped ssh) must not
   # turn a normal exit -- or the real error -- into "invalid connection".
   on.exit(.stopCluster(cl_probe), add = TRUE)
@@ -325,10 +327,7 @@ plan_psock_min <- function(
   # )
   
   
-  ## 1) Export the parameters that the workers will use
-  parallel::clusterExport(cl_probe, varlist = c("load_memory", "fraction"), envir = environment())
-  
-  ## 2) Run the capacity queries everywhere (same code on each worker).
+  ## 2) Run the capacity queries (.probeNodes()) everywhere (same code on each worker).
   ##    Repeated until the whole population is free, up to option
   ##    clusters.waitForCores seconds (default 0: no waiting). A job that has just
   ##    spent hours preparing its inputs should queue for cores, not die
@@ -337,65 +336,12 @@ plan_psock_min <- function(
   ##    and 7 of 100). See .allocateWhenAvailable().
   nodes <- NULL
   probeCapacity <- function() {
-  caps <- parallel::clusterEvalQ(cl_probe, {
-    maxC  <- parallelly::availableCores()
-    freeC <- parallelly::freeCores(memory = load_memory, fraction = fraction)
-    list(
-      nodename = Sys.info()[["nodename"]],
-      cores_total = as.integer(maxC),
-      # NA if the host cannot say (or runs an older clusters): the allocator then assumes 2 threads/core
-      cores_physical = tryCatch(clusters:::.availablePhysicalCores(maxC), error = function(e) NA_integer_),
-      free_est    = as.integer(freeC),
-      loadavg     = attr(freeC, "loadavg")
-    )
-  })
-  
-  ## 3) Reattach SSH labels in order (hosts is your original vector of SSH aliases)
-  labels <- hosts
-  
-  nodes <- do.call(rbind, Map(function(lbl, cap) {
-    data.frame(
-      host        = lbl,                         # PRESERVE SSH NAME (not Sys.info()[["nodename"]])
-      nodename    = cap$nodename,                # what the evaluation records call this host
-      cores_total = cap$cores_total,
-      cores_physical = if (is.null(cap$cores_physical)) NA_integer_ else cap$cores_physical,
-      free_est    = cap$free_est,
-      loadavg_1   = unname(cap$loadavg["1min"]),
-      loadavg_5   = unname(cap$loadavg["5min"]),
-      loadavg_15  = unname(cap$loadavg["15min"]),
-      stringsAsFactors = FALSE
-    )
-  }, labels, caps))
-  # Hosts that failed verification (action = "drop") must not be allocated.
-  if (!allLocalhost) nodes <- nodes[nodes$host %in% verifiedHosts, , drop = FALSE]
-  
-  # nodes <- do.call(rbind, lapply(stats_list, function(x) {
-  #   data.frame(
-  #     host        = x$host,                            # SSH alias, not machine nodename
-  #     cores_total = x$cores_total,
-  #     free_est    = x$free_est,
-  #     loadavg_1   = unname(x$loadavg["1min"]),
-  #     loadavg_5   = unname(x$loadavg["5min"]),
-  #     loadavg_15  = unname(x$loadavg["15min"]),
-  #     stringsAsFactors = FALSE
-  #   )
-  # }))
-  
-  # 4) HT-aware allocation, against cores that are actually still available.
-  #    freeCores() reads a trailing load average, so a cluster built moments ago
-  #    is under-represented in it; without this, concurrent builders double-book
-  #    the same cores. See ?reservations.
-  if (isTRUE(getOption("clusters.useReservations", TRUE))) {
-    nodes <- freeCoresLessReserved(nodes,
-                                   loadWindowMinutes = as.numeric(sub("min$", "", load_memory)))
-    if (any(nodes$reserved > 0))
-      message("Cores reserved by other live cluster builds: ",
-              paste0(nodes$host[nodes$reserved > 0], "=", nodes$reserved[nodes$reserved > 0],
-                     collapse = ", "))
-  }
-  nodes <- .excludeSlowHosts(nodes, hostSpeeds, total = total)
-  nodes <<- nodes
-  nodes
+    nodes <- .probeNodes(cl_probe, hosts, load_memory, fraction)
+    # Hosts that failed verification (action = "drop") must not be allocated.
+    if (!allLocalhost) nodes <- nodes[nodes$host %in% verifiedHosts, , drop = FALSE]
+    nodes <- .fitCapacity(nodes, total, load_memory, hostSpeeds)
+    nodes <<- nodes
+    nodes
   }
   hostSpeeds <- .readHostSpeeds()
   alloc_df <- .allocateWhenAvailable(probeCapacity, total = total, beta = beta,
@@ -470,6 +416,13 @@ plan_psock_min <- function(
     if (length(checked$dropped)) workers <- workers[-checked$dropped]
     res$workers <- workers
     res$startNodes <- startNodes
+    ## What .rebalanceFn() needs to ask, later, where this cluster's workers should be: the same probe
+    ## and the same rule as this build
+    res$startProbe <- function() startProbe(verifiedHosts)
+    res$capacity <- function(probe, own = NULL, ownId = NULL)
+      .fitCapacity(.probeNodes(probe, verifiedHosts, load_memory, fraction), total, load_memory,
+                   .readHostSpeeds(), own = own, ownId = ownId)
+    res$beta <- beta
 
     on.exit()
     ## Stops the cluster current at exit: a mid-run rebuild (see .restartClusterFn()) replaces it, and
@@ -477,7 +430,14 @@ plan_psock_min <- function(
     current <- new.env(parent = emptyenv())
     attr(cl, "currentCluster") <- current
     current$cluster <- cl
-    on.exitAny(.stopCluster(current$cluster), 3)
+    ## and releases its reservation then, not when R collects the token: free cores are capped by every
+    ## worker booked (see freeCoresLessReserved()), so a stopped cluster's booking counted in full
+    ## against the next build until garbage collection
+    resvId <- NULL
+    on.exitAny({
+      .stopCluster(current$cluster)
+      if (!is.null(resvId)) try(releaseCores(id = resvId), silent = TRUE)
+    }, 3)
 
     # Record what this build took, so a concurrent builder sizing its own cluster
     # subtracts it instead of re-claiming the same cores from a stale load
@@ -491,6 +451,7 @@ plan_psock_min <- function(
       # additionally drops entries whose owning process is gone, so a master that
       # is killed outright cannot leak one either.
       token <- new.env(parent = emptyenv())
+      token$id <- resvId   # .rebalanceFn() re-books it when workers move
       reg.finalizer(token, function(e) try(releaseCores(id = resvId), silent = TRUE),
                     onexit = TRUE)
       attr(cl, "reservationToken") <- token
@@ -499,6 +460,61 @@ plan_psock_min <- function(
   }
   
   res
+}
+
+## One row per host of `probe` (one worker per host, labelled by `hosts`, the SSH aliases): its threads,
+## physical cores, and parallelly::freeCores() over `load_memory`, scaled by `fraction`
+.probeNodes <- function(probe, hosts, load_memory, fraction) {
+  parallel::clusterExport(probe, varlist = c("load_memory", "fraction"), envir = environment())
+  caps <- parallel::clusterEvalQ(probe, {
+    maxC  <- parallelly::availableCores()
+    freeC <- parallelly::freeCores(memory = load_memory, fraction = fraction)
+    list(
+      nodename = Sys.info()[["nodename"]],
+      cores_total = as.integer(maxC),
+      # NA if the host cannot say (or runs an older clusters): the allocator then assumes 2 threads/core
+      cores_physical = tryCatch(clusters:::.availablePhysicalCores(maxC), error = function(e) NA_integer_),
+      free_est    = as.integer(freeC),
+      loadavg     = attr(freeC, "loadavg")
+    )
+  })
+  do.call(rbind, Map(function(lbl, cap) {
+    data.frame(
+      host        = lbl,                         # PRESERVE SSH NAME (not Sys.info()[["nodename"]])
+      nodename    = cap$nodename,                # what the evaluation records call this host
+      cores_total = cap$cores_total,
+      cores_physical = if (is.null(cap$cores_physical)) NA_integer_ else cap$cores_physical,
+      free_est    = cap$free_est,
+      loadavg_1   = unname(cap$loadavg["1min"]),
+      loadavg_5   = unname(cap$loadavg["5min"]),
+      loadavg_15  = unname(cap$loadavg["15min"]),
+      stringsAsFactors = FALSE
+    )
+  }, hosts, caps))
+}
+
+## The cores each host can give one cluster: the probed free cores, less what other clusters booked (see
+## freeCoresLessReserved()), with slow hosts last (see .excludeSlowHosts()). The rule of a new build and of
+## a running cluster deciding where its workers belong (.rebalanceFn()): `own`, that cluster's workers by
+## host, are added back, since moving them frees what they use, and its own reservation `ownId` is not
+## counted. A new build has neither.
+.fitCapacity <- function(nodes, total, load_memory, hostSpeeds, own = NULL, ownId = NULL) {
+  if (length(own)) {
+    mine <- as.numeric(own[nodes$host])
+    nodes$free_est <- as.numeric(nodes$free_est) + ifelse(is.na(mine), 0, mine)
+  }
+  # freeCores() reads a trailing load average, so a cluster built moments ago
+  # is under-represented in it; without this, concurrent builders double-book
+  # the same cores. See ?reservations.
+  if (isTRUE(getOption("clusters.useReservations", TRUE))) {
+    nodes <- freeCoresLessReserved(nodes, loadWindowMinutes = as.numeric(sub("min$", "", load_memory)),
+                                   exclude = ownId)
+    if (any(nodes$reserved > 0))
+      message("Cores reserved by other live cluster builds: ",
+              paste0(nodes$host[nodes$reserved > 0], "=", nodes$reserved[nodes$reserved > 0],
+                     collapse = ", "))
+  }
+  .excludeSlowHosts(nodes, hostSpeeds, total = total)
 }
 
 #' Internal (minimal): HT-aware allocation heuristic

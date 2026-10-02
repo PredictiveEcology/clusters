@@ -244,6 +244,9 @@ DEoptimIterative <- function(fn, lower, upper, control, ...,
   rescoreEvery <- if (is.null(rescoreEvery)) 0L else max(0L, as.integer(rescoreEvery))
   rescoreArgs <- as.list(getOption("clusters.deoptimRescoreArgs", list()))
   rescoreStats <- NULL
+  ## Move the workers to where a new build would put them every `rebalanceEvery` generations (0: never);
+  ## see .rebalanceFn(). The cluster is not in any cache key, so this changes no cached generation.
+  rebalanceEvery <- max(0L, as.integer(getOption("clusters.rebalanceEvery", 100L)))
   ## integers whatever type itermax has: the chunk length is in the cache key, and 2 and 2L digest differently
   chunkEnds <- as.integer(unique(pmin(seq_len(ceiling(control$itermax / iterStep)) * iterStep, control$itermax)))
   chunkLengths <- diff(c(0L, chunkEnds))
@@ -374,6 +377,12 @@ DEoptimIterative <- function(fn, lower, upper, control, ...,
       #                                        x = x1
       # ))
     }
+
+    rebalance <- attr(control$cluster, "rebalance", exact = TRUE)
+    if (computedNow && rebalanceEvery > 0L && is.function(rebalance) &&
+        chunkEnds[iter] %/% rebalanceEvery > (chunkEnds[iter] - chunkLengths[iter]) %/% rebalanceEvery &&
+        iter < length(itersToDo))
+      control$cluster <- rebalance(control$cluster)
 
     control$initialpop <- DE[[iter]]$member$pop
     ## the next generation starts from this population, whose values are already known

@@ -1,3 +1,11 @@
+# clusters (development version)
+
+* A build books its workers the moment they are allocated, and every build's probe, allocation and
+  booking, and every rebalance's decision and re-booking, run under one lock (`allocation.lock` beside the
+  reservation ledger). A build used to book only after its cluster had started and every worker had
+  answered, minutes later, and a build deciding in those minutes took the same cores: hosts with 48
+  threads got 49 workers. Workers dropped at start-up are given back.
+
 # clusters 0.0.63
 
 * A running DEoptim cluster now moves its workers to where a new build would put them, every

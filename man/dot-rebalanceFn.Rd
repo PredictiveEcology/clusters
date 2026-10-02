@@ -16,8 +16,8 @@ Probes the hosts as the build did, works out with \code{.fitCapacity()} and \cod
 cluster's workers belong, counting every other cluster's reservation but not its own, and moves the
 workers that are elsewhere: new workers are started and given what \code{\link[=clusterSetup]{clusterSetup()}} gave the first ones
 (as \code{\link[=.restartClusterFn]{.restartClusterFn()}} does), then swapped in for the old, which are stopped. The reservation is
-re-booked before the new workers start, so another cluster deciding at the same time sees it, and only
-one cluster decides at a time (a lock beside the reservation ledger). Nothing moves when fewer than
+re-booked before the new workers start, under the lock every build allocates under, so no other build
+or rebalance decides between this cluster's probe and its re-booking. Nothing moves when fewer than
 \code{options(clusters.rebalanceMinMoves)} workers (default a tenth of the cluster) would. A failure leaves
 the cluster as it was, with a warning: a fit must not stop because its workers could not move.
 Stored on the cluster as the attribute \code{"rebalance"}; \code{\link[=DEoptimIterative]{DEoptimIterative()}} calls it every

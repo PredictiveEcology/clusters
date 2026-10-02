@@ -161,3 +161,29 @@ test_that("the test suite never uses the real per-user ledger folder", {
   expect_false(startsWith(normalizePath(reservationsPath(), mustWork = FALSE), real))
   expect_false(startsWith(normalizePath(clusters:::.hostSpeedFile(), mustWork = FALSE), real))
 })
+
+## 2026-10-02: a build decided where its workers went 9 s before the previous build booked the ones it had
+## chosen minutes earlier, so both took the same cores and hosts with 48 threads got 49 workers. Two
+## processes allocate at once here; the probe sleeps to stand in for the minutes between a probe and a
+## booking. One of them gets the host's 4 cores; the other finds none.
+test_that("two builds allocating at once never book more than a host has", {
+  skip_on_os("windows")
+  skip_on_cran()
+  d <- withr::local_tempdir()
+  withr::local_options(clusters.reservationsPath = d)
+  owner <- Sys.getpid()   # the children's pids die with them, and liveReservations() would drop their rows
+  allocate <- function() {
+    probe <- function() {
+      n <- freeCoresLessReserved(data.frame(host = "a", cores_total = 4L, free_est = 4))
+      Sys.sleep(1)
+      n
+    }
+    tryCatch(sum(getFromNamespace(".allocateWhenAvailable", "clusters")(
+      probe, total = 4, waitSeconds = 0, book = function(alloc) reserveCores(alloc, pid = owner))$assign),
+      error = function(e) 0L)
+  }
+  jobs <- lapply(1:2, function(i) parallel::mcparallel(allocate()))
+  got <- unlist(parallel::mccollect(jobs))
+  expect_equal(sort(unname(got)), c(0, 4))
+  expect_equal(sum(liveReservations()$workers), 4L)
+})

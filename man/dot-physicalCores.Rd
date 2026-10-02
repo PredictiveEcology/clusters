@@ -14,7 +14,7 @@ tests can point them at fixtures.}
 Integer number of physical cores, or \code{NA} if it cannot be determined.
 }
 \description{
-\code{\link[=.ht_allocate_min]{.ht_allocate_min()}} gives a host's real cores full weight and its hyperthreads less, so it needs
+\code{\link[=.speedAllocate]{.speedAllocate()}} slows a worker once its host's workers pass its physical cores, so it needs
 the physical count. \code{parallel::detectCores(logical = FALSE)} does not give it on Linux: it returns
 the logical count there. On Linux this reads the kernel's CPU topology instead: each logical CPU
 lists the logical CPUs it shares a core with (\code{thread_siblings_list}), so the number of distinct

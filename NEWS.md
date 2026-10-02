@@ -1,5 +1,16 @@
 # clusters (development version)
 
+* Workers are placed where they run fastest (`.speedAllocate()`), by builds and rebalances alike. A worker
+  runs at full speed while its host's workers (every cluster's, and other load) are no more than its
+  memory modules and its physical cores; past the modules its speed is `(dimms / n)^memExponent`
+  (`getOption("clusters.memoryExponent", 1)`), past the physical cores two workers share a core. Each
+  worker goes to the host where the workers would then be fastest, so every host is filled to its modules
+  and cores before any goes past its own, and a host with few modules still gets as many as keep it level
+  with the others. The probe reports each host's memory modules from the kernel's EDAC records. This
+  replaces the slow-host rule (`clusters.slowHostRatio`), which gave hosts with 6 modules no workers
+  although they run at full speed up to about 6 (memory-bandwidth benchmark, 2026-10-01), and the
+  proportional split of `.ht_allocate_min()`.
+* Every host keeps `getOption("clusters.keepFreeCores", 2)` cores for its other users.
 * A build books its workers the moment they are allocated, and every build's probe, allocation and
   booking, and every rebalance's decision and re-booking, run under one lock (`allocation.lock` beside the
   reservation ledger). A build used to book only after its cluster had started and every worker had

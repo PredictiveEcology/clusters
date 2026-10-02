@@ -8,7 +8,7 @@
 #' Which workers move where
 #'
 #' @param hosts The host of each worker, in cluster order.
-#' @param target Named integer: the workers each host should have (`.ht_allocate_min()`'s `assign`).
+#' @param target Named integer: the workers each host should have (`.speedAllocate()`'s `assign`).
 #' @return A list: `remove`, the positions of the workers to stop, from the hosts most over their target
 #'   first, and `add`, the hosts to start their replacements on, as many as `remove`. A host short of its
 #'   target receives only up to what is surplus elsewhere, and a surplus moves only to a host that is short.
@@ -38,7 +38,7 @@
 
 #' A function that moves a running cluster's workers to where a new build would put them
 #'
-#' Probes the hosts as the build did, works out with `.fitCapacity()` and [.ht_allocate_min()] where this
+#' Probes the hosts as the build did, works out with `.fitCapacity()` and [.speedAllocate()] where this
 #' cluster's workers belong, counting every other cluster's reservation but not its own, and moves the
 #' workers that are elsewhere: new workers are started and given what [clusterSetup()] gave the first ones
 #' (as [.restartClusterFn()] does), then swapped in for the old, which are stopped. The reservation is
@@ -70,7 +70,7 @@
       ## decided and re-booked under the lock every build allocates under (.withAllocationLock())
       moves <- .withAllocationLock({
         nodes <- plan$capacity(probe, own = table(hosts), ownId = ownId)
-        target <- .ht_allocate_min(nodes, total = length(cl), beta = plan$beta)
+        target <- .speedAllocate(nodes, total = length(cl), beta = plan$beta)
         m <- .rebalanceMoves(hosts, stats::setNames(target$assign, target$host))
         if (length(m$remove) >= max(1, minMoves) && !is.null(ownId)) {
           newHosts <- hosts

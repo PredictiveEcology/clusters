@@ -53,5 +53,6 @@ The load average is not a full account of a running cluster either: a DEoptim wo
 while each generation's slowest evaluation finishes, so a host carrying 50 booked workers showed a
 load of 30-35 (2026-10-02). Read as free, that gap was booked by every later build, until hosts
 with 48 threads carried 50-52 workers. So \code{free_est} is also capped at \code{cores_total} less every
-worker booked on the host, absorbed or not, when \code{nodes} has \code{cores_total}.
+worker booked on the host, absorbed or not, and less \code{getOption("clusters.keepFreeCores", 2)} cores
+left for the host's other users, when \code{nodes} has \code{cores_total}.
 }

@@ -9,7 +9,7 @@
 \arguments{
 \item{hosts}{The host of each worker, in cluster order.}
 
-\item{target}{Named integer: the workers each host should have (\code{.ht_allocate_min()}'s \code{assign}).}
+\item{target}{Named integer: the workers each host should have (\code{.speedAllocate()}'s \code{assign}).}
 }
 \value{
 A list: \code{remove}, the positions of the workers to stop, from the hosts most over their target

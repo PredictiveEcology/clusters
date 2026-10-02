@@ -8,7 +8,7 @@
 
 #' Allocate workers once the whole requested population is free
 #'
-#' Probes the hosts, allocates with [.ht_allocate_min()] (real cores before hyperthreads),
+#' Probes the hosts, allocates with [.speedAllocate()] (where workers run fastest),
 #' and returns as soon as at least `ceiling(minFraction * total)` workers can be assigned.
 #' Otherwise it waits `interval` seconds and probes again, until `waitSeconds` have passed,
 #' and then stops with the shortfall rather than starting with fewer workers. A request
@@ -17,7 +17,7 @@
 #' @param probe A function returning the node table (`host`, `cores_total`, `free_est`),
 #'   with reservations already subtracted.
 #' @param total Workers requested.
-#' @param beta Weight of hyperthreads in [.ht_allocate_min()].
+#' @param beta What a hyperthread adds to a core, in [.speedAllocate()].
 #' @param minFraction Smallest fraction of `total` to start with; 1 (the default, from
 #'   `options(clusters.minWorkersFraction)`) means the whole population.
 #' @param waitSeconds How long to keep waiting (`options(clusters.waitForCores)`).
@@ -26,7 +26,7 @@
 #' @param book `NULL`, or a function of the allocation that books it (see [reserveCores()]). Each probe,
 #'   allocation and booking runs under one lock shared with every other build and rebalance
 #'   (`.withAllocationLock()`), so no other cluster decides between this probe and this booking.
-#' @return The allocation data.frame from [.ht_allocate_min()].
+#' @return The allocation data.frame from [.speedAllocate()].
 #' @keywords internal
 .allocateWhenAvailable <- function(probe, total, beta = 0.5,
                                    minFraction = getOption("clusters.minWorkersFraction", 1),
@@ -39,7 +39,7 @@
   deadline <- started + waitSeconds
   attempt <- function() {
     nodes <- probe()
-    alloc <- .ht_allocate_min(nodes, total = total, beta = beta)
+    alloc <- .speedAllocate(nodes, total = total, beta = beta)
     got <- as.integer(sum(alloc$assign))
     if (got >= needed && is.function(book)) book(alloc)
     list(nodes = nodes, alloc = alloc, got = got)

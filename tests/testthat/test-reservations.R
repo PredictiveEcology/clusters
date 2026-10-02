@@ -77,12 +77,12 @@ test_that("this is what stops two builders double-booking the same cores", {
     nodes <- data.frame(host = c("n1", "n2"), cores_total = c(48, 48),
                         free_est = c(43, 43))
 
-    first <- clusters:::.ht_allocate_min(nodes, total = 60, beta = 0.5)
+    first <- clusters:::.speedAllocate(nodes, total = 60, beta = 0.5)
     reserveCores(first)
     expect_equal(sum(first$assign), 60L)
 
     ## The second builder must now see only what is genuinely left (86 - 60 = 26).
-    second <- clusters:::.ht_allocate_min(freeCoresLessReserved(nodes),
+    second <- clusters:::.speedAllocate(freeCoresLessReserved(nodes),
                                           total = 60, beta = 0.5)
     expect_equal(sum(second$assign), 26L)
     expect_lte(sum(first$assign) + sum(second$assign), sum(nodes$free_est))
@@ -170,7 +170,7 @@ test_that("two builds allocating at once never book more than a host has", {
   skip_on_os("windows")
   skip_on_cran()
   d <- withr::local_tempdir()
-  withr::local_options(clusters.reservationsPath = d)
+  withr::local_options(clusters.reservationsPath = d, clusters.keepFreeCores = 0)
   owner <- Sys.getpid()   # the children's pids die with them, and liveReservations() would drop their rows
   allocate <- function() {
     probe <- function() {
@@ -186,4 +186,15 @@ test_that("two builds allocating at once never book more than a host has", {
   got <- unlist(parallel::mccollect(jobs))
   expect_equal(sort(unname(got)), c(0, 4))
   expect_equal(sum(liveReservations()$workers), 4L)
+})
+
+test_that("every host keeps clusters.keepFreeCores cores for its other users", {
+  withLedger({
+    nodes <- data.frame(host = c("a", "b"), cores_total = c(48, 16), free_est = c(48, 16))
+    expect_equal(freeCoresLessReserved(nodes)$free_est, c(46, 14))
+    reserveCores(data.frame(host = "a", assign = 40L))
+    expect_equal(freeCoresLessReserved(nodes)$free_est, c(6, 14))
+    withr::local_options(clusters.keepFreeCores = 4)
+    expect_equal(freeCoresLessReserved(nodes)$free_est, c(4, 12))
+  })
 })

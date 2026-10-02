@@ -25,6 +25,7 @@ test_that("a host never shows more free cores than its threads less every worker
 
 test_that("a cluster asking about itself does not count its own reservation, and gets its workers back", {
   withLedger()
+  withr::local_options(clusters.keepFreeCores = 0)
   mine <- reserveCores(data.frame(host = c("a", "b"), assign = c(6L, 2L)))
   reserveCores(data.frame(host = "a", assign = 2L))
   file <- reservationsPath()
@@ -32,11 +33,11 @@ test_that("a cluster asking about itself does not count its own reservation, and
   nodes <- data.frame(host = c("a", "b"), nodename = c("a", "b"), cores_total = c(8L, 8L), free_est = c(0, 4))
   fitCapacity <- getFromNamespace(".fitCapacity", "clusters")
   ## a new build: everything booked counts
-  built <- suppressMessages(fitCapacity(nodes, total = 8, load_memory = "5min", hostSpeeds = NULL))
+  built <- suppressMessages(fitCapacity(nodes, total = 8, load_memory = "5min"))
   expect_equal(built$free_est, c(0, 4))
   ## the cluster holding `mine`: its 6 + 2 workers are added back and only the other booking caps "a"
   own <- table(c(rep("a", 6), rep("b", 2)))
-  asked <- suppressMessages(fitCapacity(nodes, total = 8, load_memory = "5min", hostSpeeds = NULL,
+  asked <- suppressMessages(fitCapacity(nodes, total = 8, load_memory = "5min",
                                         own = own, ownId = mine))
   expect_equal(asked$free_est, c(6, 6))
   expect_equal(asked$reserved, c(2L, 0L))
@@ -88,11 +89,15 @@ labelled <- function(hosts) {
   for (i in seq_along(hosts)) cl[[i]]$host <- hosts[i]
   cl
 }
+## Hosts of 8 threads, all real cores; `free` is what other clusters leave, before this cluster's own
+## workers are added back. "full" has 4 memory modules, so past 4 workers it slows; "free" has 8.
 fakePlan <- function(free, started) list(
   beta = 0.5,
   startProbe = function() NULL,
   capacity = function(probe, own = NULL, ownId = NULL)
-    data.frame(host = names(free), cores_total = 8L, free_est = as.numeric(free) +
+    data.frame(host = names(free), cores_total = 8L, cores_physical = 8L,
+               dimms = ifelse(names(free) == "full", 4L, 8L),
+               free_est = as.numeric(free) +
                  ifelse(is.na(as.numeric(own[names(free)])), 0, as.numeric(own[names(free)]))),
   startNodes = function(workers, autoStop = FALSE) {
     started$hosts <- c(started$hosts, workers)
@@ -112,19 +117,20 @@ test_that("a running cluster moves its workers off a full host, keeps working, a
   rebalance <- getFromNamespace(".rebalanceFn", "clusters")(fakePlan(c(full = -2, free = 5), started),
                                                             pkgsNeeded = character(0), objsNeeded = character(0),
                                                             envir = environment(), digest = NULL)
-  ## "full" has room for 1 of this cluster's 3 workers, "free" for 6: the even split is 1 and 3
+  ## "full" carries 7 workers with its 4 modules (speed 4/8); "free" carries 2 of 8 and has room for 6:
+  ## all 4 of this cluster's workers run at full speed there
   out <- suppressMessages(rebalance(cl))
   withr::defer(parallel::stopCluster(out))
   hosts <- vapply(out, function(n) n$host, character(1))
-  expect_equal(sort(hosts), c("free", "free", "free", "full"))
-  expect_identical(started$hosts, c("free", "free"))
+  expect_equal(hosts, rep("free", 4))
+  expect_identical(started$hosts, rep("free", 3))
   expect_equal(unlist(parallel::parLapply(out, 1:8, function(i) i * 2)), (1:8) * 2)
   newPids <- unlist(parallel::clusterCall(out, Sys.getpid))
-  expect_false(any(oldPids[2:3] %in% newPids))
-  expect_true(all(c(oldPids[1], oldPids[4]) %in% newPids))
+  expect_false(any(oldPids[1:3] %in% newPids))
+  expect_true(oldPids[4] %in% newPids)
   res <- liveReservations()
-  expect_equal(sort(res$workers[res$id == id & res$host == "free"]), 3L)
-  expect_equal(res$workers[res$id == id & res$host == "full"], 1L)
+  expect_equal(res$workers[res$id == id & res$host == "free"], 4L)
+  expect_false(any(res$id == id & res$host == "full"))
   expect_true(is.function(attr(out, "restartCluster")))
 })
 
@@ -138,8 +144,8 @@ test_that("nothing moves for fewer than the minimum, and a failed move leaves th
   attr(cl, "reservationToken") <- token
   started <- new.env()
   mk <- getFromNamespace(".rebalanceFn", "clusters")
-  ## one worker would move; the default minimum for 4 workers is 1, so ask for 2
-  withr::local_options(clusters.rebalanceMinMoves = 2)
+  ## two workers would move (both off "full"); ask for at least 3
+  withr::local_options(clusters.rebalanceMinMoves = 3)
   rebalance <- mk(fakePlan(c(full = -1, free = 4), started), character(0), character(0), environment(), NULL)
   out <- suppressMessages(rebalance(cl))
   expect_identical(out, cl)
@@ -179,4 +185,20 @@ test_that("DEoptimIterative() asks the cluster to rebalance every clusters.rebal
     control = list(NP = 4L, strategy = 2L, itermax = 3, trace = FALSE, cluster = cl),
     figurePath = FALSE, .plots = NULL, runName = "rb0", .verbose = -1)))
   expect_length(calls$at, 0L)
+})
+
+test_that("an idle host counts as empty, not as its kept cores and freeCores() headroom", {
+  withLedger()
+  fitCapacity <- getFromNamespace(".fitCapacity", "clusters")
+  ## freeCores(fraction = 0.9) on an idle 48-thread host says 43; 2 more are kept for other users
+  nodes <- data.frame(host = "coco", nodename = "coco", cores_total = 48L, cores_physical = 24L, dimms = 6L,
+                      free_est = 43, loadavg_5 = 0.1)
+  n <- suppressMessages(fitCapacity(nodes, total = 40, load_memory = "5min"))
+  expect_equal(n$busy, 0)
+  a <- clusters:::.speedAllocate(n, total = 6, beta = 0.5)
+  expect_equal(a$speed, 1)                  # its 6 memory modules' worth all at full speed
+  ## a cluster asking about itself takes its own workers off the load
+  n <- suppressMessages(fitCapacity(transform(nodes, loadavg_5 = 10), total = 40, load_memory = "5min",
+                                    own = c(coco = 6)))
+  expect_equal(n$busy, 4)
 })

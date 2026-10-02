@@ -1,3 +1,13 @@
+# clusters (development version)
+
+* After a mid-run rebuild, the cluster `plan_psock_min()` stops when its caller's frame exits is now the
+  rebuilt one. It used to stop the original cluster, whose connections the rebuild had closed, and so
+  closed whatever connections had since been given their numbers. clusters also no longer closes a
+  connection it has already closed.
+
+* `clusterSetup()` puts the file of objects it sends to the workers in a folder of its own. Local workers
+  remove that folder when done, and it was the master's `tempdir()`, with everything in it.
+
 # clusters 0.0.60
 
 * A cluster started with `autoStop = TRUE` (`plan_psock_min()`'s default `auto_stop`) and then stopped

@@ -637,8 +637,11 @@ transferDirName <- function() {
                    function(x) terra::toMemory(x))
         }
         objsToCopy <- reproducible::.wrap(objsToCopy)
-        filenameForTransfer <- normalizePath(tempfile(fileext = ".qs2"), mustWork = FALSE, winslash = "/")
-        dir.create(dirname(filenameForTransfer), recursive = TRUE, showWarnings = FALSE) # during development, this was deleted accidentally
+        ## In a folder of its own: the workers remove dirname(filenameForTransfer) when done, and that was
+        ## the master's tempdir(), with everything in it, when the workers were local
+        filenameForTransfer <- normalizePath(file.path(tempfile("transfer"), "objects.qs2"), mustWork = FALSE,
+                                             winslash = "/")
+        dir.create(dirname(filenameForTransfer), recursive = TRUE, showWarnings = FALSE)
         qs2::qs_save(objsToCopy, file = filenameForTransfer)
         stExport <- system.time({
           outExp <- parallel::clusterExport(cl, varlist = "filenameForTransfer", envir = environment())

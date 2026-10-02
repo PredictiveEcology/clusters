@@ -279,6 +279,10 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
     attr(clThird, "restartCluster") <- .restartClusterFn(
       plan$startNodes, cores, pkgsNeeded, objsNeeded, envir, shippedObjectsDigest(control),
       attr(clThird, "reservationToken", exact = TRUE))
+    ## Called by DEoptimIterative() every options(clusters.rebalanceEvery) generations: moves workers to
+    ## where a build at that moment would put them
+    attr(clThird, "rebalance") <- .rebalanceFn(plan, pkgsNeeded, objsNeeded, envir,
+                                               shippedObjectsDigest(control))
     control$cluster <- clThird
   }
   if (any(cores == "localhost") || is.null(cores))

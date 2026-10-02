@@ -111,3 +111,16 @@ test_that("after a rebuild, the exit handler stops the rebuilt cluster", {
   for (i in 1:50) if (any(clusters:::.pidAlive(pids))) Sys.sleep(0.1)
   expect_false(any(clusters:::.pidAlive(pids)))
 })
+
+## Free cores are capped by every worker booked on a host, so a stopped cluster's booking must go when it
+## stops: left for R to collect, it counted against the next build in the same process (2026-10-02).
+test_that("the cluster's reservation is released when the exit handler stops it", {
+  skip_on_cran()
+  skip_on_os(c("windows", "mac"))
+  localClusterOptions()
+  booked <- NULL
+  suppressMessages(fitWithRebuild(function(rebuilt, old) booked <<- NROW(clusters::liveReservations()),
+                                  withr::local_tempdir()))
+  expect_gt(booked, 0L)
+  expect_equal(NROW(clusters::liveReservations()), 0L)
+})

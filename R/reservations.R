@@ -166,16 +166,25 @@ releaseCores <- function(id = NULL, pid = Sys.getpid(),
 #'   `workers * exp(-max(age - graceMinutes, 0) / loadWindowMinutes)`: all of it for a
 #'   cluster built moments ago, which is what stops concurrent builds double-booking,
 #'   and almost none of it for a cluster that has been running for half an hour.
+#'
+#'   The load average is not a full account of a running cluster either: a DEoptim worker waits, idle,
+#'   while each generation's slowest evaluation finishes, so a host carrying 50 booked workers showed a
+#'   load of 30-35 (2026-10-02). Read as free, that gap was booked by every later build, until hosts
+#'   with 48 threads carried 50-52 workers. So `free_est` is also capped at `cores_total` less every
+#'   worker booked on the host, absorbed or not, when `nodes` has `cores_total`.
+#' @param exclude Reservation ids not to count: a cluster asking where its own workers should be
+#'   counts every cluster but itself (see [.rebalanceFn()]).
 #' @return `nodes` with `free_est` reduced by the unabsorbed share of every live
-#'   reservation on that host, floored at zero, plus a `reserved` column (the
-#'   reserved workers, for reporting). Reservations held by this process count
+#'   reservation on that host and capped at `cores_total` less all of them, floored at zero, plus a
+#'   `reserved` column (the reserved workers). Reservations held by this process count
 #'   too: a master that already built one cluster is genuinely using those cores
 #'   while it builds the next.
 #' @export
 freeCoresLessReserved <- function(nodes,
                                   path = getOption("clusters.reservationsPath"),
-                                  loadWindowMinutes = 5, graceMinutes = 2) {
+                                  loadWindowMinutes = 5, graceMinutes = 2, exclude = NULL) {
   res <- liveReservations(path)
+  res <- res[!res$id %in% exclude, , drop = FALSE]
   if (NROW(res)) {
     ageMinutes <- pmax(as.numeric(difftime(Sys.time(), res$created, units = "mins")) - graceMinutes, 0)
     unabsorbed <- res$workers * exp(-ageMinutes / loadWindowMinutes)
@@ -185,6 +194,32 @@ freeCoresLessReserved <- function(nodes,
     reserved <- subtract <- rep(0, NROW(nodes))
   }
   nodes$reserved <- as.integer(reserved)
-  nodes$free_est <- pmax(as.numeric(nodes$free_est) - round(subtract, 3), 0)
+  free <- as.numeric(nodes$free_est) - round(subtract, 3)
+  if (!is.null(nodes$cores_total)) free <- pmin(free, as.numeric(nodes$cores_total) - reserved)
+  nodes$free_est <- pmax(free, 0)
   nodes
+}
+
+## Replace reservation `id`'s rows with `alloc` (`host`, `assign`), when a cluster's workers move. A host
+## whose workers rose gets `created = now`, so builders count the new workers in full until the load
+## average shows them (see freeCoresLessReserved()); the others keep their time.
+.rebookCores <- function(id, alloc, path = getOption("clusters.reservationsPath")) {
+  alloc <- alloc[alloc$assign > 0, , drop = FALSE]
+  file <- reservationsPath(path)
+  .withReservationLock(file, {
+    res <- if (file.exists(file))
+      tryCatch(readRDS(file), error = function(e) .emptyReservations()) else .emptyReservations()
+    mine <- res[res$id %in% id, , drop = FALSE]
+    pid <- if (NROW(mine)) mine$pid[1] else Sys.getpid()
+    before <- mine$workers[match(alloc$host, mine$host)]
+    created <- mine$created[match(alloc$host, mine$host)]
+    rose <- is.na(before) | alloc$assign > before
+    created[rose] <- Sys.time()
+    res <- rbind(res[!res$id %in% id, , drop = FALSE],
+                 data.frame(id = rep(id, NROW(alloc)), pid = rep(as.integer(pid), NROW(alloc)),
+                            host = alloc$host, workers = as.integer(alloc$assign), created = created,
+                            stringsAsFactors = FALSE))
+    saveRDS(res, file)
+  })
+  invisible(id)
 }

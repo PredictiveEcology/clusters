@@ -1,3 +1,18 @@
+# clusters (development version)
+
+* A running DEoptim cluster now moves its workers to where a new build would put them, every
+  `getOption("clusters.rebalanceEvery", 100)` generations (0 turns it off), by the same rule as a build:
+  `parallelly::freeCores()` on each host, less other clusters' reservations, slow hosts last; its own
+  workers and reservation are counted as free. New workers are started and sent what `clusterSetup()`
+  sent the first ones, then swapped for the old; the reservation is re-booked first, and one cluster
+  decides at a time. Fewer than `getOption("clusters.rebalanceMinMoves")` moves (default a tenth of the
+  workers) are not made, and a failed move leaves the cluster as it was, with a warning. A cluster used to
+  keep the hosts it was built on for the whole fit, so a host busy at the build stayed unused afterwards.
+* `freeCoresLessReserved()` caps a host's free cores at its threads less every worker booked on it.
+  The load average of a host running DEoptim workers is below the workers booked there (they wait for
+  each generation's slowest evaluation), and later builds booked the gap: hosts with 48 threads
+  carried 50-52 workers. It also takes `exclude`, reservation ids not to count.
+
 # clusters 0.0.62
 
 * Slow hosts (`getOption("clusters.slowHostRatio", 1.25)`) are now used last and only for the shortfall:

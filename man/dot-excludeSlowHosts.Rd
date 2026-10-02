@@ -2,7 +2,7 @@
 % Please edit documentation in R/hostSpeed.R
 \name{.excludeSlowHosts}
 \alias{.excludeSlowHosts}
-\title{Leave slow hosts out of a cluster, if the others can hold it}
+\title{Use slow hosts last, and only for the shortfall}
 \usage{
 .excludeSlowHosts(
   nodes,
@@ -14,19 +14,25 @@
 \arguments{
 \item{nodes}{data.frame with \code{host}, \code{nodename} (as recorded by the evaluations) and \code{free_est}.}
 
-\item{speeds}{The data frame saved in \code{hostSpeed.rds} (\code{host}, \code{n}, \code{ratio}, \code{time}), or \code{NULL}.}
+\item{speeds}{The data frame saved in \code{hostSpeed.rds} (\code{host}, \code{n}, \code{median}, \code{ratio}, \code{time} and
+optionally \code{workers}), or \code{NULL}.}
 
 \item{total}{Workers requested.}
 
 \item{maxRatio}{Ratio above which a host is slow; \code{getOption("clusters.slowHostRatio", 1.25)}.}
 }
 \value{
-\code{nodes}, with \code{free_est} set to 0 for the excluded hosts.
+\code{nodes}, with \code{free_est} set to 0 for the hosts left out and lowered for the hosts capped.
 }
 \description{
-A host's recorded ratios (see \code{\link[=workerSpeed]{workerSpeed()}}) are averaged, weighted by \code{n}, over the rows newer than
-\code{getOption("clusters.hostSpeedDays", 30)} days. A host whose ratio is above \code{maxRatio} gets
-\code{free_est = 0}, slowest first, and only while the remaining hosts' free cores still cover \code{total}.
-Hosts with no record are kept.
+A host's recorded ratios (see \code{\link[=workerSpeed]{workerSpeed()}}) are averaged, weighted by \code{n}, over the usable rows: those
+newer than \code{getOption("clusters.hostSpeedDays", 30)} days, with a finite positive median and ratio, and
+from a full load (\code{workers} at least \code{getOption("clusters.hostSpeedFullLoad", 0.5)} of the host's largest
+recorded \code{workers}; rows without \code{workers} are a full load). Hosts whose ratio is above \code{maxRatio} are
+slow; hosts with no usable row are kept as fast. If the fast hosts' free cores cover \code{total}, every slow
+host gets \code{free_est = 0}. Otherwise slow hosts are added back, least slow first, each with \code{free_est} of
+its free cores or the remaining shortfall, whichever is smaller. The allocator then gives \code{total}
+workers, and \code{total} is the sum of the \code{free_est}, so the fast hosts are filled and the slow hosts carry
+only the shortfall.
 }
 \keyword{internal}

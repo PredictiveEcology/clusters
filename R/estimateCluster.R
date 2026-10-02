@@ -534,13 +534,13 @@ plan_psock_min <- function(
   
   floor_alloc <- floor(alloc)
   remainder <- total_needed - sum(floor_alloc)
-  if (remainder > 0) {
-    frac <- alloc - floor_alloc
-    order_idx <- order(frac, decreasing = TRUE)
-    for (k in seq_len(remainder)) {
-      i <- order_idx[k]
-      if (floor_alloc[i] < F[i]) floor_alloc[i] <- floor_alloc[i] + 1L
-    }
+  frac <- alloc - floor_alloc
+  while (remainder > 0) {   # one more worker to the largest fractions, among hosts with a free core left
+    open <- which(floor_alloc < F)
+    if (!length(open)) break
+    open <- utils::head(open[order(frac[open], decreasing = TRUE)], remainder)
+    floor_alloc[open] <- floor_alloc[open] + 1L
+    remainder <- remainder - length(open)
   }
   
   out <- data.frame(

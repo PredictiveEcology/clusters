@@ -680,7 +680,7 @@ transferDirName <- function() {
           })
         out <- parallel::clusterEvalQ(cl, {
           out <- clusters::readTransferredObjects(therePath, filenameForTransfer)
-          out <- reproducible::.unwrap(out, cachePath = NULL)
+          out <- reproducible::.unwrap(out, filebackedPath = NULL)
           list2env(out, envir = .GlobalEnv)
         })
         # Delete the file

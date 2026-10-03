@@ -25,7 +25,7 @@ Imports:
     parallel,
     parallelly,
     qs2,
-    reproducible (>= 2.1.2.9045),
+    reproducible (>= 3.2.1.9062),
     Require,
     rstudioapi,
     stats,

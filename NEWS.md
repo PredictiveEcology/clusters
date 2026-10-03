@@ -1,3 +1,11 @@
+# clusters (development version)
+
+* The objective-function figure (`objFun/`, drawn every `plotEvery` generations) now shows the
+  population's best, 10th percentile and median by generation, with what the early stop judges in the
+  subtitle: the median's improvement in standard errors and the spread's change over the window. It
+  showed `bestvalit` with a smoother and straight lines through 200-generation windows, from a stopping
+  test no longer used; those lines and their p-value table are gone.
+
 # clusters 0.0.65
 
 * DEoptim's early stop now needs the population to have stopped moving in two ways over the last

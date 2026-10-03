@@ -1,6 +1,11 @@
 # clusters (development version)
 
 * `.unwrap()` on the worker nodes (R/clusterSetup.R:683) is called with `filebackedPath = NULL`, the new name of its `cachePath` argument in reproducible; this needs reproducible >= 3.2.1.9062, where `cachePath` is deprecated.
+# clusters 0.0.66
+
+* New `currentCluster(cl)` returns the cluster a fit's workers are on now. Rebalancing and dead-worker rebuilds
+  replace nodes in the copy of `cl` inside `DEoptimIterative()`, so a caller using its own `cl` after the fit
+  got "invalid connection" (FireSense ELF 5.2.1 fold 2, `rescorePopulation()` after convergence).
 
 # clusters 0.0.65
 

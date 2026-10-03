@@ -145,3 +145,35 @@ test_that("the window is 300 generations and the SD tolerance 10% by default", {
   sdShift <- lapply(1:700, function(g) pop(9750, sd = if (g <= 500) 100 else 92))   # 8% lower: settled enough
   expect_true(.deoptimPopulationConverged(sdShift, seq_along(sdShift)))
 })
+
+## The objective-function figure shows what the early stop judges (2026-10-02): the population's best,
+## 10th percentile and median by generation, and the rule's two numbers.
+
+test_that("the population summary per generation leaves out failed trials", {
+  popvals <- list(c(5, 1, 3, 1e6, NA), c(4, 2, 2, 8))
+  p <- clusters:::.populationByGeneration(popvals, c(1L, 2L))
+  expect_equal(p$gen, 1:2)
+  expect_equal(p$best, c(1, 2))
+  expect_equal(p$median, c(3, 3))
+  expect_equal(p$q10, c(stats::quantile(c(5, 1, 3), 0.1, names = FALSE), stats::quantile(c(4, 2, 2, 8), 0.1, names = FALSE)))
+})
+
+test_that("the early stop and the figure use the same statistics", {
+  popvals <- lapply(1:800, function(g) pop(1800 - g * 11 / 200, sd = 31, n = 40))
+  st <- clusters:::.populationConvergenceStats(popvals, seq_along(popvals), window = 300L)
+  expect_equal(st$medianDropSE, 16.5 / (1.2533 * stats::sd(popvals[[800]]) / sqrt(40)), tolerance = 1e-6)
+  expect_lt(st$spreadChange, 0.01)
+  expect_false(.deoptimPopulationConverged(popvals, seq_along(popvals), window = 300L, minGenerations = 350L))
+  expect_null(clusters:::.populationConvergenceStats(popvals[1:100], 1:100, window = 300L))
+})
+
+test_that("the objective-function figure draws best, 10th percentile and median, with the rule in the subtitle", {
+  popvals <- lapply(1:400, function(g) pop(2000 - g / 2, sd = 30, n = 40))
+  p <- clusters:::.populationByGeneration(popvals, seq_along(popvals))
+  st <- clusters:::.populationConvergenceStats(popvals, seq_along(popvals), window = 300L)
+  gg <- clusters:::ggPlotFnPopulation(p, st)
+  expect_s3_class(gg, "ggplot")
+  expect_setequal(levels(gg$data$line), c("best", "10th percentile", "median"))
+  expect_match(gg$labels$subtitle, "Over the last 300 generations: median improved")
+  expect_match(clusters:::ggPlotFnPopulation(p, NULL)$labels$subtitle, "not enough generations")
+})

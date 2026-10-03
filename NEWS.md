@@ -1,3 +1,9 @@
+# clusters (development version)
+
+* New `currentCluster(cl)` returns the cluster a fit's workers are on now. Rebalancing and dead-worker rebuilds
+  replace nodes in the copy of `cl` inside `DEoptimIterative()`, so a caller using its own `cl` after the fit
+  got "invalid connection" (FireSense ELF 5.2.1 fold 2, `rescorePopulation()` after convergence).
+
 # clusters 0.0.65
 
 * DEoptim's early stop now needs the population to have stopped moving in two ways over the last

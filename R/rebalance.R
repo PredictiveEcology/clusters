@@ -129,3 +129,21 @@
   }
   self
 }
+
+#' The cluster a fit's workers are on now
+#'
+#' Rebalancing (`clusters.rebalanceEvery`) and dead-worker rebuilds replace worker nodes, and R copies
+#' `cl` on modification, so they change the copy held inside [DEoptimIterative()], not the cluster
+#' object the caller passed in. The caller's object then still holds the stopped nodes, and using it
+#' after the fit fails with "invalid connection". A caller that uses its cluster after a fit should
+#' ask for the current one with this function.
+#'
+#' @param cl A cluster, as given to a fit in `control$cluster`, or `NULL`.
+#'
+#' @return The cluster recorded by [plan_psock_min()] as current when `cl` carries one, otherwise `cl`
+#'   itself (a cluster not built by [plan_psock_min()], or `NULL`).
+#' @export
+currentCluster <- function(cl) {
+  current <- attr(cl, "currentCluster", exact = TRUE)
+  if (is.environment(current) && !is.null(current$cluster)) current$cluster else cl
+}

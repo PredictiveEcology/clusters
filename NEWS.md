@@ -1,4 +1,4 @@
-# clusters (development version)
+# clusters 0.0.66
 
 * New `currentCluster(cl)` returns the cluster a fit's workers are on now. Rebalancing and dead-worker rebuilds
   replace nodes in the copy of `cl` inside `DEoptimIterative()`, so a caller using its own `cl` after the fit

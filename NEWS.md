@@ -1,4 +1,4 @@
-# clusters (development version)
+# clusters 0.0.67
 
 * `.unwrap()` on the worker nodes (R/clusterSetup.R:683) is called with `filebackedPath = NULL`, the new name of its `cachePath` argument in reproducible; this needs reproducible >= 3.2.1.9062, where `cachePath` is deprecated.
 # clusters 0.0.66

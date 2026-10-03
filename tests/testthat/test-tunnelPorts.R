@@ -49,3 +49,28 @@ test_that("the ephemeral range start is read from the kernel setting, with Linux
   writeLines("not a number", f)
   expect_identical(clusters:::.ephemeralPortStart(f), 32768L)
 })
+
+test_that("a worker that never connects back fails the start within connectTimeout, not timeout", {
+  ## FireSense 02e, 2026-10-02/03: ssh exited on "remote port forwarding failed for listen port N"
+  ## (ExitOnForwardFailure=yes), so the worker never started, and five masters waited 5-17 hours in
+  ## parallelly's socketConnection(server = TRUE, timeout = 30 days). `false` stands in for that
+  ## ssh: it exits at once and nothing connects back.
+  t0 <- Sys.time()
+  expect_message(
+    ## suppressWarnings: testthat's own warning handler is slow enough to trip parallelly's time limit
+    expect_error(suppressWarnings(
+      clusters::makeClusterPSOCK("localhost", rscript = "false", homogeneous = FALSE,
+                                 connectTimeout = 2, timeout = 120, tries = 2L, delay = 0)),
+      class = "PSOCKConnectionError"),
+    "another port block")
+  expect_lt(as.numeric(difftime(Sys.time(), t0, units = "secs")), 60)
+})
+
+test_that("a started cluster has the long read timeout, not the connect timeout", {
+  skip_on_cran()
+  cl <- clusters::makeClusterPSOCK("localhost", homogeneous = FALSE, connectTimeout = 60,
+                                   timeout = 1234)
+  withr::defer(parallel::stopCluster(cl))
+  expect_identical(parallel::clusterEvalQ(cl, 1L)[[1]], 1L)
+  expect_equal(socketTimeout(cl[[1]]$con), 1234)
+})

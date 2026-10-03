@@ -505,6 +505,13 @@ numActiveThreads <- function (pattern = "", minCPU = 50) {
 #'   is an argument here, not left to `...`: otherwise `rscript =` partially matched `rscript_libs`
 #'   and became the workers' library path whenever `rscript_libs` was not also given.
 #' @param default_packages Packages R attaches in each worker; the default is parallelly's.
+#' @param connectTimeout Seconds to wait for a worker to connect back. Passed to parallelly as both
+#'   `connectTimeout` and `timeout`, because parallelly's listen is bounded by `timeout` only.
+#' @param timeout Seconds a master waits for a worker's reply once the cluster is running (the
+#'   sockets' read timeout). Not used while waiting for workers to connect back.
+#' @param tries Number of attempts to start the cluster. After a worker fails to connect back within
+#'   `connectTimeout`, the next attempt uses a new port block (see `.tunnelPortBlock()`).
+#' @param delay Seconds between attempts.
 #' @details A worker command that starts with `env` (the OpenBLAS cap from [.workerRscript()], or an
 #'   `LD_LIBRARY_PATH` prefix) is not recognised by parallelly as Rscript, so parallelly passes the
 #'   default packages as an `R_DEFAULT_PACKAGES=` assignment in front of the command. With `renice`
@@ -525,13 +532,10 @@ makeClusterPSOCK <- function(
     tries = 5L,
     delay = 5,
     renice = 20,
-    revtunnel = TRUE
+    revtunnel = TRUE,
+    connectTimeout = 2 * 60,
+    timeout = 30 * 24 * 60 * 60
 ) {
-  # workers <- rep("localhost", cores)
-  if (is.null(port)) {
-    # Random block for this master, ending below the ephemeral range (see .tunnelPortBlock)
-    port <- .tunnelPortBlock(workers)
-  }
 
   if (!is.null(rscript) && identical(basename(rscript[1]), "env") && length(default_packages)) {
     ## env's assignments come first, then the program; the default packages go with them.
@@ -542,20 +546,41 @@ makeClusterPSOCK <- function(
     default_packages <- NULL
   }
 
-  parallelly::makeClusterPSOCK(
-    workers          = workers,
-    port             = port,
-    outfile          = outfile,
-    rscript_libs     = rscript_libs,
-    rscript          = rscript,
-    default_packages = default_packages,
-    ...,
-    rshopts          = rshopts,
-    tries            = tries,
-    delay            = delay,
-    renice           = renice,
-    revtunnel        = revtunnel
-  )
+  for (k in seq_len(tries)) {
+    ## A new random block on every try, ending below the ephemeral range (see .tunnelPortBlock): the
+    ## port that failed is most likely held on the worker's host, and parallelly would retry the same one.
+    p <- if (k == 1L && !is.null(port)) port else .tunnelPortBlock(workers)
+    cl <- tryCatch(
+      parallelly::makeClusterPSOCK(
+        workers          = workers,
+        port             = p,
+        outfile          = outfile,
+        rscript_libs     = rscript_libs,
+        rscript          = rscript,
+        default_packages = default_packages,
+        ...,
+        rshopts          = rshopts,
+        tries            = 1L,
+        renice           = renice,
+        revtunnel        = revtunnel,
+        connectTimeout   = connectTimeout,
+        ## parallelly waits for a worker to connect back for `timeout`, not `connectTimeout`: its
+        ## setTimeLimit(elapsed = connectTimeout) does not interrupt socketConnection(server = TRUE).
+        ## A tunnel that failed (ssh exits with ExitOnForwardFailure) otherwise hangs the master for
+        ## `timeout` (FireSense 02e, 2026-10-02: five fits, 5-17 h).
+        timeout          = connectTimeout),
+      error = identity)
+    if (!inherits(cl, "error")) break
+    ## socketConnection() gives up at the same moment as the time limit, and then R reports the limit
+    noConnect <- inherits(cl, "PSOCKConnectionError") || grepl("elapsed time limit", conditionMessage(cl))
+    if (k == tries || !noConnect) stop(cl)
+    message("clusters: a worker did not connect back within ", connectTimeout, " s (try ", k,
+            " of ", tries, "); trying again on another port block")
+    Sys.sleep(delay)
+  }
+  ## The long read timeout for the cluster's work, now that every worker has connected
+  .setWorkerTimeout(cl, timeout)
+  cl
 }
 
 

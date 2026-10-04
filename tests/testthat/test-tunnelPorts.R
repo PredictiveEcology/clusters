@@ -131,6 +131,9 @@ test_that("with several workers, one that never connects back fails the start wi
 
 test_that("starting a cluster does not load clusters on the workers", {
   skip_on_cran()
+  ## covr puts covr:::count() calls into every clusters function, including the one sent to the
+  ## workers; running them there loads covr, which loads clusters to record the counts
+  skip_on_covr()
   ## FireSense, 2026-10-04: the call that sets the workers' timeout sent a function whose environment
   ## was the clusters namespace, so each fresh worker loaded clusters and its dependencies to read it:
   ## 1.5 s per worker, paid one worker after another

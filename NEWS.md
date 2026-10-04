@@ -1,3 +1,10 @@
+# clusters (development version)
+
+* Workers started by `makeClusterPSOCK()` no longer quit after `connectTimeout` seconds without a call. 0.0.68 passed
+  `connectTimeout` to parallelly as `timeout`, which is also each worker's read timeout; only the master's end was
+  reset afterwards. A worker idle for 2 minutes then exited, and the next call failed with "error reading from
+  connection" (FireSense, 2026-10-03: fits died after start-up workers were replaced). Both ends now get `timeout`.
+
 # clusters 0.0.68
 
 * `makeClusterPSOCK()` no longer hangs for up to 30 days when a worker never connects back (FireSense 02e: ssh exited

@@ -78,6 +78,26 @@ test_that("a started cluster has the long read timeout, not the connect timeout"
   withr::defer(parallel::stopCluster(cl))
   expect_identical(parallel::clusterEvalQ(cl, 1L)[[1]], 1L)
   expect_equal(socketTimeout(cl[[1]]$con), 1234)
+  ## and at the worker's end, where parallelly had put connectTimeout
+  workerSide <- parallel::clusterEvalQ(cl, {
+    socks <- Filter(function(con) inherits(con, "sockconn"), lapply(getAllConnections(), getConnection))
+    vapply(socks, socketTimeout, numeric(1))
+  })[[1]]
+  expect_equal(unique(workerSide), 1234)
+})
+
+test_that("a worker idle for longer than connectTimeout still answers", {
+  skip_on_cran()
+  skip_on_ci()  # a 5 s connectTimeout is too short for CI's localhost starts; the test above covers CI
+  ## FireSense, 2026-10-03: parallelly gave the workers `connectTimeout` as their read timeout, so a
+  ## worker quit after that long without a call, and the next call failed with "error reading from
+  ## connection"
+  cl <- clusters::makeClusterPSOCK("localhost", homogeneous = FALSE, connectTimeout = 5,
+                                   rscript = file.path(R.home("bin"), "Rscript"), renice = FALSE)
+  withr::defer(parallel::stopCluster(cl))
+  expect_identical(parallel::clusterEvalQ(cl, 1L)[[1]], 1L)
+  Sys.sleep(8)
+  expect_identical(parallel::clusterEvalQ(cl, 2L)[[1]], 2L)
 })
 
 test_that("a worker that fails to connect once is started on the retry", {

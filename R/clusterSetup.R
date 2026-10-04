@@ -578,8 +578,9 @@ makeClusterPSOCK <- function(
             " of ", tries, "); trying again on another port block")
     Sys.sleep(delay)
   }
-  ## The long read timeout for the cluster's work, now that every worker has connected
+  ## The long read timeout for the cluster's work, now that every worker has connected: at both ends
   .setWorkerTimeout(cl, timeout)
+  .setWorkerSideTimeout(cl, timeout)
   cl
 }
 

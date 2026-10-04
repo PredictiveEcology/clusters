@@ -73,7 +73,8 @@ test_that("a started cluster has the long read timeout, not the connect timeout"
   ## give it this R's Rscript. A generous connectTimeout: this test is about the read timeout after
   ## the start.
   cl <- clusters::makeClusterPSOCK("localhost", homogeneous = FALSE, connectTimeout = 300,
-                                   rscript = file.path(R.home("bin"), "Rscript"), timeout = 1234)
+                                   rscript = file.path(R.home("bin"), "Rscript"), timeout = 1234,
+                                   renice = FALSE)  # macOS nice has no --adjustment
   withr::defer(parallel::stopCluster(cl))
   expect_identical(parallel::clusterEvalQ(cl, 1L)[[1]], 1L)
   expect_equal(socketTimeout(cl[[1]]$con), 1234)
@@ -96,7 +97,8 @@ test_that("a worker that fails to connect once is started on the retry", {
   ## warning handler would then be the code that hits the limit
   expect_message(suppressWarnings(
     cl <- clusters::makeClusterPSOCK("localhost", homogeneous = FALSE, rscript = fake,
-                                     connectTimeout = 15, tries = 2L, delay = 1, timeout = 1234)),
+                                     connectTimeout = 15, tries = 2L, delay = 1, timeout = 1234,
+                                     renice = FALSE)),  # macOS nice has no --adjustment
     "another port block")
   withr::defer(parallel::stopCluster(cl))
   expect_true(file.exists(marker))

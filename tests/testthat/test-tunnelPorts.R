@@ -129,6 +129,17 @@ test_that("with several workers, one that never connects back fails the start wi
   expect_identical(later, "quiet")
 })
 
+test_that("starting a cluster does not load clusters on the workers", {
+  skip_on_cran()
+  ## FireSense, 2026-10-04: the call that sets the workers' timeout sent a function whose environment
+  ## was the clusters namespace, so each fresh worker loaded clusters and its dependencies to read it:
+  ## 1.5 s per worker, paid one worker after another
+  cl <- clusters::makeClusterPSOCK("localhost", homogeneous = FALSE,
+                                   rscript = file.path(R.home("bin"), "Rscript"), renice = FALSE)
+  withr::defer(parallel::stopCluster(cl))
+  expect_false(parallel::clusterEvalQ(cl, "clusters" %in% loadedNamespaces())[[1]])
+})
+
 test_that("a started cluster has the long read timeout, not the connect timeout", {
   skip_on_cran()
   ## homogeneous = FALSE starts workers one at a time, as for remote hosts; it also takes `Rscript`

@@ -1,6 +1,14 @@
+# clusters (development version)
+
+* `makeClusterPSOCK()` no longer hangs for up to 30 days when a worker never connects back (FireSense 02e: ssh exited
+  on "remote port forwarding failed", five fits waited 5-17 h). parallelly bounds that wait by `timeout`, not
+  `connectTimeout`, so the wrapper now waits `connectTimeout`, retries `tries` times on a new port block, and then sets
+  the sockets' read timeout to `timeout`.
+
 # clusters 0.0.67
 
 * `.unwrap()` on the worker nodes (R/clusterSetup.R:683) is called with `filebackedPath = NULL`, the new name of its `cachePath` argument in reproducible; this needs reproducible >= 3.2.1.9062, where `cachePath` is deprecated.
+
 # clusters 0.0.66
 
 * New `currentCluster(cl)` returns the cluster a fit's workers are on now. Rebalancing and dead-worker rebuilds

@@ -43,8 +43,9 @@ plan_psock_min(
 
 \item{rshopts}{Character vector of SSH options passed by parallelly. Defaults to
 \code{\link[=.sshTunnelOpts]{.sshTunnelOpts()}}: \code{\link[=.sshKeepaliveOpts]{.sshKeepaliveOpts()}}, which bounds how long the master waits on a worker that
-has died, and \code{ExitOnForwardFailure=yes}, so a reverse tunnel that cannot be set up fails and is
-retried on another port.}
+has died, and \code{ExitOnForwardFailure=yes}, so a reverse tunnel that cannot be set up fails. The
+worker then never connects back, \code{\link[=makeClusterPSOCK]{makeClusterPSOCK()}} gives up after \code{connectTimeout} and retries on
+another port block.}
 
 \item{rscript}{Character; path to \code{Rscript} on workers (default \code{"Rscript"}).}
 

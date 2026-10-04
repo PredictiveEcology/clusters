@@ -16,7 +16,9 @@ makeClusterPSOCK(
   tries = 5L,
   delay = 5,
   renice = 20,
-  revtunnel = TRUE
+  revtunnel = TRUE,
+  connectTimeout = 2 * 60,
+  timeout = 30 * 24 * 60 * 60
 )
 }
 \arguments{
@@ -39,12 +41,10 @@ and became the workers' library path whenever \code{rscript_libs} was not also g
 
 \item{rshopts}{Character vector of options passed to \code{ssh}. The defaults disable X11 forwarding and fail fast when a tunnel cannot be established.}
 
-\item{tries, delay}{Maximum number of attempts done to launch each node
-with \code{makeNode()} and the delay (in seconds) in-between attempts.
-If argument \code{port} specifies more than one port, e.g. \code{port = "random"}
-then a random port will be drawn and validated at most \code{tries} times.
-Arguments \code{tries} and \code{delay} are used only when
-\code{setup_strategy == "sequential"}.}
+\item{tries}{Number of attempts to start the cluster. After a worker fails to connect back within
+\code{connectTimeout}, the next attempt uses a new port block (see \code{.tunnelPortBlock()}).}
+
+\item{delay}{Seconds between attempts.}
 
 \item{renice}{A numerical 'niceness' (priority) to set for the worker
 processes.}
@@ -56,6 +56,12 @@ If FALSE, then the worker will try to connect directly to port \code{port} on
 \code{master}.
 If NA, then TRUE or FALSE is inferred from inspection of \code{rshcmd[1]}.
 For more details, see below.}
+
+\item{connectTimeout}{Seconds to wait for a worker to connect back. Passed to parallelly as both
+\code{connectTimeout} and \code{timeout}, because parallelly's listen is bounded by \code{timeout} only.}
+
+\item{timeout}{Seconds a master waits for a worker's reply once the cluster is running (the
+sockets' read timeout). Not used while waiting for workers to connect back.}
 }
 \description{
 Lightweight wrapper for parallelly::makeClusterPSOCK

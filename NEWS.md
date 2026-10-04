@@ -3,7 +3,9 @@
 * Workers started by `makeClusterPSOCK()` no longer quit after `connectTimeout` seconds without a call. 0.0.68 passed
   `connectTimeout` to parallelly as `timeout`, which is also each worker's read timeout; only the master's end was
   reset afterwards. A worker idle for 2 minutes then exited, and the next call failed with "error reading from
-  connection" (FireSense, 2026-10-03: fits died after start-up workers were replaced). Both ends now get `timeout`.
+  connection" (FireSense, 2026-10-03: fits died after start-up workers were replaced). Both ends now get `timeout`
+  once the cluster has started, and during the start the workers' timeout is `connectTimeout` times the number of
+  workers, so the first workers to connect outlast a slow start of the rest (12 clusters starting at once took 165 s).
 
 # clusters 0.0.68
 

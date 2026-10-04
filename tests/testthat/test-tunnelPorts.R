@@ -100,6 +100,25 @@ test_that("a worker idle for longer than connectTimeout still answers", {
   expect_identical(parallel::clusterEvalQ(cl, 2L)[[1]], 2L)
 })
 
+test_that("the first worker does not quit while a slow one is still starting", {
+  skip_on_cran()
+  skip_on_ci()  # timing: needs the first worker to connect within a few seconds
+  skip_on_os("windows")  # the stand-in Rscript is a shell script
+  ## FireSense, 2026-10-03: 12 clusters starting at once took 165 s to start with connectTimeout 120;
+  ## the workers that connected first had quit by then. Here the second worker starts 8 s late.
+  tmp <- withr::local_tempdir()
+  marker <- file.path(tmp, "first")
+  fake <- file.path(tmp, "Rscript")
+  writeLines(c("#!/bin/sh",
+               sprintf('case "$*" in *workRSOCK*) [ -f "%s" ] && sleep 8; touch "%s" ;; esac', marker, marker),
+               sprintf('exec "%s" "$@"', file.path(R.home("bin"), "Rscript"))), fake)
+  Sys.chmod(fake, "0755")
+  cl <- clusters::makeClusterPSOCK(c("localhost", "localhost"), homogeneous = FALSE, connectTimeout = 6,
+                                   rscript = fake, renice = FALSE)
+  withr::defer(parallel::stopCluster(cl))
+  expect_identical(unlist(parallel::clusterEvalQ(cl, 1L)), c(1L, 1L))
+})
+
 test_that("a worker that fails to connect once is started on the retry", {
   skip_on_cran()
   skip_on_os("windows")  # the stand-in Rscript is a shell script

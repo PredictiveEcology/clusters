@@ -1,4 +1,4 @@
-# clusters (development version)
+# clusters 0.0.70
 
 * `makeClusterPSOCK()` starts the workers one at a time, each with `timeout = connectTimeout`. 0.0.69 passed
   `connectTimeout` times the number of workers, so a worker whose ssh tunnel failed blocked the master for

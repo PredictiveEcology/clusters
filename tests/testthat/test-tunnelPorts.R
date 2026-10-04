@@ -78,6 +78,45 @@ test_that("a started cluster has the long read timeout, not the connect timeout"
   withr::defer(parallel::stopCluster(cl))
   expect_identical(parallel::clusterEvalQ(cl, 1L)[[1]], 1L)
   expect_equal(socketTimeout(cl[[1]]$con), 1234)
+  ## and at the worker's end, where parallelly had put connectTimeout
+  workerSide <- parallel::clusterEvalQ(cl, {
+    socks <- Filter(function(con) inherits(con, "sockconn"), lapply(getAllConnections(), getConnection))
+    vapply(socks, socketTimeout, numeric(1))
+  })[[1]]
+  expect_equal(unique(workerSide), 1234)
+})
+
+test_that("a worker idle for longer than connectTimeout still answers", {
+  skip_on_cran()
+  skip_on_ci()  # a 5 s connectTimeout is too short for CI's localhost starts; the test above covers CI
+  ## FireSense, 2026-10-03: parallelly gave the workers `connectTimeout` as their read timeout, so a
+  ## worker quit after that long without a call, and the next call failed with "error reading from
+  ## connection"
+  cl <- clusters::makeClusterPSOCK("localhost", homogeneous = FALSE, connectTimeout = 5,
+                                   rscript = file.path(R.home("bin"), "Rscript"), renice = FALSE)
+  withr::defer(parallel::stopCluster(cl))
+  expect_identical(parallel::clusterEvalQ(cl, 1L)[[1]], 1L)
+  Sys.sleep(8)
+  expect_identical(parallel::clusterEvalQ(cl, 2L)[[1]], 2L)
+})
+
+test_that("the first worker does not quit while a slow one is still starting", {
+  skip_on_cran()
+  skip_on_ci()  # timing: needs the first worker to connect within a few seconds
+  skip_on_os("windows")  # the stand-in Rscript is a shell script
+  ## FireSense, 2026-10-03: 12 clusters starting at once took 165 s to start with connectTimeout 120;
+  ## the workers that connected first had quit by then. Here the second worker starts 8 s late.
+  tmp <- withr::local_tempdir()
+  marker <- file.path(tmp, "first")
+  fake <- file.path(tmp, "Rscript")
+  writeLines(c("#!/bin/sh",
+               sprintf('case "$*" in *workRSOCK*) [ -f "%s" ] && sleep 8; touch "%s" ;; esac', marker, marker),
+               sprintf('exec "%s" "$@"', file.path(R.home("bin"), "Rscript"))), fake)
+  Sys.chmod(fake, "0755")
+  cl <- clusters::makeClusterPSOCK(c("localhost", "localhost"), homogeneous = FALSE, connectTimeout = 6,
+                                   rscript = fake, renice = FALSE)
+  withr::defer(parallel::stopCluster(cl))
+  expect_identical(unlist(parallel::clusterEvalQ(cl, 1L)), c(1L, 1L))
 })
 
 test_that("a worker that fails to connect once is started on the retry", {

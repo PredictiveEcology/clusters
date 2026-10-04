@@ -505,8 +505,10 @@ numActiveThreads <- function (pattern = "", minCPU = 50) {
 #'   is an argument here, not left to `...`: otherwise `rscript =` partially matched `rscript_libs`
 #'   and became the workers' library path whenever `rscript_libs` was not also given.
 #' @param default_packages Packages R attaches in each worker; the default is parallelly's.
-#' @param connectTimeout Seconds to wait for a worker to connect back. Passed to parallelly as both
-#'   `connectTimeout` and `timeout`, because parallelly's listen is bounded by `timeout` only.
+#' @param connectTimeout Seconds to wait for a worker to connect back. Passed to parallelly as
+#'   `connectTimeout`, and, times the number of workers, as `timeout`: parallelly's listen is bounded
+#'   by `timeout` only, and `timeout` is also each worker's read timeout until the cluster has started
+#'   (see Details).
 #' @param timeout Seconds a master waits for a worker's reply once the cluster is running (the
 #'   sockets' read timeout). Not used while waiting for workers to connect back.
 #' @param tries Number of attempts to start the cluster. After a worker fails to connect back within
@@ -518,6 +520,13 @@ numActiveThreads <- function (pattern = "", minCPU = 50) {
 #'   that assignment ends up after `nice`, which then fails to run it ("nice:
 #'   'R_DEFAULT_PACKAGES=...': No such file or directory"). For such a command the default packages
 #'   are put among `env`'s own assignments instead.
+#'
+#'   parallelly gives each worker `timeout` as its read timeout: a worker with no call from the
+#'   master for that long quits. While the cluster starts, the first workers to connect wait for the
+#'   rest, which can take far longer than one worker's `connectTimeout` when many clusters start on
+#'   loaded hosts (FireSense, 2026-10-03: 165 s with a 120 s timeout, and the early workers had quit).
+#'   So the start uses `connectTimeout` times the number of workers, and once every worker has
+#'   connected both ends of each socket get `timeout`.
 #' @export
 makeClusterPSOCK <- function(
     workers,
@@ -546,6 +555,9 @@ makeClusterPSOCK <- function(
     default_packages <- NULL
   }
 
+  ## bounds both the wait for one worker and how long a connected worker waits for the others
+  nWorkers <- if (is.numeric(workers) && length(workers) == 1L) workers else length(workers)
+  startTimeout <- connectTimeout * max(1, nWorkers)
   for (k in seq_len(tries)) {
     ## A new random block on every try, ending below the ephemeral range (see .tunnelPortBlock): the
     ## port that failed is most likely held on the worker's host, and parallelly would retry the same one.
@@ -567,8 +579,9 @@ makeClusterPSOCK <- function(
         ## parallelly waits for a worker to connect back for `timeout`, not `connectTimeout`: its
         ## setTimeLimit(elapsed = connectTimeout) does not interrupt socketConnection(server = TRUE).
         ## A tunnel that failed (ssh exits with ExitOnForwardFailure) otherwise hangs the master for
-        ## `timeout` (FireSense 02e, 2026-10-02: five fits, 5-17 h).
-        timeout          = connectTimeout),
+        ## `timeout` (FireSense 02e, 2026-10-02: five fits, 5-17 h). It is also the workers' read
+        ## timeout, so it must outlast the whole start, not one worker's (see Details).
+        timeout          = startTimeout),
       error = identity)
     if (!inherits(cl, "error")) break
     ## socketConnection() gives up at the same moment as the time limit, and then R reports the limit
@@ -578,8 +591,9 @@ makeClusterPSOCK <- function(
             " of ", tries, "); trying again on another port block")
     Sys.sleep(delay)
   }
-  ## The long read timeout for the cluster's work, now that every worker has connected
+  ## The long read timeout for the cluster's work, now that every worker has connected: at both ends
   .setWorkerTimeout(cl, timeout)
+  .setWorkerSideTimeout(cl, timeout)
   cl
 }
 

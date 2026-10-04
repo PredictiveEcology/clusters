@@ -68,10 +68,12 @@ test_that("a worker that never connects back fails the start within connectTimeo
 
 test_that("a started cluster has the long read timeout, not the connect timeout", {
   skip_on_cran()
-  ## a generous connectTimeout: this test is about the read timeout after the start, and a localhost
-  ## worker on a CI runner can take more than a minute to start
+  ## homogeneous = FALSE starts workers one at a time, as for remote hosts; it also takes `Rscript`
+  ## from PATH, which on CI (R-devel, macOS) is not the R under check, so the worker never started:
+  ## give it this R's Rscript. A generous connectTimeout: this test is about the read timeout after
+  ## the start.
   cl <- clusters::makeClusterPSOCK("localhost", homogeneous = FALSE, connectTimeout = 300,
-                                   timeout = 1234)
+                                   rscript = file.path(R.home("bin"), "Rscript"), timeout = 1234)
   withr::defer(parallel::stopCluster(cl))
   expect_identical(parallel::clusterEvalQ(cl, 1L)[[1]], 1L)
   expect_equal(socketTimeout(cl[[1]]$con), 1234)

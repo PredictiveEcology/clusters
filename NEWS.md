@@ -1,4 +1,4 @@
-# clusters (development version)
+# clusters 0.0.68
 
 * `makeClusterPSOCK()` no longer hangs for up to 30 days when a worker never connects back (FireSense 02e: ssh exited
   on "remote port forwarding failed", five fits waited 5-17 h). parallelly bounds that wait by `timeout`, not

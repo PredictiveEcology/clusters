@@ -78,3 +78,28 @@ test_that("a started cluster has the long read timeout, not the connect timeout"
   expect_identical(parallel::clusterEvalQ(cl, 1L)[[1]], 1L)
   expect_equal(socketTimeout(cl[[1]]$con), 1234)
 })
+
+test_that("a worker that fails to connect once is started on the retry", {
+  skip_on_cran()
+  skip_on_os("windows")  # the stand-in Rscript is a shell script
+  ## A stand-in Rscript that makes the first worker launch exit without connecting (parallelly's
+  ## PID probe, which runs it first, still works); every later call is the real Rscript. A retry
+  ## must then succeed: it gets a fresh wait, not what is left of the first attempt's.
+  tmp <- withr::local_tempdir()
+  marker <- file.path(tmp, "failedOnce")
+  fake <- file.path(tmp, "Rscript")
+  writeLines(c("#!/bin/sh",
+               sprintf('case "$*" in *workRSOCK*) [ -f "%s" ] || { touch "%s"; exit 1; } ;; esac', marker, marker),
+               sprintf('exec "%s" "$@"', file.path(R.home("bin"), "Rscript"))), fake)
+  Sys.chmod(fake, "0755")
+  ## suppressWarnings: the failed listen warns just as its time limit expires, and testthat's own
+  ## warning handler would then be the code that hits the limit
+  expect_message(suppressWarnings(
+    cl <- clusters::makeClusterPSOCK("localhost", homogeneous = FALSE, rscript = fake,
+                                     connectTimeout = 15, tries = 2L, delay = 1, timeout = 1234)),
+    "another port block")
+  withr::defer(parallel::stopCluster(cl))
+  expect_true(file.exists(marker))
+  expect_identical(parallel::clusterEvalQ(cl, 1L)[[1]], 1L)
+  expect_equal(socketTimeout(cl[[1]]$con), 1234)
+})

@@ -21,19 +21,25 @@
 
 ## The same, at the workers' end of the sockets. parallelly gives each worker its `timeout` as the
 ## worker's read timeout (TIMEOUT=), and makeClusterPSOCK() passes `connectTimeout` there to bound the
-## connect: a worker then quit after `connectTimeout` seconds without a call from the master, and the
-## master's next call failed with "error reading from connection" (FireSense, 2026-10-03: fits died
-## after start-up workers were replaced, which left the others idle for over 2 minutes).
+## connect, and sets this as soon as the worker has connected. Left at `connectTimeout`, a worker
+## quit after that many seconds without a call from the master, and the master's next call failed
+## with "error reading from connection" (FireSense, 2026-10-03: fits died after start-up workers were
+## replaced, which left the others idle for over 2 minutes).
 .setWorkerSideTimeout <- function(cl, seconds) {
   socks <- which(vapply(cl, function(node) inherits(node$con, "sockconn"), logical(1)))
   if (!length(socks)) return(invisible(cl))
-  parallel::clusterCall(cl[socks], function(seconds) {
+  setTimeout <- function(seconds) {
     for (i in getAllConnections()) {
       con <- getConnection(i)
       if (inherits(con, "sockconn")) socketTimeout(con, seconds)
     }
     NULL
-  }, seconds)
+  }
+  ## A function defined here has the clusters namespace as its environment, and a fresh worker loads
+  ## clusters and its dependencies to read it: 1.5 s per worker, one worker after another while a
+  ## cluster starts (FireSense, 2026-10-04). It needs only base R.
+  environment(setTimeout) <- baseenv()
+  parallel::clusterCall(cl[socks], setTimeout, seconds)
   invisible(cl)
 }
 

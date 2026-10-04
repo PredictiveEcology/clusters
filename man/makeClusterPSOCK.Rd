@@ -57,8 +57,9 @@ If FALSE, then the worker will try to connect directly to port \code{port} on
 If NA, then TRUE or FALSE is inferred from inspection of \code{rshcmd[1]}.
 For more details, see below.}
 
-\item{connectTimeout}{Seconds to wait for a worker to connect back. Passed to parallelly as both
-\code{connectTimeout} and \code{timeout}, because parallelly's listen is bounded by \code{timeout} only.}
+\item{connectTimeout}{Seconds to wait for each worker to connect back. Workers are started one at
+a time, and this is passed to parallelly as both \code{connectTimeout} and \code{timeout}: parallelly's
+listen is bounded by \code{timeout} only (see Details).}
 
 \item{timeout}{Seconds a master waits for a worker's reply once the cluster is running (the
 sockets' read timeout). Not used while waiting for workers to connect back.}
@@ -73,4 +74,12 @@ default packages as an \verb{R_DEFAULT_PACKAGES=} assignment in front of the com
 that assignment ends up after \code{nice}, which then fails to run it ("nice:
 'R_DEFAULT_PACKAGES=...': No such file or directory"). For such a command the default packages
 are put among \code{env}'s own assignments instead.
+
+parallelly uses \code{timeout} for two things: how long the master listens for a worker to connect
+back, and each worker's read timeout (a worker with no call from the master for that long
+quits). So the workers are started one at a time, each with \code{timeout = connectTimeout}: a worker
+that never connects back (a failed reverse tunnel) is found after \code{connectTimeout}, not after a
+multiple of it for the number of workers, and the next attempt uses another port block. As soon
+as a worker has connected, both ends of its socket get \code{timeout}, so a connected worker does not
+quit while the others start. Each worker gets its own port, below the ephemeral range.
 }

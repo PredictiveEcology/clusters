@@ -1,3 +1,11 @@
+# clusters (development version)
+
+* `makeClusterPSOCK()` starts the workers one at a time, each with `timeout = connectTimeout`. 0.0.69 passed
+  `connectTimeout` times the number of workers, so a worker whose ssh tunnel failed blocked the master for
+  that long (4800 s with 40 workers) before the retry on another port block. Each worker now has its own port,
+  gets the long read timeout as soon as it connects, and its own element of a per-worker `user`. The elapsed
+  time limit of a failed start is cleared, so it cannot fire later in the caller's code (FireSense, 2026-10-04).
+
 # clusters 0.0.69
 
 * Workers started by `makeClusterPSOCK()` no longer quit after `connectTimeout` seconds without a call. 0.0.68 passed

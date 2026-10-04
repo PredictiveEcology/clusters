@@ -1,4 +1,4 @@
-# clusters (development version)
+# clusters 0.0.69
 
 * Workers started by `makeClusterPSOCK()` no longer quit after `connectTimeout` seconds without a call. 0.0.68 passed
   `connectTimeout` to parallelly as `timeout`, which is also each worker's read timeout; only the master's end was

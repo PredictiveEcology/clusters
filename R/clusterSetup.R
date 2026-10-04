@@ -505,10 +505,9 @@ numActiveThreads <- function (pattern = "", minCPU = 50) {
 #'   is an argument here, not left to `...`: otherwise `rscript =` partially matched `rscript_libs`
 #'   and became the workers' library path whenever `rscript_libs` was not also given.
 #' @param default_packages Packages R attaches in each worker; the default is parallelly's.
-#' @param connectTimeout Seconds to wait for a worker to connect back. Passed to parallelly as
-#'   `connectTimeout`, and, times the number of workers, as `timeout`: parallelly's listen is bounded
-#'   by `timeout` only, and `timeout` is also each worker's read timeout until the cluster has started
-#'   (see Details).
+#' @param connectTimeout Seconds to wait for each worker to connect back. Workers are started one at
+#'   a time, and this is passed to parallelly as both `connectTimeout` and `timeout`: parallelly's
+#'   listen is bounded by `timeout` only (see Details).
 #' @param timeout Seconds a master waits for a worker's reply once the cluster is running (the
 #'   sockets' read timeout). Not used while waiting for workers to connect back.
 #' @param tries Number of attempts to start the cluster. After a worker fails to connect back within
@@ -521,12 +520,13 @@ numActiveThreads <- function (pattern = "", minCPU = 50) {
 #'   'R_DEFAULT_PACKAGES=...': No such file or directory"). For such a command the default packages
 #'   are put among `env`'s own assignments instead.
 #'
-#'   parallelly gives each worker `timeout` as its read timeout: a worker with no call from the
-#'   master for that long quits. While the cluster starts, the first workers to connect wait for the
-#'   rest, which can take far longer than one worker's `connectTimeout` when many clusters start on
-#'   loaded hosts (FireSense, 2026-10-03: 165 s with a 120 s timeout, and the early workers had quit).
-#'   So the start uses `connectTimeout` times the number of workers, and once every worker has
-#'   connected both ends of each socket get `timeout`.
+#'   parallelly uses `timeout` for two things: how long the master listens for a worker to connect
+#'   back, and each worker's read timeout (a worker with no call from the master for that long
+#'   quits). So the workers are started one at a time, each with `timeout = connectTimeout`: a worker
+#'   that never connects back (a failed reverse tunnel) is found after `connectTimeout`, not after a
+#'   multiple of it for the number of workers, and the next attempt uses another port block. As soon
+#'   as a worker has connected, both ends of its socket get `timeout`, so a connected worker does not
+#'   quit while the others start. Each worker gets its own port, below the ephemeral range.
 #' @export
 makeClusterPSOCK <- function(
     workers,
@@ -555,45 +555,83 @@ makeClusterPSOCK <- function(
     default_packages <- NULL
   }
 
-  ## bounds both the wait for one worker and how long a connected worker waits for the others
-  nWorkers <- if (is.numeric(workers) && length(workers) == 1L) workers else length(workers)
-  startTimeout <- connectTimeout * max(1, nWorkers)
-  for (k in seq_len(tries)) {
-    ## A new random block on every try, ending below the ephemeral range (see .tunnelPortBlock): the
-    ## port that failed is most likely held on the worker's host, and parallelly would retry the same one.
-    p <- if (k == 1L && !is.null(port)) port else .tunnelPortBlock(workers)
-    cl <- tryCatch(
-      parallelly::makeClusterPSOCK(
-        workers          = workers,
-        port             = p,
-        outfile          = outfile,
-        rscript_libs     = rscript_libs,
-        rscript          = rscript,
-        default_packages = default_packages,
-        ...,
-        rshopts          = rshopts,
-        tries            = 1L,
-        renice           = renice,
-        revtunnel        = revtunnel,
-        connectTimeout   = connectTimeout,
-        ## parallelly waits for a worker to connect back for `timeout`, not `connectTimeout`: its
-        ## setTimeLimit(elapsed = connectTimeout) does not interrupt socketConnection(server = TRUE).
-        ## A tunnel that failed (ssh exits with ExitOnForwardFailure) otherwise hangs the master for
-        ## `timeout` (FireSense 02e, 2026-10-02: five fits, 5-17 h). It is also the workers' read
-        ## timeout, so it must outlast the whole start, not one worker's (see Details).
-        timeout          = startTimeout),
-      error = identity)
-    if (!inherits(cl, "error")) break
-    ## socketConnection() gives up at the same moment as the time limit, and then R reports the limit
-    noConnect <- inherits(cl, "PSOCKConnectionError") || grepl("elapsed time limit", conditionMessage(cl))
-    if (k == tries || !noConnect) stop(cl)
-    message("clusters: a worker did not connect back within ", connectTimeout, " s (try ", k,
-            " of ", tries, "); trying again on another port block")
-    Sys.sleep(delay)
+  ## One node at a time, each with `timeout = connectTimeout`: parallelly's wait for a worker to
+  ## connect back is bounded by `timeout` only (its setTimeLimit(elapsed = connectTimeout) does not
+  ## interrupt socketConnection(server = TRUE)), so a tunnel that failed (ssh exits with
+  ## ExitOnForwardFailure) otherwise hangs the master for `timeout` (FireSense 02e, 2026-10-02: five
+  ## fits, 5-17 h). `timeout` is also the worker's read timeout, so a node gets the long one as soon
+  ## as it is connected (see Details), before the next node starts.
+  hosts <- if (is.numeric(workers) && length(workers) == 1L) rep("localhost", workers) else workers
+  usedPorts <- integer(0)
+  ## `user` is the one argument parallelly takes per worker (one value, or one per worker); each node is
+  ## started by its own call, so it gets its own element.
+  dots <- list(...)
+  users <- if (!is.null(dots$user)) rep(dots$user, length.out = length(hosts))
+  dots$user <- NULL
+  cl <- NULL
+  for (i in seq_along(hosts)) {
+    node <- NULL
+    for (k in seq_len(tries)) {
+      ## A new random block on every try, ending below the ephemeral range (see .tunnelPortBlock): the
+      ## port that failed is most likely held on the worker's host, and parallelly would retry the same
+      ## one. Each node is rank 1 for parallelly, so its tunnel port is its master port: no two nodes
+      ## may be given the same one, as their tunnels can end on the same host.
+      block <- if (k == 1L && i == 1L && !is.null(port)) port else .tunnelPortBlock(hosts)
+      p <- parallelly::freePort(setdiff(.portsForNodes(block, length(hosts)), usedPorts))
+      node <- tryCatch(
+        do.call(parallelly::makeClusterPSOCK, c(list(
+          workers          = hosts[i],
+          port             = p,
+          user             = users[i],
+          outfile          = outfile,
+          rscript_libs     = rscript_libs,
+          rscript          = rscript,
+          default_packages = default_packages),
+          dots,
+          list(
+          rshopts          = rshopts,
+          tries            = 1L,
+          renice           = renice,
+          revtunnel        = revtunnel,
+          connectTimeout   = connectTimeout,
+          timeout          = connectTimeout))),
+        error = identity)
+      ## parallelly's elapsed time limit and its socketConnection() give up at the same moment, and the
+      ## limit can still be set when this returns (FireSense, 2026-10-04: "reached elapsed time limit"
+      ## in the caller's own code, minutes after a failed start). None may outlive the start.
+      setTimeLimit(cpu = Inf, elapsed = Inf, transient = FALSE)
+      if (!inherits(node, "error")) break
+      ## socketConnection() gives up at the same moment as the time limit, and then R reports the limit
+      noConnect <- inherits(node, "PSOCKConnectionError") || grepl("elapsed time limit", conditionMessage(node))
+      if (k == tries || !noConnect) {
+        if (!is.null(cl)) .stopCluster(cl)
+        stop(node)
+      }
+      message("clusters: a worker did not connect back within ", connectTimeout, " s (try ", k,
+              " of ", tries, "); trying again on another port block")
+      Sys.sleep(delay)
+    }
+    ## The long read timeout for the cluster's work, now that this worker has connected: at both ends
+    .setWorkerTimeout(node, timeout)
+    .setWorkerSideTimeout(node, timeout)
+    usedPorts <- c(usedPorts, p)
+    cl <- .addNode(cl, node)
   }
-  ## The long read timeout for the cluster's work, now that every worker has connected: at both ends
-  .setWorkerTimeout(cl, timeout)
-  .setWorkerSideTimeout(cl, timeout)
+  cl
+}
+
+## `block` extended by one port per node after it, as parallelly would give the tunnels of a cluster
+## started in one call: the block plus these ends below the ephemeral range (see .tunnelPortBlock()).
+.portsForNodes <- function(block, nNodes) union(block, max(block) + seq_len(nNodes - 1L))
+
+## Add the one node cluster `node` to `cl` (NULL for the first), keeping what autoStop needs: parallelly's
+## garbage-collection stop (see .disarmAutoStop()) of the combined cluster, and not of the pieces.
+.addNode <- function(cl, node) {
+  if (is.null(cl)) return(node)
+  gcMe <- attr(cl, "gcMe")
+  .disarmAutoStop(node)
+  cl[[length(cl) + 1L]] <- node[[1]]
+  if (is.environment(gcMe)) gcMe$cluster <- cl
   cl
 }
 

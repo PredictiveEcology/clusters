@@ -5,6 +5,9 @@
   `connectTimeout`, so the wrapper now waits `connectTimeout`, retries `tries` times on a new port block, and then sets
   the sockets' read timeout to `timeout`.
 
+# clusters 0.0.67
+
+* `.unwrap()` on the worker nodes (R/clusterSetup.R:683) is called with `filebackedPath = NULL`, the new name of its `cachePath` argument in reproducible; this needs reproducible >= 3.2.1.9062, where `cachePath` is deprecated.
 # clusters 0.0.66
 
 * New `currentCluster(cl)` returns the cluster a fit's workers are on now. Rebalancing and dead-worker rebuilds

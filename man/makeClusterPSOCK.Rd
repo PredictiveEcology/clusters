@@ -58,8 +58,9 @@ If NA, then TRUE or FALSE is inferred from inspection of \code{rshcmd[1]}.
 For more details, see below.}
 
 \item{connectTimeout}{Seconds to wait for each worker to connect back. Workers are started one at
-a time, and this is passed to parallelly as both \code{connectTimeout} and \code{timeout}: parallelly's
-listen is bounded by \code{timeout} only (see Details).}
+a time. It is passed to parallelly as \code{timeout}, which bounds the listen for the worker; parallelly's
+own elapsed time limit (its \code{connectTimeout}) is set longer, so the listen always ends first
+(see Details).}
 
 \item{timeout}{Seconds a master waits for a worker's reply once the cluster is running (the
 sockets' read timeout). Not used while waiting for workers to connect back.}
@@ -82,4 +83,9 @@ that never connects back (a failed reverse tunnel) is found after \code{connectT
 multiple of it for the number of workers, and the next attempt uses another port block. As soon
 as a worker has connected, both ends of its socket get \code{timeout}, so a connected worker does not
 quit while the others start. Each worker gets its own port, below the ephemeral range.
+
+parallelly's elapsed time limit is set to \code{connectTimeout + max(60, connectTimeout)}, not to
+\code{connectTimeout}. When the listen times out, R warns, and calling handlers of that warning in the
+caller (\code{Cache()} and SpaDES re-signal it, slowly) run while the limit is still set. With equal
+values the limit had passed by then, and its error, raised inside a handler, was not caught here.
 }

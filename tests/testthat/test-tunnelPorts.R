@@ -222,3 +222,23 @@ test_that("a worker that fails to connect once is started on the retry", {
   expect_identical(parallel::clusterEvalQ(cl, 1L)[[1]], 1L)
   expect_equal(socketTimeout(cl[[1]]$con), 1234)
 })
+
+test_that("a slow handler of the socket's timeout warning does not turn a failed start into a time-limit error", {
+  skip_on_cran()
+  skip_on_os("windows")
+  ## FireSense, 2026-10-04: socketConnection(server = TRUE) warns when its wait times out. Cache and
+  ## SpaDES re-signal that warning from calling handlers, which take seconds, and they run while
+  ## parallelly's setTimeLimit(elapsed = connectTimeout) is still set. The limit had expired with the
+  ## socket's own timeout, so the "reached elapsed time limit" error was raised inside the handler, out
+  ## of reach of clusters' tryCatch, and ended the caller. The outer handler here stands in for them.
+  res <- tryCatch(
+    withCallingHandlers(
+      clusters::makeClusterPSOCK("localhost", rscript = "false", homogeneous = FALSE,
+                                 connectTimeout = 5, tries = 2L, delay = 0),
+      warning = function(w) Sys.sleep(3)),
+    error = identity)
+  expect_s3_class(res, "PSOCKConnectionError")
+  expect_false(grepl("elapsed time limit", conditionMessage(res)))
+  later <- tryCatch({ Sys.sleep(4); "quiet" }, error = function(e) conditionMessage(e))
+  expect_identical(later, "quiet")
+})

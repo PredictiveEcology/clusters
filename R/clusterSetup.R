@@ -506,8 +506,9 @@ numActiveThreads <- function (pattern = "", minCPU = 50) {
 #'   and became the workers' library path whenever `rscript_libs` was not also given.
 #' @param default_packages Packages R attaches in each worker; the default is parallelly's.
 #' @param connectTimeout Seconds to wait for each worker to connect back. Workers are started one at
-#'   a time, and this is passed to parallelly as both `connectTimeout` and `timeout`: parallelly's
-#'   listen is bounded by `timeout` only (see Details).
+#'   a time. It is passed to parallelly as `timeout`, which bounds the listen for the worker; parallelly's
+#'   own elapsed time limit (its `connectTimeout`) is set longer, so the listen always ends first
+#'   (see Details).
 #' @param timeout Seconds a master waits for a worker's reply once the cluster is running (the
 #'   sockets' read timeout). Not used while waiting for workers to connect back.
 #' @param tries Number of attempts to start the cluster. After a worker fails to connect back within
@@ -527,6 +528,11 @@ numActiveThreads <- function (pattern = "", minCPU = 50) {
 #'   multiple of it for the number of workers, and the next attempt uses another port block. As soon
 #'   as a worker has connected, both ends of its socket get `timeout`, so a connected worker does not
 #'   quit while the others start. Each worker gets its own port, below the ephemeral range.
+#'
+#'   parallelly's elapsed time limit is set to `connectTimeout + max(60, connectTimeout)`, not to
+#'   `connectTimeout`. When the listen times out, R warns, and calling handlers of that warning in the
+#'   caller (`Cache()` and SpaDES re-signal it, slowly) run while the limit is still set. With equal
+#'   values the limit had passed by then, and its error, raised inside a handler, was not caught here.
 #' @export
 makeClusterPSOCK <- function(
     workers,
@@ -593,15 +599,17 @@ makeClusterPSOCK <- function(
           tries            = 1L,
           renice           = renice,
           revtunnel        = revtunnel,
-          connectTimeout   = connectTimeout,
+          connectTimeout   = .elapsedLimit(connectTimeout),
           timeout          = connectTimeout))),
         error = identity)
-      ## parallelly's elapsed time limit and its socketConnection() give up at the same moment, and the
-      ## limit can still be set when this returns (FireSense, 2026-10-04: "reached elapsed time limit"
-      ## in the caller's own code, minutes after a failed start). None may outlive the start.
+      ## parallelly's elapsed limit, set by its `connectTimeout`, can still be set when this returns
+      ## (FireSense, 2026-10-04: "reached elapsed time limit" in the caller's own code, minutes after a
+      ## failed start). None may outlive the start. It is longer than the socket's `timeout` (see
+      ## .elapsedLimit()), so on a failed start it is normally still set here, and is cleared here.
       setTimeLimit(cpu = Inf, elapsed = Inf, transient = FALSE)
       if (!inherits(node, "error")) break
-      ## socketConnection() gives up at the same moment as the time limit, and then R reports the limit
+      ## The limit is past the socket's timeout (see .elapsedLimit()), but a slow handler of the socket's
+      ## warning in the caller can still run into it, and then R reports the limit
       noConnect <- inherits(node, "PSOCKConnectionError") || grepl("elapsed time limit", conditionMessage(node))
       if (k == tries || !noConnect) {
         if (!is.null(cl)) .stopCluster(cl)
@@ -619,6 +627,14 @@ makeClusterPSOCK <- function(
   }
   cl
 }
+
+## The seconds parallelly's elapsed time limit (its `connectTimeout`) is given, for a worker that has
+## `connectTimeout` seconds to connect back (its `timeout`, the socket's listen). The limit is longer, so
+## the socket gives up first. socketConnection(server = TRUE) then warns, and the caller's calling
+## handlers for that warning (Cache and SpaDES re-signal it, which takes seconds) run while the limit is
+## still set. Equal values made the limit expire before the warning was handled: the error was raised
+## inside the handler, out of reach of the tryCatch around parallelly, and ended the caller.
+.elapsedLimit <- function(connectTimeout) connectTimeout + max(60, connectTimeout)
 
 ## `block` extended by one port per node after it, as parallelly would give the tunnels of a cluster
 ## started in one call: the block plus these ends below the ephemeral range (see .tunnelPortBlock()).

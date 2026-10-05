@@ -1,3 +1,11 @@
+# clusters (development version)
+
+* `makeClusterPSOCK()` gives parallelly's elapsed time limit `connectTimeout + max(60, connectTimeout)`, longer than
+  the `timeout` of its listen for the worker. Both were `connectTimeout`, so when a worker's tunnel failed, the limit
+  had expired before the callers' handlers of the listen's warning ran (`Cache()` and SpaDES re-signal it, slowly).
+  The "reached elapsed time limit" error was raised inside those handlers, out of reach of the retry, and ended the
+  whole call (FireSense, 2026-10-04, a rebuild's 9th node).
+
 # clusters 0.0.70
 
 * `makeClusterPSOCK()` starts the workers one at a time, each with `timeout = connectTimeout`. 0.0.69 passed

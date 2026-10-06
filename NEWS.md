@@ -1,4 +1,4 @@
-# clusters (development version)
+# clusters 0.0.71
 
 * `makeClusterPSOCK()` gives parallelly's elapsed time limit `connectTimeout + max(60, connectTimeout)`, longer than
   the `timeout` of its listen for the worker. Both were `connectTimeout`, so when a worker's tunnel failed, the limit

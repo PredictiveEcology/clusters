@@ -1,5 +1,10 @@
 # clusters (development version)
 
+* The objective-function figure (`objFun/`, drawn every `plotEvery` generations) now shows the
+  population's best, 10th percentile and median by generation, with what the early stop judges in the
+  subtitle: the median's improvement in standard errors and the spread's change over the window. It
+  showed `bestvalit` with a smoother and straight lines through 200-generation windows, from a stopping
+  test no longer used; those lines and their p-value table are gone.
 * `DEoptimIterative()` writes a small progress file (`progressFile`, default `DEoptimProgress_<runName>.csv`
   in `figurePath`, or the working directory without one; `FALSE` for none): after each chunk the objective's
   best value and quantiles and each parameter's best and quantiles, and a `FINISHED` row at the end. New

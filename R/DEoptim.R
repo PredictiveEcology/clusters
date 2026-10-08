@@ -436,68 +436,10 @@ DEoptimIterative <- function(fn, lower, upper, control, ...,
 
     # if (iter > 499) browser()
     # if (Require:::isRstudio()) if (iter > 200) browser()
-    rng <- 25; # how often to do this: i.e., num new iterations per fit, i.e., 1:100, 26:125
-    dataRunToUse <- 200 # this will do the lm on this many items
-    ## generations so far, over chunks of any length
-    bestvalitAll <- unlist(lapply(DE, function(x) x$member$bestvalit))
-    nGenerations <- length(bestvalitAll)
-    numSegments <- (nGenerations - dataRunToUse) / rng + 1
-    numSegmentsBefore <- (nGenerations - chunkLengths[iter] - dataRunToUse) / rng + 1
-    pvals <- c(0,0)
-
-
-    # Do these here because we need them for both sections below
-    dfForGGplotSimple <- DEoptimToDataFrame(DE)
-    gg1 <- ggPlotFnSimple(dfForGGplotSimple)
-
-    if (numSegments > 1) {
-      isNewSegment <- floor(numSegments) > floor(numSegmentsBefore)   # a segment ended in this chunk
-      if (isNewSegment) {
-        pvals <- numeric(floor(numSegments))
-        iters <- list()
-        summ <- list()
-        # l <- list()
-        segmentSeq <- seq_len(floor(numSegments))
-        # if (!exists("dfForGGplotSimple", inherits = FALSE))
-        DEoutBestValit <- bestvalitAll
-        if (!all(is.infinite(DEoutBestValit))) {
-
-          for (i in segmentSeq) {
-            col <- "black"
-            if (i == tail(segmentSeq, 2)[1]) col <- "blue"
-            if (i == tail(segmentSeq, 1)[1]) col <- "red"
-            iters[[i]] <- seq_len(dataRunToUse) + (i-1) * rng;
-            # message(cli::col_yellow(paste(range(iters), collapse = ":")));
-            a <- data.table(iter = seq_len(nGenerations), val = DEoutBestValit)
-            lmOut <- try(lm(val ~ iter, data = a[iters[[i]]]))
-            if (!is(lmOut, "try-error")) {
-              # next
-              summ[[i]] <- summary(lmOut);
-              pvals[i] <- round(summ[[i]]$coefficients[2, 4], 4)
-
-              newdat <- data.table(iter = iters[[i]])
-              set(newdat, NULL, "pred", predict(lmOut, newdata = newdat))
-              int <- summ[[i]]$coefficients[1, 1]
-              slop <- summ[[i]]$coefficients[2, 1]
-              # gg1 <- gg1 + geom_line(data = newdat,
-              #                           aes(x = iter, y = pred), #, xend = tail(iter, 1), yend = tail(pred, 1)),
-              #                           col = col)
-              gg1 <- gg1 + geom_abline(intercept = int, slope = slop,
-                                       #                        aes(x = iter, y = pred), #, xend = tail(iter, 1), yend = tail(pred, 1)),
-                                       col = col)
-            }
-          }
-          pvalDT <- data.table(dataRange = sapply(segmentSeq, function(x) paste(range(iters[[x]]), collapse = ":")),
-                               pvals = pvals)
-          reproducible::messageDF(pvalDT, colour = "yellow")
-        }
-
-      }
-    }
+    nGenerations <- sum(chunkLengths[seq_along(DE)])
     ## Stop early when the POPULATION has stopped improving (see .deoptimPopulationConverged). Neither
     ## the slope of a line through `bestvalit` (a step function: it could never fire) nor "no new best
-    ## for 200 generations" (a lucky record restarts it) answers that. The window p-values above remain
-    ## as a diagnostic.
+    ## for 200 generations" (a lucky record restarts it) answers that.
     popvalsAll <- lapply(DE, function(x) x$member$popval)
     converged <- .deoptimPopulationConverged(popvalsAll, chunkEnds[seq_along(DE)])
     ## Plot chunks computed in this session, not ones replayed from the cache, when each chunk (`iterStep`
@@ -519,12 +461,11 @@ DEoptimIterative <- function(fn, lower, upper, control, ...,
         terms <- c(terms, paste0("V", seq(nVars - length(terms))))
       dfForGGplot <- visualizeDEoptimLines(DE, terms = terms)
       dfForGGplotAllPoints <- visualizeDEoptimLines(DE, terms = terms, allPoints = TRUE)
-      dfForGGplotSimple <- DEoptimToDataFrame(DE)
-
-
       texts <- c("objFun/", "lines_mean_AllPoints/", "lines_mean/", "lines_dif/", "lines_variance/", "hists/")
       withCallingHandlers({
-        SpaDES.core::Plots(gg1, types = .plots,
+        SpaDES.core::Plots(ggPlotFnPopulation(.populationByGeneration(popvalsAll, chunkEnds[seq_along(DE)]),
+                                              .populationConvergenceStats(popvalsAll, chunkEnds[seq_along(DE)])),
+              types = .plots,
               filename = ggDEoptimFilename(figurePath, dots$rep, subfolder = "", text = texts[1]))
         SpaDES.core::Plots(dfForGGplotAllPoints, ggPlotFnMeansAllPoints, types = .plots,
               filename = ggDEoptimFilename(figurePath, dots$rep, subfolder = "", text = texts[2]));
@@ -611,22 +552,36 @@ DEoptimIterative <- function(fn, lower, upper, control, ...,
                                         seMultiplier = getOption("clusters.deoptimConvergenceSE", 1),
                                         sdChange = getOption("clusters.deoptimConvergenceSDChange", 0.1)) {
   if (!length(popvals)) return(FALSE)
-  usable <- function(v) { v <- suppressWarnings(as.numeric(v)); v[is.finite(v) & v < 1e6] }
+  if (gens[length(popvals)] <= minGenerations) return(FALSE)
+  st <- .populationConvergenceStats(popvals, gens, window)
+  if (is.null(st)) return(FALSE)
+  st$medianDropSE < seMultiplier && st$spreadChange < sdChange
+}
+
+## What the early stop looks at, `window` generations back from the latest population: the median's
+## improvement in standard errors of the current median, and the relative change of the spread (MAD; one
+## member with a lucky record moves the SD by itself, and would hold open a population that has otherwise
+## stopped). NULL with fewer than four usable values in either population, or none `window` back.
+.populationConvergenceStats <- function(popvals, gens,
+                                        window = getOption("clusters.deoptimConvergenceWindow", 300L)) {
+  if (!length(popvals)) return(NULL)
   now <- length(popvals)
-  if (gens[now] <= minGenerations) return(FALSE)
   ref <- which(gens <= gens[now] - window)
-  if (!length(ref)) return(FALSE)
-  cur <- usable(popvals[[now]])
-  old <- usable(popvals[[max(ref)]])
-  if (length(cur) < 4L || length(old) < 4L) return(FALSE)
+  if (!length(ref)) return(NULL)
+  cur <- .usablePopvals(popvals[[now]])
+  old <- .usablePopvals(popvals[[max(ref)]])
+  if (length(cur) < 4L || length(old) < 4L) return(NULL)
   se <- 1.2533 * stats::sd(cur) / sqrt(length(cur))
-  medianStill <- (stats::median(old) - stats::median(cur)) < seMultiplier * se
-  ## the spread is the MAD (scaled to the SD of a normal population): one member with a lucky record
-  ## moves the SD by itself, and would hold open a population that has otherwise stopped
-  spreadCur <- stats::mad(cur)
   spreadOld <- stats::mad(old)
-  spreadStill <- spreadOld > 0 && abs(spreadCur - spreadOld) / spreadOld < sdChange
-  medianStill && spreadStill
+  list(window = window, gen = gens[now],
+       medianDropSE = if (se > 0) (stats::median(old) - stats::median(cur)) / se else Inf,
+       spreadChange = if (spreadOld > 0) abs(stats::mad(cur) - spreadOld) / spreadOld else Inf)
+}
+
+## Population values that are values: finite and below the `1e6` fail sentinel
+.usablePopvals <- function(v) {
+  v <- suppressWarnings(as.numeric(v))
+  v[is.finite(v) & v < 1e6]
 }
 
 controlSet <- function(control, ...) {
@@ -755,11 +710,43 @@ termsInDEoptim <- function(fireSense_spreadFormula, thresh, numParams) {
 }
 
 
-DEoptimToDataFrame <- function(d, item = "bestvalit") {
-  b <- lapply(d, function(dr) as.data.frame(dr$member[[item]]) |> setNames("bestValue"))
-  b <- rbindlist(b, idcol = "iter")
-  b[, iter := seq_len(.N)]   # one value per generation, over chunks of any length
-  b
+## Best, 10th percentile and median of each generation's population (failed trials left out)
+.populationByGeneration <- function(popvals, gens) {
+  rows <- lapply(seq_along(popvals), function(i) {
+    v <- .usablePopvals(popvals[[i]])
+    if (!length(v)) return(NULL)
+    data.frame(gen = gens[i], best = min(v), q10 = unname(stats::quantile(v, 0.1)), median = stats::median(v))
+  })
+  do.call(rbind, rows)
+}
+
+## The objective-function figure: the population's best, 10th percentile and median by generation, scaled
+## to the generations after the first tenth (the first ones are far above the rest), with what the early
+## stop sees in the subtitle (2026-10-02, replacing bestvalit with a smoother and 200-generation slopes)
+ggPlotFnPopulation <- function(pop, stats = NULL) {
+  long <- rbind(data.frame(gen = pop$gen, value = pop$best, line = "best"),
+                data.frame(gen = pop$gen, value = pop$q10, line = "10th percentile"),
+                data.frame(gen = pop$gen, value = pop$median, line = "median"))
+  long$line <- factor(long$line, levels = c("best", "10th percentile", "median"))
+  later <- pop[pop$gen > min(pop$gen) + 0.1 * diff(range(pop$gen)), , drop = FALSE]
+  if (!NROW(later)) later <- pop
+  ylim <- range(c(later$best, later$median))
+  ylim <- ylim + c(-1, 1) * 0.04 * diff(ylim)
+  subtitle <- if (is.null(stats)) {
+    "Early stop: not enough generations yet to judge"
+  } else {
+    sprintf(paste0("Over the last %d generations: median improved %.2f SE (stops below %s),\n",
+                   "spread changed %.0f%% (stops below %.0f%%)"),
+            as.integer(stats$window), stats$medianDropSE, getOption("clusters.deoptimConvergenceSE", 1),
+            100 * stats$spreadChange, 100 * getOption("clusters.deoptimConvergenceSDChange", 0.1))
+  }
+  ggplot(long, aes(.data$gen, .data$value, colour = .data$line, linetype = .data$line)) +
+    geom_line(linewidth = 0.7) +
+    scale_colour_manual(values = c(best = "#c2410c", `10th percentile` = "#1d6fa5", median = "black")) +
+    scale_linetype_manual(values = c(best = "solid", `10th percentile` = "dashed", median = "solid")) +
+    coord_cartesian(ylim = ylim) +
+    labs(x = "generation", y = "objective value", colour = NULL, linetype = NULL, subtitle = subtitle) +
+    theme_bw() + theme(legend.position = "bottom")
 }
 
 visualizeDEoptimLines <- function(d, terms, allPoints = FALSE) {
@@ -819,12 +806,6 @@ ggPlotFnMeans <- function(bmerged) {
     geom_smooth(se = TRUE) +
     # geom_ribbon(aes(ymin = lower95, ymax = upper95)) +
     facet_wrap(facets = "variable", scales = "free")
-}
-
-ggPlotFnSimple <- function(bmerged) {
-  ggplot(bmerged, aes(iter, bestValue)) +
-    geom_point() +
-    geom_smooth(se = TRUE)
 }
 
 ggPlotFnDif <- function(bmerged) {

@@ -51,7 +51,8 @@ another port block.}
 
 \item{auto_stop}{Logical; auto-stop clusters on GC (default \code{TRUE}).}
 
-\item{logPath}{Optional local file to append compact bootstrap / probe info.}
+\item{logPath}{Optional worker log file. A host that cannot write its folder logs to its own user
+cache folder instead (see \code{.hostLogPaths()}).}
 
 \item{libPath}{Optional site library path to prepend and use if writable.}
 

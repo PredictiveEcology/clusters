@@ -1,3 +1,11 @@
+# clusters (development version)
+
+* A host that cannot write the worker log folder gives its workers a log in its own user cache folder
+  (`tools::R_user_dir("clusters", "cache")/logs`), and the master says so. Each worker opens its log before it
+  connects back, so a log folder on a disk only the master has (FireSense 2026-10-07: `/mnt/fast`) stopped every
+  worker on the other hosts, and each fit failed after five tries. `makeClusterPSOCK()`'s `outfile` can be one
+  path per host, named by host.
+
 # clusters 0.0.71
 
 * `makeClusterPSOCK()` gives parallelly's elapsed time limit `connectTimeout + max(60, connectTimeout)`, longer than

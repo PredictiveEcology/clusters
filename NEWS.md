@@ -5,6 +5,64 @@
   subtitle: the median's improvement in standard errors and the spread's change over the window. It
   showed `bestvalit` with a smoother and straight lines through 200-generation windows, from a stopping
   test no longer used; those lines and their p-value table are gone.
+* `DEoptimIterative()` writes a small progress file (`progressFile`, default `DEoptimProgress_<runName>.csv`
+  in `figurePath`, or the working directory without one; `FALSE` for none): after each chunk the objective's
+  best value and quantiles and each parameter's best and quantiles, and a `FINISHED` row at the end. New
+  `DEoptimProgress()` reads such files and `DEoptimDashboard()` (`DEoptimDashboardApp()`; shiny in Suggests)
+  shows them, so a fit can be watched from any R session that sees the files.
+* The set-up check that finds workers which do not answer waits for the reply against its own clock. It relied
+  on the socket's timeout, which R never reaches while the later package's input handler keeps firing (after any
+  later callback, e.g. `shiny::testServer()`, has run outside the top level): a stopped worker hung it for good.
+
+# clusters 0.0.72
+
+* A host that cannot write the worker log folder gives its workers a log in its own user cache folder
+  (`tools::R_user_dir("clusters", "cache")/logs`), and the master says so. Each worker opens its log before it
+  connects back, so a log folder on a disk only the master has (FireSense 2026-10-07: `/mnt/fast`) stopped every
+  worker on the other hosts, and each fit failed after five tries. `makeClusterPSOCK()`'s `outfile` can be one
+  path per host, named by host.
+
+# clusters 0.0.71
+
+* `makeClusterPSOCK()` gives parallelly's elapsed time limit `connectTimeout + max(60, connectTimeout)`, longer than
+  the `timeout` of its listen for the worker. Both were `connectTimeout`, so when a worker's tunnel failed, the limit
+  had expired before the callers' handlers of the listen's warning ran (`Cache()` and SpaDES re-signal it, slowly).
+  The "reached elapsed time limit" error was raised inside those handlers, out of reach of the retry, and ended the
+  whole call (FireSense, 2026-10-04, a rebuild's 9th node).
+
+# clusters 0.0.70
+
+* `makeClusterPSOCK()` starts the workers one at a time, each with `timeout = connectTimeout`. 0.0.69 passed
+  `connectTimeout` times the number of workers, so a worker whose ssh tunnel failed blocked the master for
+  that long (4800 s with 40 workers) before the retry on another port block. Each worker now has its own port,
+  gets the long read timeout as soon as it connects, and its own element of a per-worker `user`. The elapsed
+  time limit of a failed start is cleared, so it cannot fire later in the caller's code (FireSense, 2026-10-04).
+
+# clusters 0.0.69
+
+* Workers started by `makeClusterPSOCK()` no longer quit after `connectTimeout` seconds without a call. 0.0.68 passed
+  `connectTimeout` to parallelly as `timeout`, which is also each worker's read timeout; only the master's end was
+  reset afterwards. A worker idle for 2 minutes then exited, and the next call failed with "error reading from
+  connection" (FireSense, 2026-10-03: fits died after start-up workers were replaced). Both ends now get `timeout`
+  once the cluster has started, and during the start the workers' timeout is `connectTimeout` times the number of
+  workers, so the first workers to connect outlast a slow start of the rest (12 clusters starting at once took 165 s).
+
+# clusters 0.0.68
+
+* `makeClusterPSOCK()` no longer hangs for up to 30 days when a worker never connects back (FireSense 02e: ssh exited
+  on "remote port forwarding failed", five fits waited 5-17 h). parallelly bounds that wait by `timeout`, not
+  `connectTimeout`, so the wrapper now waits `connectTimeout`, retries `tries` times on a new port block, and then sets
+  the sockets' read timeout to `timeout`.
+
+# clusters 0.0.67
+
+* `.unwrap()` on the worker nodes (R/clusterSetup.R:683) is called with `filebackedPath = NULL`, the new name of its `cachePath` argument in reproducible; this needs reproducible >= 3.2.1.9062, where `cachePath` is deprecated.
+
+# clusters 0.0.66
+
+* New `currentCluster(cl)` returns the cluster a fit's workers are on now. Rebalancing and dead-worker rebuilds
+  replace nodes in the copy of `cl` inside `DEoptimIterative()`, so a caller using its own `cl` after the fit
+  got "invalid connection" (FireSense ELF 5.2.1 fold 2, `rescorePopulation()` after convergence).
 
 # clusters 0.0.65
 

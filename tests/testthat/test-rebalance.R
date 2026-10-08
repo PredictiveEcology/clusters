@@ -113,6 +113,8 @@ test_that("a running cluster moves its workers off a full host, keeps working, a
   id <- reserveCores(data.frame(host = c("full", "free"), assign = c(3L, 1L)))
   token <- new.env(); token$id <- id
   attr(cl, "reservationToken") <- token
+  current <- new.env(); current$cluster <- cl
+  attr(cl, "currentCluster") <- current
   started <- new.env()
   rebalance <- getFromNamespace(".rebalanceFn", "clusters")(fakePlan(c(full = -2, free = 5), started),
                                                             pkgsNeeded = character(0), objsNeeded = character(0),
@@ -132,6 +134,21 @@ test_that("a running cluster moves its workers off a full host, keeps working, a
   expect_equal(res$workers[res$id == id & res$host == "free"], 4L)
   expect_false(any(res$id == id & res$host == "full"))
   expect_true(is.function(attr(out, "restartCluster")))
+  ## the caller still holds the cluster it passed in, whose moved workers are stopped (fireSenseUtils
+  ## then called clusterApplyLB() on it: "invalid connection"); currentCluster() gives the live one
+  expect_error(parallel::clusterEvalQ(cl, 1))
+  expect_equal(unlist(parallel::clusterEvalQ(currentCluster(cl), 1)), rep(1, 4))
+})
+
+test_that("currentCluster() returns the cluster's replacement when there is one, else the cluster itself", {
+  cl <- structure(list(1), class = "cluster")
+  expect_identical(currentCluster(cl), cl)
+  expect_null(currentCluster(NULL))
+  other <- structure(list(2), class = "cluster")
+  attr(cl, "currentCluster") <- list2env(list(cluster = other))
+  expect_identical(currentCluster(cl), other)
+  attr(cl, "currentCluster") <- new.env()
+  expect_identical(currentCluster(cl), cl)
 })
 
 test_that("nothing moves for fewer than the minimum, and a failed move leaves the cluster and its booking", {
@@ -174,7 +191,7 @@ test_that("DEoptimIterative() asks the cluster to rebalance every clusters.rebal
   DE <- suppressWarnings(suppressMessages(clusters:::DEoptimIterative(
     function(par) sum((par - 0.3)^2), lower = c(a = 0, b = 0), upper = c(a = 1, b = 1),
     control = list(NP = 4L, strategy = 2L, itermax = 5, trace = FALSE, cluster = cl),
-    figurePath = FALSE, .plots = NULL, runName = "rb", .verbose = -1)))
+    figurePath = FALSE, progressFile = FALSE, .plots = NULL, runName = "rb", .verbose = -1)))
   ## after generations 2 and 4; not after 5, the last
   expect_length(calls$at, 2L)
   expect_length(DE, 5L)
@@ -183,7 +200,7 @@ test_that("DEoptimIterative() asks the cluster to rebalance every clusters.rebal
   DE <- suppressWarnings(suppressMessages(clusters:::DEoptimIterative(
     function(par) sum((par - 0.4)^2), lower = c(a = 0, b = 0), upper = c(a = 1, b = 1),
     control = list(NP = 4L, strategy = 2L, itermax = 3, trace = FALSE, cluster = cl),
-    figurePath = FALSE, .plots = NULL, runName = "rb0", .verbose = -1)))
+    figurePath = FALSE, progressFile = FALSE, .plots = NULL, runName = "rb0", .verbose = -1)))
   expect_length(calls$at, 0L)
 })
 

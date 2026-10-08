@@ -16,14 +16,16 @@ makeClusterPSOCK(
   tries = 5L,
   delay = 5,
   renice = 20,
-  revtunnel = TRUE
+  revtunnel = TRUE,
+  connectTimeout = 2 * 60,
+  timeout = 30 * 24 * 60 * 60
 )
 }
 \arguments{
 \item{workers}{The hostnames of workers (as a character vector) or the
 number of localhost workers (as a positive integer).}
 
-\item{outfile}{Optional log file path.}
+\item{outfile}{Optional log file path: one for all workers, or one per host, named by host.}
 
 \item{rscript_libs}{Optional library paths for workers.}
 
@@ -39,12 +41,10 @@ and became the workers' library path whenever \code{rscript_libs} was not also g
 
 \item{rshopts}{Character vector of options passed to \code{ssh}. The defaults disable X11 forwarding and fail fast when a tunnel cannot be established.}
 
-\item{tries, delay}{Maximum number of attempts done to launch each node
-with \code{makeNode()} and the delay (in seconds) in-between attempts.
-If argument \code{port} specifies more than one port, e.g. \code{port = "random"}
-then a random port will be drawn and validated at most \code{tries} times.
-Arguments \code{tries} and \code{delay} are used only when
-\code{setup_strategy == "sequential"}.}
+\item{tries}{Number of attempts to start the cluster. After a worker fails to connect back within
+\code{connectTimeout}, the next attempt uses a new port block (see \code{.tunnelPortBlock()}).}
+
+\item{delay}{Seconds between attempts.}
 
 \item{renice}{A numerical 'niceness' (priority) to set for the worker
 processes.}
@@ -56,6 +56,14 @@ If FALSE, then the worker will try to connect directly to port \code{port} on
 \code{master}.
 If NA, then TRUE or FALSE is inferred from inspection of \code{rshcmd[1]}.
 For more details, see below.}
+
+\item{connectTimeout}{Seconds to wait for each worker to connect back. Workers are started one at
+a time. It is passed to parallelly as \code{timeout}, which bounds the listen for the worker; parallelly's
+own elapsed time limit (its \code{connectTimeout}) is set longer, so the listen always ends first
+(see Details).}
+
+\item{timeout}{Seconds a master waits for a worker's reply once the cluster is running (the
+sockets' read timeout). Not used while waiting for workers to connect back.}
 }
 \description{
 Lightweight wrapper for parallelly::makeClusterPSOCK
@@ -67,4 +75,17 @@ default packages as an \verb{R_DEFAULT_PACKAGES=} assignment in front of the com
 that assignment ends up after \code{nice}, which then fails to run it ("nice:
 'R_DEFAULT_PACKAGES=...': No such file or directory"). For such a command the default packages
 are put among \code{env}'s own assignments instead.
+
+parallelly uses \code{timeout} for two things: how long the master listens for a worker to connect
+back, and each worker's read timeout (a worker with no call from the master for that long
+quits). So the workers are started one at a time, each with \code{timeout = connectTimeout}: a worker
+that never connects back (a failed reverse tunnel) is found after \code{connectTimeout}, not after a
+multiple of it for the number of workers, and the next attempt uses another port block. As soon
+as a worker has connected, both ends of its socket get \code{timeout}, so a connected worker does not
+quit while the others start. Each worker gets its own port, below the ephemeral range.
+
+parallelly's elapsed time limit is set to \code{connectTimeout + max(60, connectTimeout)}, not to
+\code{connectTimeout}. When the listen times out, R warns, and calling handlers of that warning in the
+caller (\code{Cache()} and SpaDES re-signal it, slowly) run while the limit is still set. With equal
+values the limit had passed by then, and its error, raised inside a handler, was not caught here.
 }

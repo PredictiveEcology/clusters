@@ -25,10 +25,12 @@
 #'   (default `c("https://cloud.r-project.org","https://cran.r-project.org")`).
 #' @param rshopts Character vector of SSH options passed by parallelly. Defaults to
 #'   [.sshTunnelOpts()]: [.sshKeepaliveOpts()], which bounds how long the master waits on a worker that
-#'   has died, and `ExitOnForwardFailure=yes`, so a reverse tunnel that cannot be set up fails and is
-#'   retried on another port.
+#'   has died, and `ExitOnForwardFailure=yes`, so a reverse tunnel that cannot be set up fails. The
+#'   worker then never connects back, [makeClusterPSOCK()] gives up after `connectTimeout` and retries on
+#'   another port block.
 #' @param rscript Character; path to `Rscript` on workers (default `"Rscript"`).
-#' @param logPath Optional local file to append compact bootstrap / probe info.
+#' @param logPath Optional worker log file. A host that cannot write its folder logs to its own user
+#'   cache folder instead (see `.hostLogPaths()`).
 #' @param libPath Optional site library path to prepend and use if writable.
 #' @param auto_stop Logical; auto-stop clusters on GC (default `TRUE`).
 #' @param build_final_cluster Logical; if `TRUE` launch the final cluster (default `TRUE`).
@@ -116,8 +118,6 @@ plan_psock_min <- function(
     rshopts = rshopts,
     revtunnel = TRUE,             # reverse SSH tunnel (robust)  [1](https://www.hwcooling.net/en/intel-reverses-course-hyper-threading-returns-to-cpus/)
     setup_strategy = ifelse(isRstudio(), "sequential", "parallel"),# sequential avoids setup race/hangs       [1](https://www.hwcooling.net/en/intel-reverses-course-hyper-threading-returns-to-cpus/)
-    connectTimeout = 2 * 60,
-    timeout = 30 * 24 * 60 * 60,
     autoStop = auto_stop
   )
   cl_probe <- startProbe()
@@ -127,6 +127,9 @@ plan_psock_min <- function(
   
   # Export packages list (minimal, no diagnostics)
   parallel::clusterExport(cl_probe, varlist = "pkgsNeeded", envir = environment())
+
+  ## Where each host's workers write their log (see .hostLogPaths())
+  hostLogs <- .hostLogPaths(cl_probe, hosts, logPath)
   
   # 2) Install & load pkgsNeeded strictly into per-user library
  # Deal with other package stuff
@@ -163,7 +166,7 @@ plan_psock_min <- function(
     #   #                                    # , rscript = c("nice", RscriptPath)
     #   # )
     # })
-    parallel::clusterExport(cl_probe, list("master_libs", "logPath", "pkgsNeeded"),
+    parallel::clusterExport(cl_probe, list("master_libs", "pkgsNeeded"),
                             envir = environment())
     
     # The master library is mirrored to every host below and other jobs may be
@@ -211,10 +214,6 @@ plan_psock_min <- function(
     # Nothing is installed on the hosts either: the mirror above is complete, and
     # a host that still cannot load a package is named by verifyClusterHosts()
     # below rather than patched over the network mid-job.
-    parallel::clusterEvalQ(cl_probe, {
-      if (!is.null(logPath) && is.character(logPath))
-        dir.create(dirname(logPath), recursive = TRUE, showWarnings = FALSE)
-    })
     # A host can be missing a *system* library the synced packages link against
     # (libtbb.so.12 for RcppParallel, say). That needs no root: ship the file to
     # a user-writable directory and point LD_LIBRARY_PATH at it. Done before the
@@ -269,7 +268,7 @@ plan_psock_min <- function(
         rscript_libs = master_libs, rscript_envs = rscript_envs,
         rscript_startup = startup_lines, rshopts = rshopts, revtunnel = TRUE,
         setup_strategy = ifelse(isRstudio(), "sequential", "parallel"),
-        connectTimeout = 2 * 60, timeout = 30 * 24 * 60 * 60, autoStop = auto_stop)
+        autoStop = auto_stop)
       on.exit(.stopCluster(cl_verify), add = TRUE)
     }
     # Same alignment rule as above: one worker per element of `hosts`.
@@ -403,11 +402,9 @@ plan_psock_min <- function(
       rscript_envs = rscript_envs,
       rscript_startup = startup_lines,
       rshopts = rshopts,
-      outfile = logPath,
+      outfile = hostLogs,
       revtunnel = TRUE,
       setup_strategy = ifelse(isRstudio(), "sequential", "parallel"),
-      connectTimeout = 2 * 60,
-      timeout = 30 * 24 * 60 * 60,
       autoStop = autoStop
     )
     st <- system.time(cl <- startNodes(workers))

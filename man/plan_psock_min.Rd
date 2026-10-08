@@ -43,14 +43,16 @@ plan_psock_min(
 
 \item{rshopts}{Character vector of SSH options passed by parallelly. Defaults to
 \code{\link[=.sshTunnelOpts]{.sshTunnelOpts()}}: \code{\link[=.sshKeepaliveOpts]{.sshKeepaliveOpts()}}, which bounds how long the master waits on a worker that
-has died, and \code{ExitOnForwardFailure=yes}, so a reverse tunnel that cannot be set up fails and is
-retried on another port.}
+has died, and \code{ExitOnForwardFailure=yes}, so a reverse tunnel that cannot be set up fails. The
+worker then never connects back, \code{\link[=makeClusterPSOCK]{makeClusterPSOCK()}} gives up after \code{connectTimeout} and retries on
+another port block.}
 
 \item{rscript}{Character; path to \code{Rscript} on workers (default \code{"Rscript"}).}
 
 \item{auto_stop}{Logical; auto-stop clusters on GC (default \code{TRUE}).}
 
-\item{logPath}{Optional local file to append compact bootstrap / probe info.}
+\item{logPath}{Optional worker log file. A host that cannot write its folder logs to its own user
+cache folder instead (see \code{.hostLogPaths()}).}
 
 \item{libPath}{Optional site library path to prepend and use if writable.}
 

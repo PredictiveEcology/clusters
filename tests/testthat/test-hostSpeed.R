@@ -48,7 +48,7 @@ test_that("DEoptimIterative() on a local PSOCK cluster writes hostSpeed.rds", {
   suppressWarnings(suppressMessages(
     clusters:::DEoptimIterative(fn, lower = c(a = 0, b = 0), upper = c(a = 1, b = 1),
                                 control = list(NP = 8L, itermax = 2L, trace = FALSE, cluster = cl),
-                                figurePath = FALSE, .plots = NULL, cachePath = cachePath,
+                                figurePath = FALSE, progressFile = FALSE, .plots = NULL, cachePath = cachePath,
                                 runName = "hs", .verbose = -1)))
   got <- readRDS(file.path(d, "hostSpeed.rds"))
   expect_true(all(got$host == Sys.info()[["nodename"]]))   # one row per computed chunk
@@ -59,7 +59,7 @@ test_that("DEoptimIterative() on a local PSOCK cluster writes hostSpeed.rds", {
   suppressWarnings(suppressMessages(
     clusters:::DEoptimIterative(fn, lower = c(a = 0, b = 0), upper = c(a = 1, b = 1),
                                 control = list(NP = 8L, itermax = 2L, trace = FALSE, cluster = cl),
-                                figurePath = FALSE, .plots = NULL, cachePath = cachePath,
+                                figurePath = FALSE, progressFile = FALSE, .plots = NULL, cachePath = cachePath,
                                 runName = "hs", .verbose = -1)))
   expect_equal(nrow(readRDS(file.path(d, "hostSpeed.rds"))), nrow(got))
 })

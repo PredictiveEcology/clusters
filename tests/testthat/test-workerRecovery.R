@@ -53,6 +53,32 @@ test_that("a node that is alive but never answers is found within the timeout", 
   killAll(pids); try(parallel::stopCluster(cl), silent = TRUE)
 })
 
+test_that("a node that never answers is found within the timeout while later's input handler is firing", {
+  skip_if_not_installed("later")
+  ## After a later callback has run outside R's top level (as shiny::testServer() leaves a session),
+  ## later's input handler fires every millisecond, and R's socket read never reaches its timeout: a read
+  ## from a stopped worker hung for good (2026-10-08). That state cannot be undone, so it is made in a
+  ## worker process, which then runs the check on a cluster of its own.
+  outer <- localTestCluster(1L)
+  socketTimeout(outer[[1]]$con, 60)                     # a hang here is a failure, not a stuck suite
+  check <- function() {
+    later::later(function() NULL, 0)
+    Sys.sleep(0.2)
+    later::run_now()
+    cl <- parallel::makeCluster(2L)
+    pids <- unlist(parallel::clusterCall(cl, Sys.getpid))
+    on.exit(for (p in pids) tools::pskill(p, tools::SIGKILL))
+    tools::pskill(pids[1], tools::SIGSTOP)
+    deadNodes <- utils::getFromNamespace(".deadNodes", "clusters")
+    took <- system.time(dead <- deadNodes(cl, seconds = 2))[["elapsed"]]
+    list(dead = dead, took = took)
+  }
+  environment(check) <- globalenv()
+  out <- parallel::clusterCall(outer, check)[[1]]
+  expect_identical(out$dead, 1L)
+  expect_lt(out$took, 20)
+})
+
 test_that("a node that cannot be replaced stops set-up by default, and is dropped on request", {
   cl <- localCluster(3L)
   pids <- attr(cl, "pids")
@@ -233,7 +259,7 @@ test_that("DEoptimIterative() finishes with the result of a run with no dead wor
       fn, lower = lower, upper = upper,
       control = list(NP = 4L, strategy = 2L, itermax = 3, trace = FALSE, cluster = cl),
       flag = flag, stopOnce = stopOnce,
-      figurePath = FALSE, .plots = NULL, runName = "dead", .verbose = -1)))
+      figurePath = FALSE, progressFile = FALSE, .plots = NULL, runName = "dead", .verbose = -1)))
   }
   clean <- run(FALSE)
   took <- system.time(withDeath <- run(TRUE))[["elapsed"]]

@@ -27,7 +27,7 @@ runChunked <- function(itermax, iterStep, cachePath, calls, fn = function(par) s
   msgs <- testthat::capture_messages(suppressWarnings(
     DE <- clusters:::DEoptimIterative(fn, lower = lower, upper = upper,
                                        control = list(NP = 8L, strategy = 2L, itermax = itermax, trace = FALSE),
-                                       iterStep = iterStep, figurePath = FALSE, .plots = NULL,
+                                       iterStep = iterStep, figurePath = FALSE, progressFile = FALSE, .plots = NULL,
                                        cachePath = cachePath, runName = "chunks", .verbose = -1)))
   list(DE = DE, messages = msgs)
 }

@@ -2,9 +2,13 @@
 
 export(.sshKeepaliveOpts)
 export(.sshTunnelOpts)
+export(DEoptimDashboard)
+export(DEoptimDashboardApp)
 export(DEoptimIterative)
 export(DEoptimIterative2)
+export(DEoptimProgress)
 export(clusterSetup)
+export(currentCluster)
 export(dirNew)
 export(freeCoresLessReserved)
 export(getHostCombination)

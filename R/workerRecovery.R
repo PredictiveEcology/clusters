@@ -19,15 +19,60 @@
   invisible(cl)
 }
 
-## Does node `i` of `cl` return a trivial call within `seconds`?
-.nodeAnswers <- function(cl, i, seconds) {
-  con <- cl[[i]]$con
-  if (inherits(con, "sockconn")) {
-    old <- try(socketTimeout(con, seconds), silent = TRUE)
-    if (inherits(old, "try-error")) return(FALSE)
-    on.exit(try(socketTimeout(con, old), silent = TRUE), add = TRUE)
+## The same, at the workers' end of the sockets. parallelly gives each worker its `timeout` as the
+## worker's read timeout (TIMEOUT=), and makeClusterPSOCK() passes `connectTimeout` there to bound the
+## connect, and sets this as soon as the worker has connected. Left at `connectTimeout`, a worker
+## quit after that many seconds without a call from the master, and the master's next call failed
+## with "error reading from connection" (FireSense, 2026-10-03: fits died after start-up workers were
+## replaced, which left the others idle for over 2 minutes).
+.setWorkerSideTimeout <- function(cl, seconds) {
+  socks <- which(vapply(cl, function(node) inherits(node$con, "sockconn"), logical(1)))
+  if (!length(socks)) return(invisible(cl))
+  setTimeout <- function(seconds) {
+    for (i in getAllConnections()) {
+      con <- getConnection(i)
+      if (inherits(con, "sockconn")) socketTimeout(con, seconds)
+    }
+    NULL
   }
-  isTRUE(tryCatch(parallel::clusterCall(cl[i], function() TRUE)[[1]], error = function(e) FALSE))
+  ## A function defined here has the clusters namespace as its environment, and a fresh worker loads
+  ## clusters and its dependencies to read it: 1.5 s per worker, one worker after another while a
+  ## cluster starts (FireSense, 2026-10-04). It needs only base R.
+  environment(setTimeout) <- baseenv()
+  parallel::clusterCall(cl[socks], setTimeout, seconds)
+  invisible(cl)
+}
+
+## Does node `i` of `cl` return a trivial call within `seconds`?
+## The wait is bounded here, not by socketTimeout(): R's socket read (R_SocketWait() in
+## src/modules/internet/Rsock.c, R 4.6.1) only counts its timeout when select() returns with nothing
+## ready, and it also wakes for every R input handler. later's handler, once its file descriptor has
+## been made ready and R is not at top level, makes it ready again every millisecond, so a read from a
+## stopped worker never times out (2026-10-08: after shiny::testServer(), or any later callback, in the
+## same session). So the reply is waited for with socketSelect(), against our own deadline, and read
+## only once it has arrived.
+.nodeAnswers <- function(cl, i, seconds) {
+  node <- cl[[i]]
+  if (!inherits(node$con, "sockconn"))
+    return(isTRUE(tryCatch(parallel::clusterCall(cl[i], function() TRUE)[[1]], error = function(e) FALSE)))
+  sendCall <- utils::getFromNamespace("sendCall", "parallel")
+  recvResult <- utils::getFromNamespace("recvResult", "parallel")
+  ok <- tryCatch({ sendCall(node, function() TRUE, list()); TRUE }, error = function(e) FALSE)
+  if (!ok || !.replyArrives(node$con, seconds)) return(FALSE)
+  isTRUE(tryCatch(recvResult(node), error = function(e) FALSE))
+}
+
+## Is `con` readable within `seconds`? socketSelect() returns early when an input handler fires, so it
+## is called again until the deadline, measured by the clock.
+.replyArrives <- function(con, seconds) {
+  deadline <- proc.time()[["elapsed"]] + seconds
+  repeat {
+    left <- deadline - proc.time()[["elapsed"]]
+    if (left <= 0) return(FALSE)
+    ready <- tryCatch(socketSelect(list(con), timeout = left), error = function(e) NA)
+    if (is.na(ready)) return(FALSE)
+    if (isTRUE(ready)) return(TRUE)
+  }
 }
 
 .deadNodes <- function(cl, seconds) {

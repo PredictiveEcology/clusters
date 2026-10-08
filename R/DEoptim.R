@@ -209,6 +209,12 @@
 #' @param cachePath Passed to the progress figures that read the cache.
 #' @param runName Distinguishes this fit's cached chunks from another fit's.
 #' @param .verbose Passed to [reproducible::Cache()].
+#' @param progressFile Where to write the fit's progress, a long-format csv read by [DEoptimDashboard()]
+#'   (columns `time`, `generation`, `variable`, `best`, `q10`, `median`, `q90`): after each chunk one row
+#'   for the objective (`variable = "objective"`) and one per parameter, and a `FINISHED` row when the call
+#'   returns. `NULL` (the default) writes `DEoptimProgress_<runName>.csv` in `figurePath`, or in the working
+#'   directory when `figurePath` is `FALSE`; `FALSE` writes none; a character path is that file. The file is
+#'   emptied when the call starts, so a fit resumed from the cache rewrites its history.
 #' @param plotEvery Generations between progress figures: a chunk's figures are drawn when its
 #'   generations include a multiple of `plotEvery`. The final chunk's figures are always drawn, even
 #'   when that chunk is replayed from the cache. `1` draws them after every chunk.
@@ -219,8 +225,9 @@ DEoptimIterative <- function(fn, lower, upper, control, ...,
                               # formulaToFit, covMinMax, tests, maxFireSpread, mutuallyExclusive,
                               # doObjFunAssertions, Nreps, objFunCoresInternal, thresh, rep,
                               .plots, figurePath, cachePath, runName = 1, .verbose = TRUE,
-                              plotEvery = 25L) {
+                              plotEvery = 25L, progressFile = NULL) {
   DE <- list()
+  progressFile <- .progressStart(progressFile, figurePath, runName)
   ranEvaluations <- list()   # evaluations computed in this call, not replayed from the cache
   ## Progress figures are drawn by the master while every worker waits: 8.3 s of each 53 s generation
   ## (16% of the wall time) in a FireSense fit (ELF 4.2.2, 2026-09-28). They are drawn only for a chunk
@@ -415,6 +422,7 @@ DEoptimIterative <- function(fn, lower, upper, control, ...,
         DE[[iter]]$member$popvalSum <- rescoreStats$sum[match(popKeys, rescoreStats$keys)]
       }
     }
+    .progressAppend(progressFile, DE[[iter]]$member, chunkEnds[iter], names(lower))
     known <- if (length(popval) == NROW(control$initialpop)) {
       ok <- !is.na(popval)
       list(keys = apply(control$initialpop, 1, .parKey)[ok], vals = popval[ok])
@@ -496,6 +504,7 @@ DEoptimIterative <- function(fn, lower, upper, control, ...,
       break
     }
   }
+  .progressAppend(progressFile, NULL, chunkEnds[length(DE)], NULL, finished = TRUE)
   .showHostSpeed(ranEvaluations)
   DE
 }

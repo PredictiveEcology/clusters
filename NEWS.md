@@ -1,4 +1,4 @@
-# clusters (development version)
+# clusters 0.0.73
 
 * The objective-function figure (`objFun/`, drawn every `plotEvery` generations) now shows the
   population's best, 10th percentile and median by generation, with what the early stop judges in the

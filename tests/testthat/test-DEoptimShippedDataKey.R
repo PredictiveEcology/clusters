@@ -25,7 +25,7 @@ fitWith <- function(target, cachePath) {
   set.seed(1) # the same starting population for both fits, as two folds of one ELF have
   DE <- suppressMessages(suppressWarnings(
     clusters::DEoptimIterative(fn, lower = lower, upper = upper, control = control,
-                                figurePath = FALSE, cachePath = cachePath, runName = "fold",
+                                figurePath = FALSE, progressFile = FALSE, cachePath = cachePath, runName = "fold",
                                 .verbose = -1)))
   DE[[length(DE)]]$optim$bestmem
 }

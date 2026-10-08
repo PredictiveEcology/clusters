@@ -37,7 +37,7 @@ runDE <- function(itermax, cachePath, counter, NP = 8L, strategy = 2L, cluster =
                        reproducible.useCache = FALSE)
   suppressWarnings(suppressMessages(
     clusters:::DEoptimIterative(fn, lower = lower, upper = upper, control = control,
-                                 figurePath = FALSE, .plots = NULL, cachePath = cachePath,
+                                 figurePath = FALSE, progressFile = FALSE, .plots = NULL, cachePath = cachePath,
                                  runName = "test", .verbose = -1)
   ))
 }
@@ -130,7 +130,7 @@ test_that("DEoptim settings passed to clusterSetup() reach DEoptim", {
   withr::local_options(reproducible.cachePath = withr::local_tempdir(), reproducible.useCache = FALSE)
   DE <- suppressWarnings(suppressMessages(clusters:::DEoptimIterative(
     fn, lower = lower, upper = upper, control = control,
-    figurePath = FALSE, .plots = NULL, runName = "ctl", .verbose = -1)))
+    figurePath = FALSE, progressFile = FALSE, .plots = NULL, runName = "ctl", .verbose = -1)))
   for (nm in names(args)) expect_equal(seen$control[[nm]], args[[nm]], label = nm)
   expect_identical(as.integer(seen$control$NP), 8L)
 })
@@ -176,7 +176,7 @@ test_that("with a cluster, each generation after the first evaluates at most NP 
   DE <- suppressWarnings(suppressMessages(clusters:::DEoptimIterative(
     fnWorker, lower = lower, upper = upper,
     control = list(NP = 4L, strategy = 2L, itermax = 3, trace = FALSE, cluster = cl),
-    figurePath = FALSE, .plots = NULL, runName = "cl", .verbose = -1)))
+    figurePath = FALSE, progressFile = FALSE, .plots = NULL, runName = "cl", .verbose = -1)))
   calls <- sum(unlist(parallel::clusterEvalQ(cl, .nCalls)))
   ## re-evaluating the carried population, as before, cost 4 + 4 + 2 x 8 = 24
   expect_lte(calls, 4L + 4L + 2L * 4L)

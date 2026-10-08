@@ -43,7 +43,7 @@ runIterative <- function(iterStep, cc, seen) {
     clusters:::DEoptimIterative(noImprovementObjective(init, seen), lower = lower, upper = upper,
                                  control = list(NP = 8L, strategy = 6L, itermax = 6, trace = FALSE, c = cc,
                                                 initialpop = init),
-                                 iterStep = iterStep, figurePath = FALSE, .plots = NULL, cachePath = cachePath,
+                                 iterStep = iterStep, figurePath = FALSE, progressFile = FALSE, .plots = NULL, cachePath = cachePath,
                                  runName = "cguard", .verbose = -1)))
 }
 

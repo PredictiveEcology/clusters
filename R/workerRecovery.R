@@ -44,14 +44,35 @@
 }
 
 ## Does node `i` of `cl` return a trivial call within `seconds`?
+## The wait is bounded here, not by socketTimeout(): R's socket read (R_SocketWait() in
+## src/modules/internet/Rsock.c, R 4.6.1) only counts its timeout when select() returns with nothing
+## ready, and it also wakes for every R input handler. later's handler, once its file descriptor has
+## been made ready and R is not at top level, makes it ready again every millisecond, so a read from a
+## stopped worker never times out (2026-10-08: after shiny::testServer(), or any later callback, in the
+## same session). So the reply is waited for with socketSelect(), against our own deadline, and read
+## only once it has arrived.
 .nodeAnswers <- function(cl, i, seconds) {
-  con <- cl[[i]]$con
-  if (inherits(con, "sockconn")) {
-    old <- try(socketTimeout(con, seconds), silent = TRUE)
-    if (inherits(old, "try-error")) return(FALSE)
-    on.exit(try(socketTimeout(con, old), silent = TRUE), add = TRUE)
+  node <- cl[[i]]
+  if (!inherits(node$con, "sockconn"))
+    return(isTRUE(tryCatch(parallel::clusterCall(cl[i], function() TRUE)[[1]], error = function(e) FALSE)))
+  sendCall <- utils::getFromNamespace("sendCall", "parallel")
+  recvResult <- utils::getFromNamespace("recvResult", "parallel")
+  ok <- tryCatch({ sendCall(node, function() TRUE, list()); TRUE }, error = function(e) FALSE)
+  if (!ok || !.replyArrives(node$con, seconds)) return(FALSE)
+  isTRUE(tryCatch(recvResult(node), error = function(e) FALSE))
+}
+
+## Is `con` readable within `seconds`? socketSelect() returns early when an input handler fires, so it
+## is called again until the deadline, measured by the clock.
+.replyArrives <- function(con, seconds) {
+  deadline <- proc.time()[["elapsed"]] + seconds
+  repeat {
+    left <- deadline - proc.time()[["elapsed"]]
+    if (left <= 0) return(FALSE)
+    ready <- tryCatch(socketSelect(list(con), timeout = left), error = function(e) NA)
+    if (is.na(ready)) return(FALSE)
+    if (isTRUE(ready)) return(TRUE)
   }
-  isTRUE(tryCatch(parallel::clusterCall(cl[i], function() TRUE)[[1]], error = function(e) FALSE))
 }
 
 .deadNodes <- function(cl, seconds) {

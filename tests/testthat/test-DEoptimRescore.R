@@ -50,7 +50,7 @@ runRescored <- function(itermax, every, cachePath, seen, rescoreArgs = list()) {
   msgs <- testthat::capture_messages(suppressWarnings(
     DE <- clusters:::DEoptimIterative(noisyObjective(seen), lower = lower, upper = upper,
                                        control = list(NP = 8L, strategy = 2L, itermax = itermax, trace = FALSE),
-                                       figurePath = FALSE, .plots = NULL, cachePath = cachePath,
+                                       figurePath = FALSE, progressFile = FALSE, .plots = NULL, cachePath = cachePath,
                                        runName = "rescore", .verbose = -1)))
   list(DE = DE, messages = msgs)
 }

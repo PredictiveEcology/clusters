@@ -191,7 +191,7 @@ test_that("DEoptimIterative() asks the cluster to rebalance every clusters.rebal
   DE <- suppressWarnings(suppressMessages(clusters:::DEoptimIterative(
     function(par) sum((par - 0.3)^2), lower = c(a = 0, b = 0), upper = c(a = 1, b = 1),
     control = list(NP = 4L, strategy = 2L, itermax = 5, trace = FALSE, cluster = cl),
-    figurePath = FALSE, .plots = NULL, runName = "rb", .verbose = -1)))
+    figurePath = FALSE, progressFile = FALSE, .plots = NULL, runName = "rb", .verbose = -1)))
   ## after generations 2 and 4; not after 5, the last
   expect_length(calls$at, 2L)
   expect_length(DE, 5L)
@@ -200,7 +200,7 @@ test_that("DEoptimIterative() asks the cluster to rebalance every clusters.rebal
   DE <- suppressWarnings(suppressMessages(clusters:::DEoptimIterative(
     function(par) sum((par - 0.4)^2), lower = c(a = 0, b = 0), upper = c(a = 1, b = 1),
     control = list(NP = 4L, strategy = 2L, itermax = 3, trace = FALSE, cluster = cl),
-    figurePath = FALSE, .plots = NULL, runName = "rb0", .verbose = -1)))
+    figurePath = FALSE, progressFile = FALSE, .plots = NULL, runName = "rb0", .verbose = -1)))
   expect_length(calls$at, 0L)
 })
 

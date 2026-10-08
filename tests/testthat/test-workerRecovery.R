@@ -233,7 +233,7 @@ test_that("DEoptimIterative() finishes with the result of a run with no dead wor
       fn, lower = lower, upper = upper,
       control = list(NP = 4L, strategy = 2L, itermax = 3, trace = FALSE, cluster = cl),
       flag = flag, stopOnce = stopOnce,
-      figurePath = FALSE, .plots = NULL, runName = "dead", .verbose = -1)))
+      figurePath = FALSE, progressFile = FALSE, .plots = NULL, runName = "dead", .verbose = -1)))
   }
   clean <- run(FALSE)
   took <- system.time(withDeath <- run(TRUE))[["elapsed"]]

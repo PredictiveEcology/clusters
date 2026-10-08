@@ -38,6 +38,7 @@ Suggests:
     roxygen2,
     rmarkdown,
     sf,
+    shiny,
     SpaDES.core,
     terra,
     testthat,

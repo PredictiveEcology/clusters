@@ -16,7 +16,8 @@ DEoptimIterative(
   cachePath,
   runName = 1,
   .verbose = TRUE,
-  plotEvery = 25L
+  plotEvery = 25L,
+  progressFile = NULL
 )
 
 DEoptimIterative2(...)
@@ -45,6 +46,13 @@ the rest get this function's defaults. \code{itermax} is the total number of gen
 \item{plotEvery}{Generations between progress figures: a chunk's figures are drawn when its
 generations include a multiple of \code{plotEvery}. The final chunk's figures are always drawn, even
 when that chunk is replayed from the cache. \code{1} draws them after every chunk.}
+
+\item{progressFile}{Where to write the fit's progress, a long-format csv read by \code{\link[=DEoptimDashboard]{DEoptimDashboard()}}
+(columns \code{time}, \code{generation}, \code{variable}, \code{best}, \code{q10}, \code{median}, \code{q90}): after each chunk one row
+for the objective (\code{variable = "objective"}) and one per parameter, and a \code{FINISHED} row when the call
+returns. \code{NULL} (the default) writes \verb{DEoptimProgress_<runName>.csv} in \code{figurePath}, or in the working
+directory when \code{figurePath} is \code{FALSE}; \code{FALSE} writes none; a character path is that file. The file is
+emptied when the call starts, so a fit resumed from the cache rewrites its history.}
 }
 \value{
 A list with one \code{\link[DEoptim:DEoptim]{DEoptim::DEoptim()}} result per chunk run, in order.

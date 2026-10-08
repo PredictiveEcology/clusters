@@ -5,6 +5,9 @@
   best value and quantiles and each parameter's best and quantiles, and a `FINISHED` row at the end. New
   `DEoptimProgress()` reads such files and `DEoptimDashboard()` (`DEoptimDashboardApp()`; shiny in Suggests)
   shows them, so a fit can be watched from any R session that sees the files.
+* The set-up check that finds workers which do not answer waits for the reply against its own clock. It relied
+  on the socket's timeout, which R never reaches while the later package's input handler keeps firing (after any
+  later callback, e.g. `shiny::testServer()`, has run outside the top level): a stopped worker hung it for good.
 
 # clusters 0.0.72
 

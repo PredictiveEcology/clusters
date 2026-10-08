@@ -115,11 +115,14 @@ DEoptimProgress <- function(path = ".", pattern = "^DEoptimProgress_.*\\.csv$", 
   d
 }
 
-## `file` relative to the folder `path`
+## `file` relative to the folder `path`. Both with "/" as the separator: on Windows normalizePath()
+## gives "\\" by default, which the "/" after the folder did not match (CI, 2026-10-08: labels "/ELF1").
 .relativeTo <- function(file, path) {
-  file <- normalizePath(file, mustWork = FALSE)
-  path <- normalizePath(path, mustWork = FALSE)
-  sub(paste0("^", gsub("([][{}()+*^$|\\\\?.])", "\\\\\\1", path), "/?"), "", file)
+  file <- normalizePath(file, winslash = "/", mustWork = FALSE)
+  path <- sub("/+$", "", normalizePath(path, winslash = "/", mustWork = FALSE))
+  inside <- startsWith(file, paste0(path, "/"))
+  file[inside] <- substring(file[inside], nchar(path) + 2L)
+  file
 }
 
 #' A Shiny dashboard of DEoptim fits

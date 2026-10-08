@@ -25,7 +25,7 @@ makeClusterPSOCK(
 \item{workers}{The hostnames of workers (as a character vector) or the
 number of localhost workers (as a positive integer).}
 
-\item{outfile}{Optional log file path.}
+\item{outfile}{Optional log file path: one for all workers, or one per host, named by host.}
 
 \item{rscript_libs}{Optional library paths for workers.}
 

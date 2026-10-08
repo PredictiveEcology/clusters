@@ -496,7 +496,7 @@ numActiveThreads <- function (pattern = "", minCPU = 50) {
 #'
 #' @inheritParams parallelly::makeClusterPSOCK
 #' @param port Optional port or port block start.
-#' @param outfile Optional log file path.
+#' @param outfile Optional log file path: one for all workers, or one per host, named by host.
 #' @param rscript_libs Optional library paths for workers.
 #' @param ... Additional arguments passed to parallelly::makeClusterPSOCK.
 #'
@@ -589,7 +589,7 @@ makeClusterPSOCK <- function(
           workers          = hosts[i],
           port             = p,
           user             = users[i],
-          outfile          = outfile,
+          outfile          = .hostOutfile(outfile, hosts[i]),
           rscript_libs     = rscript_libs,
           rscript          = rscript,
           default_packages = default_packages),

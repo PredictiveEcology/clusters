@@ -1,4 +1,4 @@
-# clusters (development version)
+# clusters 0.0.72
 
 * A host that cannot write the worker log folder gives its workers a log in its own user cache folder
   (`tools::R_user_dir("clusters", "cache")/logs`), and the master says so. Each worker opens its log before it

@@ -3,10 +3,11 @@
 ## copy lives in a temporary library the workers do not see), which lacks the code under test.
 ## The function sent has the global environment: one defined here would carry the test environment,
 ## whose parent is the clusters namespace, and sending it would load clusters on the worker before
-## its library paths are set. Stopped when the calling test ends.
-localTestCluster <- function(n, env = parent.frame()) {
+## its library paths are set. Stopped when the calling test ends, by `stop`: a test whose cluster is
+## stopped by what it tests needs one that leaves closed nodes alone (.stopCluster()).
+localTestCluster <- function(n, env = parent.frame(), stop = parallel::stopCluster) {
   cl <- parallel::makeCluster(n)
-  withr::defer(parallel::stopCluster(cl), envir = env)
+  withr::defer(stop(cl), envir = env)
   setLibs <- function(libs) .libPaths(libs)
   environment(setLibs) <- globalenv()
   parallel::clusterCall(cl, setLibs, .libPaths())

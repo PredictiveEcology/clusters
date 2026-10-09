@@ -47,34 +47,24 @@
   })
 }
 
-## The largest worker memory (GB) of the most recent record for `runName`, or NA.
-.fitMemoryLast <- function(runName, path = getOption("clusters.reservationsPath")) {
-  if (is.null(runName)) return(NA_real_)
-  tryCatch({
-    file <- .fitMemoryFile(path)
-    if (!file.exists(file)) return(NA_real_)
-    rows <- .withReservationLock(file, readRDS(file))
-    rows <- .hostSpeedRecent(rows[rows$runName %in% as.character(runName), , drop = FALSE])
-    if (NROW(rows)) rows$memMaxGB[which.max(rows$time)] else NA_real_
-  }, error = function(e) NA_real_)
+## The recorded rows of fitMemory.rds within the day window (none: a zero-row data frame)
+.fitMemoryRecent <- function(path = getOption("clusters.reservationsPath")) {
+  none <- data.frame(runName = character(0), time = .POSIXct(numeric(0)), memMaxGB = numeric(0))
+  file <- .fitMemoryFile(path)
+  tryCatch(if (file.exists(file)) .hostSpeedRecent(.withReservationLock(file, readRDS(file))) else none,
+           error = function(e) none)
 }
 
-## GB each worker is expected to need: what the fit used last time (`runName`'s latest record), else
-## `estimateGB`, else NA (no memory cap).
-.memPerWorkerGB <- function(runName, estimateGB = NA_real_, path = getOption("clusters.reservationsPath")) {
-  last <- .fitMemoryLast(runName, path)
-  if (is.na(last)) as.numeric(estimateGB)[1] else last
-}
-
-## Memory per worker before any fit has recorded one: the size of the objects shipped to the workers
-## (`objsNeeded` in `envir`) times `getOption("clusters.workerMemoryFactor", 3)`, and at least 1 GB. Measured
-## FireSense workers held several GB beyond the objects shipped to them (R, packages, the objective's
-## working copies, rasters read back from disk), so the factor is a deliberate over-estimate, which the
-## first recorded chunk of the fit replaces. `object.size()` does not see memory held outside R (terra), so
-## it is a floor for those objects. NA when there are no objects.
-.estimateWorkerMemoryGB <- function(objsNeeded, envir, factor = getOption("clusters.workerMemoryFactor", 3)) {
-  if (is.null(objsNeeded) || !length(objsNeeded)) return(NA_real_)
-  bytes <- sum(vapply(mget(unlist(objsNeeded), envir = envir), function(o) as.numeric(utils::object.size(o)),
-                      numeric(1)))
-  max(1, factor * bytes / 1024^3)
+## GB each worker is expected to need, in this order:
+## 1. the largest worker memory (`memMaxGB`) of the most recent record for `runName`: the same fit, last time;
+## 2. the largest `memMaxGB` of any runName in the window: fits actually run on this cluster, so cautious;
+## 3. `getOption("clusters.workerMemoryGB", 14)`. Measured 2026-10-09 on 15 hosts, 457 FireSense DEoptim
+##    workers' peak resident memory (VmHWM): median 4.5 GB, 90th percentile about 6.5 GB, maximum 14.1 GB.
+## A fit's first recorded chunk replaces (3) with (1), and a running cluster re-reads it when it rebalances.
+.memPerWorkerGB <- function(runName = NULL, path = getOption("clusters.reservationsPath")) {
+  rows <- .fitMemoryRecent(path)
+  mine <- rows[rows$runName %in% as.character(runName), , drop = FALSE]
+  if (NROW(mine)) return(mine$memMaxGB[which.max(mine$time)])
+  if (NROW(rows)) return(max(rows$memMaxGB))
+  getOption("clusters.workerMemoryGB", 14)
 }

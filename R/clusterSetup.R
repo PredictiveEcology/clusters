@@ -17,12 +17,11 @@
 #' @param nCoresNeeded Integer; how many workers to aim for across all hosts.
 #' @param envir Environment holding `objsNeeded`; defaults to the caller's.
 #' @param runName The `runName` the fit will be given in [DEoptimIterative()]. A host gets at most as many
-#'   workers as its free memory holds, at the memory per worker that fit recorded the last time it ran;
-#'   `NULL` looks for no record. Without one, the memory is estimated from the size of the objects shipped to
-#'   the workers times `options(clusters.workerMemoryFactor)` (default 3), at least 1 GB. Hosts keep
-#'   `options(clusters.memoryHeadroom)` (default 0.1) of their memory free. When memory leaves fewer
-#'   workers than `nCoresNeeded`, the cluster is built smaller (with a message naming the hosts) and `NP`
-#'   follows the workers.
+#'   workers as its free memory holds, at the memory per worker that fit recorded the last time it ran; see
+#'   [plan_psock_min()] for what is used without a record (`options(clusters.workerMemoryGB)`, default 14).
+#'   Hosts keep `options(clusters.memoryHeadroom)` (default 0.1) of their memory free. When memory leaves
+#'   fewer workers than `nCoresNeeded`, the cluster is built smaller (with a message naming the hosts) and
+#'   `NP` follows the workers.
 #' @param controlArgs Named list of further [DEoptim::DEoptim.control()] settings (for example
 #'   `CR`, `F`, `c`, `p`, `reltol`), added to the returned control so they reach DEoptim. A name
 #'   `DEoptim.control()` does not have is an error. `NP` is still the number of workers built, and
@@ -90,8 +89,7 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
         libPath = libPath,
         logPath = logPath,
         build_final_cluster = TRUE,
-        runName = runName,
-        memPerWorkerGB = if (!missing(objsNeeded)) .estimateWorkerMemoryGB(objsNeeded, envir)
+        runName = runName
       )
       clThird <- plan$cluster
       cores <- plan$workers

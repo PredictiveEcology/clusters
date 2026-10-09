@@ -36,11 +36,10 @@
 #' @param build_final_cluster Logical; if `TRUE` launch the final cluster (default `TRUE`).
 #' @param runName Name of the fit the workers are for (the `runName` of [DEoptimIterative()]). A host gets at
 #'   most as many workers as its free memory holds, at the memory per worker this fit used the last time it
-#'   ran (`memMaxGB` of its latest record in `fitMemory.rds`, beside the reservations ledger). `NULL`: no
-#'   record is looked for.
-#' @param memPerWorkerGB GB of memory a worker is expected to need when `runName` has no record. `NULL` or
-#'   `NA`, with no record, caps no host by memory. [clusterSetup()] gives the size of the objects it ships
-#'   times `options(clusters.workerMemoryFactor)`.
+#'   ran (`memMaxGB` of its latest record in `fitMemory.rds`, beside the reservations ledger). With no record
+#'   for it, the largest `memMaxGB` of any fit in the window (`options(clusters.hostSpeedDays)`), and with no
+#'   records at all `options(clusters.workerMemoryGB)`, default 14: FireSense DEoptim workers' peak memory
+#'   was median 4.5 GB, 90th percentile about 6.5 GB, maximum 14.1 GB (457 workers on 15 hosts, 2026-10-09).
 #'   Every host keeps `options(clusters.memoryHeadroom)` (default 0.1) of its memory free.
 #'
 #' @return A list with:
@@ -87,8 +86,7 @@ plan_psock_min <- function(
   logPath = NULL,
   libPath = NULL,
   build_final_cluster = TRUE,
-  runName = NULL,
-  memPerWorkerGB = NULL
+  runName = NULL
 ) {
   
   pkgsNeeded <- unique(c(pkgsNeeded, c("parallelly","future","foreach")))
@@ -117,7 +115,7 @@ plan_psock_min <- function(
   
   ## GB per worker, looked up when asked: a fit's first chunk records it, and a running cluster
   ## deciding where its workers belong (.rebalanceFn()) should use what it has recorded since
-  memPerWorker <- function() .memPerWorkerGB(runName, if (is.null(memPerWorkerGB)) NA_real_ else memPerWorkerGB)
+  memPerWorker <- function() .memPerWorkerGB(runName)
 
   # 1) Probe cluster (one worker per host), minimal robust options
   

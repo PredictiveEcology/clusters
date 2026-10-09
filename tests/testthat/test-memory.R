@@ -1,6 +1,6 @@
 ## 2026-10-09: placement booked only cores. Host `core` (187 GB) was filled to 187.1 GB by DEoptim workers and
 ## hung for 1.5 h, killing every fit with a worker there. A host now gets only as many workers as its free
-## memory holds, from what the same fit used last time (fitMemory.rds) or an estimate.
+## memory holds, from what the same fit used last time (fitMemory.rds), else the largest of any fit's, else clusters.workerMemoryGB.
 
 memNodes <- function(avail, total = 100, free = 40, host = letters[seq_along(avail)])
   data.frame(host = host, cores_total = 48L, free_est = free, loadavg_5 = 0,
@@ -25,20 +25,38 @@ test_that("a host with free cores but little free memory is capped by its memory
 
 test_that("memory per worker comes from the latest fitMemory record of the same runName", {
   withr::local_options(clusters.reservationsPath = withr::local_tempdir())
-  expect_equal(clusters:::.memPerWorkerGB("elf1", estimateGB = 2), 2)
+  expect_equal(clusters:::.memPerWorkerGB("elf1"), 14)   # no file: the default
   clusters:::.recordFitMemory(list(mkMem("h", 1:3, c(1, 2, 5))), runName = "elf1", id = "elf1_1")
   clusters:::.recordFitMemory(list(mkMem("h", 1:3, c(1, 2, 9))), runName = "elf2", id = "elf2_1")
-  expect_equal(clusters:::.memPerWorkerGB("elf1", estimateGB = 2), 5)
+  expect_equal(clusters:::.memPerWorkerGB("elf1"), 5)
   file <- clusters:::.fitMemoryFile()
   got <- readRDS(file)
   got$time[got$id == "elf1_1"] <- Sys.time() - 3600
   saveRDS(got, file)
   clusters:::.recordFitMemory(list(mkMem("h", 1:3, c(1, 2, 3))), runName = "elf1", id = "elf1_2")
-  expect_equal(clusters:::.memPerWorkerGB("elf1", estimateGB = 2), 3)   # the most recent, not the largest
-  expect_equal(clusters:::.memPerWorkerGB("elf2", estimateGB = 2), 9)
+  expect_equal(clusters:::.memPerWorkerGB("elf1"), 3)   # the most recent, not the largest
+  expect_equal(clusters:::.memPerWorkerGB("elf2"), 9)
+  ## no record for this runName: the largest of any runName's
+  expect_equal(clusters:::.memPerWorkerGB("elf3"), 9)
+  expect_equal(clusters:::.memPerWorkerGB(), 9)
   ## and it sets the cap
   withr::local_options(clusters.keepFreeCores = 0)
-  expect_equal(capacity(memNodes(avail = 30), memPerWorkerGB = clusters:::.memPerWorkerGB("elf2", 2))$free_est, 2)
+  expect_equal(capacity(memNodes(avail = 30), memPerWorkerGB = clusters:::.memPerWorkerGB("elf2"))$free_est, 2)
+})
+
+test_that("with no records at all clusters.workerMemoryGB is used, 14 GB by default", {
+  withr::local_options(clusters.reservationsPath = withr::local_tempdir())
+  expect_equal(clusters:::.memPerWorkerGB("elf1"), 14)
+  withr::local_options(clusters.workerMemoryGB = 6)
+  expect_equal(clusters:::.memPerWorkerGB("elf1"), 6)
+  saveRDS(NULL, clusters:::.fitMemoryFile())   # an unusable file is no record either
+  expect_equal(clusters:::.memPerWorkerGB("elf1"), 6)
+  unlink(clusters:::.fitMemoryFile())
+  ## records older than the window are no record
+  clusters:::.recordFitMemory(list(mkMem("h", 1L, 20)), runName = "old", id = "old_1")
+  file <- clusters:::.fitMemoryFile()
+  got <- readRDS(file); got$time <- Sys.time() - 40 * 86400; saveRDS(got, file)
+  expect_equal(clusters:::.memPerWorkerGB("elf1"), 6)
 })
 
 test_that("a booked memGB lowers another build's capacity within the grace window only", {

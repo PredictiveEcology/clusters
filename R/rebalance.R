@@ -75,9 +75,7 @@
         if (length(m$remove) >= max(1, minMoves) && !is.null(ownId)) {
           newHosts <- hosts
           newHosts[m$remove] <- m$add
-          booked <- as.data.frame(table(host = newHosts), stringsAsFactors = FALSE)
-          names(booked)[2] <- "assign"
-          .rebookCores(ownId, booked, memPerWorkerGB = plan$memPerWorkerGB())
+          .rebookCores(ownId, .hostCounts(newHosts), memPerWorkerGB = plan$memPerWorkerGB())
         }
         m
       })
@@ -93,9 +91,7 @@
       on.exit(if (!done) {
         if (!is.null(fresh)) .stopNodes(fresh)
         if (!is.null(ownId)) {
-          was <- as.data.frame(table(host = hosts), stringsAsFactors = FALSE)
-          names(was)[2] <- "assign"
-          .rebookCores(ownId, was, memPerWorkerGB = plan$memPerWorkerGB())
+          .rebookCores(ownId, .hostCounts(hosts), memPerWorkerGB = plan$memPerWorkerGB())
         }
       }, add = TRUE)
       fresh <- plan$startNodes(moves$add, autoStop = FALSE)

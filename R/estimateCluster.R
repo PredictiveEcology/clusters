@@ -461,9 +461,7 @@ plan_psock_min <- function(
     # cluster stops (above). Workers dropped at start-up are given back.
     if (!is.null(resvId)) {
       if (length(checked$dropped)) {
-        kept <- as.data.frame(table(host = workers), stringsAsFactors = FALSE)
-        names(kept)[2] <- "assign"
-        .rebookCores(resvId, kept, memPerWorkerGB = memPerWorker())
+        .rebookCores(resvId, .hostCounts(workers))
       }
       # Tie the release to the lifetime of the cluster object: when it is garbage
       # collected, or R exits, this reservation goes with it. liveReservations()

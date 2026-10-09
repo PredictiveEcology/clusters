@@ -15,6 +15,14 @@
   workers than asked for, the cluster is built smaller, with a message naming the capped hosts, instead of
   waiting for cores that would not help; if nothing fits, the error says memory kept the workers off.
 
+* A rebuild of the cluster after a worker is lost (`.restartClusterFn()`) leaves out a host that cannot be reached
+  instead of failing. Each remote host is first probed with `ssh -o BatchMode=yes -o ConnectTimeout=10`
+  (`options(clusters.hostProbeTimeout)`); a host that fails the probe, cannot start its workers, or whose workers do not
+  answer is dropped with a message naming it and the workers lost, the reservation is re-booked for the smaller
+  cluster, and later rebuilds do not try it again. It is an error only when no worker is left. FireSense, 2026-10-09:
+  host `core` hung, and every fit with a worker on it died after ten minutes of connect retries, though the other hosts
+  were fine. `DEoptimIterative()` goes on with its population on fewer workers.
+
 # clusters 0.0.73
 
 * The objective-function figure (`objFun/`, drawn every `plotEvery` generations) now shows the

@@ -10,7 +10,7 @@ skip_if(nzchar(tolower(Sys.getenv("_R_CHECK_LIMIT_CORES_"))) &&
         "R CMD check limits child processes to 2")
 
 for (f in c(".replaceDeadNodes", ".deadNodes", ".runWithRebuild", ".setWorkerTimeout", ".stopNodes",
-            ".stopCluster", ".workerTimeout", ".sshTunnelOpts"))
+            ".stopCluster", ".workerTimeout", ".sshTunnelOpts", ".restartClusterFn", ".nodeHosts"))
   assign(f, getFromNamespace(f, "clusters"))
 
 localCluster <- function(n) {
@@ -131,6 +131,59 @@ test_that("a worker stopped mid-evaluation: the call returns on a rebuilt cluste
   expect_false(identical(res$cluster, cl))
   expect_lt(took, 60)
   parallel::stopCluster(res$cluster)
+})
+
+## A rebuild whose hosts are named by `cores`; workers are local, labelled with the host they stand for.
+## `startNodes(hosts, autoStop)` is what plan_psock_min() gives .restartClusterFn(); the real one needs ssh.
+fakeRebuild <- function(cores, reachable, failStart = character(0), env = parent.frame()) {
+  ## what is sent to the workers needs ssh and rsync for a host that is not this one
+  testthat::local_mocked_bindings(.shipToWorkers = function(cl, cores, ...) invisible(cl), .package = "clusters",
+                                  .env = env)
+  started <- character(0)
+  startNodes <- function(hosts, autoStop = TRUE) {
+    if (any(hosts %in% failStart)) stop("Failed to launch and connect to R worker on remote machine '",
+                                         hosts[hosts %in% failStart][1], "'")
+    started <<- c(started, hosts)
+    cl <- localTestCluster(length(hosts), env = env, stop = .stopCluster)
+    for (i in seq_along(cl)) cl[[i]]$host <- hosts[i]
+    cl
+  }
+  restart <- .restartClusterFn(startNodes, cores, character(0), character(0), environment(), digest = NULL,
+                               token = NULL, probe = function(host) host %in% reachable)
+  list(restart = restart, started = function() started)
+}
+
+test_that("a rebuild leaves out a host that does not answer, and says how many workers that cost", {
+  cores <- c("hostA", "hostA", "hostB", "hostB", "hostB")
+  fake <- fakeRebuild(cores, reachable = "hostA")
+  old <- localTestCluster(5L, stop = .stopCluster)
+  expect_message(new <- suppressWarnings(fake$restart(old)), "hostB.*3 worker")
+  expect_length(new, 2L)
+  expect_identical(.nodeHosts(new), "hostA x2")
+  expect_false("hostB" %in% fake$started())
+  expect_equal(unlist(parallel::clusterCall(new, function() 1L)), c(1L, 1L))
+  ## the next rebuild starts only what is left
+  expect_length(suppressMessages(attr(new, "restartCluster")(new)), 2L)
+  expect_false("hostB" %in% fake$started())
+})
+
+test_that("a rebuild drops the workers of a host that answers the probe but cannot start a worker", {
+  fake <- fakeRebuild(c("hostA", "hostB", "hostB"), reachable = c("hostA", "hostB"), failStart = "hostB")
+  new <- suppressMessages(fake$restart(localTestCluster(3L, stop = .stopCluster)))
+  expect_identical(.nodeHosts(new), "hostA x1")
+})
+
+test_that("a rebuild is an error only when no host is left", {
+  fake <- fakeRebuild(c("hostA", "hostB"), reachable = character(0))
+  expect_error(suppressMessages(fake$restart(localTestCluster(2L, stop = .stopCluster))), "no worker")
+  fake <- fakeRebuild(c("hostA", "hostB"), reachable = c("hostA", "hostB"), failStart = c("hostA", "hostB"))
+  expect_error(suppressMessages(fake$restart(localTestCluster(2L, stop = .stopCluster))), "no worker")
+})
+
+test_that("localhost is never probed: it stays when the probe fails every host", {
+  fake <- fakeRebuild(c("localhost", "localhost", "hostB"), reachable = character(0))
+  new <- suppressMessages(fake$restart(localTestCluster(3L, stop = .stopCluster)))
+  expect_identical(.nodeHosts(new), "localhost x2")
 })
 
 test_that("with no way to rebuild, a stopped worker is an error that names the workers, not a hang", {

@@ -180,31 +180,86 @@
   grepl("connection", msg, fixed = TRUE) && !grepl("produced an error|produced errors", msg)
 }
 
+## The rows `.rebookCores()` takes: one per host, with the number of workers on it.
+.hostCounts <- function(hosts) {
+  out <- as.data.frame(table(host = hosts), stringsAsFactors = FALSE)
+  names(out)[2] <- "assign"
+  out
+}
+
+## Does `host` answer ssh within `seconds`? A host that hangs (FireSense, 2026-10-09: `core` answered ping
+## and then "Connection timed out during banner exchange") costs `seconds`, not the minutes of connect
+## retries that starting a worker on it takes.
+.hostReachable <- function(host, seconds = getOption("clusters.hostProbeTimeout", 10)) {
+  identical(suppressWarnings(system2("ssh", c("-o", "BatchMode=yes", "-o", paste0("ConnectTimeout=", seconds),
+                                              host, "true"),
+                                     stdout = FALSE, stderr = FALSE, timeout = seconds + 5)), 0L)
+}
+
+## Start `cores` one host at a time, leaving out a host that fails the `probe` or cannot start its workers.
+## Returns the cluster, and `cores` without the workers of the hosts that were left out.
+.startReachable <- function(startNodes, cores, probe) {
+  hosts <- unique(cores)
+  cl <- NULL
+  kept <- character(0)
+  for (host in hosts) {
+    n <- sum(cores == host)
+    ## `localhost` is the master itself: never probed
+    why <- if (!host %in% c("localhost", "127.0.0.1") && !probe(host)) "does not answer ssh"
+    node <- if (is.null(why)) tryCatch(startNodes(rep(host, n), autoStop = is.null(cl)), error = function(e) {
+      why <<- conditionMessage(e)
+      NULL
+    })
+    if (is.null(node)) {
+      message("clusters: leaving out ", host, " (", why, "); ", n, " worker(s) lost")
+      next
+    }
+    ## the first piece keeps autoStop, the others join it (see .addNode())
+    cl <- .addNode(cl, node)
+    kept <- c(kept, rep(host, n))
+  }
+  if (is.null(cl)) stop("no worker could be started: none of ", paste(hosts, collapse = ", "), " can be reached")
+  list(cluster = cl, cores = kept)
+}
+
 #' A function that replaces a cluster with a new, prepared one
 #'
 #' Stops the old cluster, starts `cores` again, replaces any node that does not answer, and sends the
 #' workers what [clusterSetup()] sent the first ones. Stored on the cluster as the attribute
-#' `"restartCluster"` for [.runWithRebuild()].
+#' `"restartCluster"` for [.runWithRebuild()]. A host that does not answer `probe`, or cannot start its
+#' workers, or whose workers do not answer, is left out: the new cluster is smaller, its reservation is
+#' re-booked to match, and a later rebuild does not try that host again. It is an error only when no
+#' worker is left.
 #'
 #' @param startNodes A function of a vector of hosts (and `autoStop`) that starts a cluster.
 #' @param digest What [shippedObjectsDigest()] gave at set-up: the objects must not have changed since.
 #' @param token The old cluster's `"reservationToken"`, kept alive on the new one.
+#' @param probe A function of one host that says whether it can be reached; `.hostReachable()`.
 #' @keywords internal
-.restartClusterFn <- function(startNodes, cores, pkgsNeeded, objsNeeded, envir, digest, token) {
+.restartClusterFn <- function(startNodes, cores, pkgsNeeded, objsNeeded, envir, digest, token,
+                              probe = .hostReachable) {
   force(startNodes); force(cores); force(pkgsNeeded); force(objsNeeded); force(envir)
-  force(digest); force(token)
+  force(digest); force(token); force(probe)
   self <- function(old) {
     if (!is.null(digest) &&
         !identical(reproducible::.robustDigest(mget(sort(unlist(objsNeeded)), envir = envir)), digest))
       stop("the objects sent to the workers have changed since clusterSetup(); cannot rebuild the cluster")
     .stopNodes(old)
-    fresh <- startNodes(cores)
+    started <- .startReachable(startNodes, cores, probe)
+    fresh <- started$cluster
     ok <- FALSE
     on.exit(if (!ok) .stopNodes(fresh), add = TRUE)
-    fresh <- .replaceDeadNodes(fresh, function(host) startNodes(host, autoStop = FALSE),
-                               action = "stop")$cluster
-    .shipToWorkers(fresh, cores, pkgsNeeded, objsNeeded, envir)
+    checked <- .replaceDeadNodes(fresh, function(host) startNodes(host, autoStop = FALSE), action = "drop")
+    fresh <- checked$cluster
+    kept <- if (length(checked$dropped)) started$cores[-checked$dropped] else started$cores
+    if (!length(fresh)) stop("no worker answered on the rebuilt cluster")
+    .shipToWorkers(fresh, kept, pkgsNeeded, objsNeeded, envir)
     .setWorkerTimeout(fresh)
+    if (length(kept) < length(cores)) {
+      message("clusters: the rebuilt cluster has ", length(kept), " of ", length(cores), " workers (",
+              .nodeHosts(fresh), ")")
+      if (is.environment(token) && !is.null(token$id)) .rebookCores(token$id, .hostCounts(kept))
+    }
     attr(fresh, "reservationToken") <- token
     attr(fresh, "restartCluster") <- self
     attr(fresh, "rebalance") <- attr(old, "rebalance", exact = TRUE)
@@ -214,6 +269,7 @@
       attr(fresh, "currentCluster") <- current
       current$cluster <- fresh
     }
+    cores <<- kept   # a later rebuild starts only what is left
     ok <- TRUE
     fresh
   }

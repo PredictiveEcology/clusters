@@ -121,6 +121,9 @@ test_that("an old ledger without memGB still reads, and takes new rows", {
   expect_equal(capacity(nodes, memPerWorkerGB = 4)$free_est, 8)
   clusters:::.rebookCores("old", data.frame(host = "a", assign = 1L), memPerWorkerGB = 4)
   expect_equal(sort(liveReservations()$memGB), c(4, 8))
+  ## re-booked without a memory per worker (workers dropped at a rebuild): each host keeps what it was booked at
+  clusters:::.rebookCores("old", data.frame(host = "a", assign = 2L))
+  expect_equal(sort(liveReservations()$memGB), c(8, 8))
 })
 
 test_that("workers lost to memory give a smaller cluster, not a wait or an error", {

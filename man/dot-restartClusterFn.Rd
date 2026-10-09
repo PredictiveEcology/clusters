@@ -11,7 +11,8 @@
   objsNeeded,
   envir,
   digest,
-  token
+  token,
+  probe = .hostReachable
 )
 }
 \arguments{
@@ -20,10 +21,15 @@
 \item{digest}{What \code{\link[=shippedObjectsDigest]{shippedObjectsDigest()}} gave at set-up: the objects must not have changed since.}
 
 \item{token}{The old cluster's \code{"reservationToken"}, kept alive on the new one.}
+
+\item{probe}{A function of one host that says whether it can be reached; \code{.hostReachable()}.}
 }
 \description{
 Stops the old cluster, starts \code{cores} again, replaces any node that does not answer, and sends the
 workers what \code{\link[=clusterSetup]{clusterSetup()}} sent the first ones. Stored on the cluster as the attribute
-\code{"restartCluster"} for \code{\link[=.runWithRebuild]{.runWithRebuild()}}.
+\code{"restartCluster"} for \code{\link[=.runWithRebuild]{.runWithRebuild()}}. A host that does not answer \code{probe}, or cannot start its
+workers, or whose workers do not answer, is left out: the new cluster is smaller, its reservation is
+re-booked to match, and a later rebuild does not try that host again. It is an error only when no
+worker is left.
 }
 \keyword{internal}

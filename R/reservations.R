@@ -251,7 +251,7 @@ freeCoresLessReserved <- function(nodes,
 ## Replace reservation `id`'s rows with `alloc` (`host`, `assign`), when a cluster's workers move. A host
 ## whose workers rose gets `created = now`, so builders count the new workers in full until the load
 ## average shows them (see freeCoresLessReserved()); the others keep their time. Memory is re-booked at
-## `memPerWorkerGB` a worker.
+## `memPerWorkerGB` a worker, or, when not given, at what each host was booked at before.
 .rebookCores <- function(id, alloc, memPerWorkerGB = NULL, path = getOption("clusters.reservationsPath")) {
   alloc <- alloc[alloc$assign > 0, , drop = FALSE]
   file <- reservationsPath(path)
@@ -267,7 +267,8 @@ freeCoresLessReserved <- function(nodes,
     res <- rbind(res[!res$id %in% id, , drop = FALSE],
                  data.frame(id = rep(id, NROW(alloc)), pid = rep(as.integer(pid), NROW(alloc)),
                             host = alloc$host, workers = as.integer(alloc$assign), created = created,
-                            memGB = .bookedMemoryGB(alloc$assign, memPerWorkerGB),
+                            memGB = if (is.null(memPerWorkerGB)) alloc$assign * (mine$memGB / mine$workers)[match(alloc$host, mine$host)]
+                                    else .bookedMemoryGB(alloc$assign, memPerWorkerGB),
                             stringsAsFactors = FALSE))
     saveRDS(res, file)
   })

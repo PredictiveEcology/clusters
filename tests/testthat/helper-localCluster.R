@@ -8,7 +8,15 @@
 localTestCluster <- function(n, env = parent.frame(), stop = parallel::stopCluster) {
   cl <- parallel::makeCluster(n)
   withr::defer(stop(cl), envir = env)
-  setLibs <- function(libs) .libPaths(libs)
+  setWorkerLibs(cl)
+}
+
+## Give the workers of `cl` this session's .libPaths() and load clusters on them; returns `cl`.
+## The load is done here, not by the first call a test makes: a worker's first call that carries a clusters
+## function loads the namespace, which took 5 s under covr (2 s without), and a test that gives a worker
+## 2 s to answer then found a live worker dead (covr, 2026-10-09).
+setWorkerLibs <- function(cl) {
+  setLibs <- function(libs) { .libPaths(libs); loadNamespace("clusters"); NULL }
   environment(setLibs) <- globalenv()
   parallel::clusterCall(cl, setLibs, .libPaths())
   cl

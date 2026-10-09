@@ -77,7 +77,7 @@
           newHosts[m$remove] <- m$add
           booked <- as.data.frame(table(host = newHosts), stringsAsFactors = FALSE)
           names(booked)[2] <- "assign"
-          .rebookCores(ownId, booked)
+          .rebookCores(ownId, booked, memPerWorkerGB = plan$memPerWorkerGB())
         }
         m
       })
@@ -95,7 +95,7 @@
         if (!is.null(ownId)) {
           was <- as.data.frame(table(host = hosts), stringsAsFactors = FALSE)
           names(was)[2] <- "assign"
-          .rebookCores(ownId, was)
+          .rebookCores(ownId, was, memPerWorkerGB = plan$memPerWorkerGB())
         }
       }, add = TRUE)
       fresh <- plan$startNodes(moves$add, autoStop = FALSE)

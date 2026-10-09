@@ -1,3 +1,18 @@
+# clusters (development version)
+
+* A host now gets only as many workers as its free memory can hold, not just as many as it has idle cores
+  (FireSense, 2026-10-09: a host filled to 187.1 of 187.5 GB hung for 1.5 h and every fit with a worker on it
+  died). Each worker reports its peak memory with every evaluation; `DEoptimIterative()` saves one row per
+  computed chunk (`runName`, `id`, `time`, `workers`, `memMedianGB`, `memMaxGB`) in `fitMemory.rds`, beside
+  `hostSpeed.rds`. A build or refit of the same `runName` (new `runName` argument of `clusterSetup()` and
+  `plan_psock_min()`) caps each host at `floor((MemAvailable - headroom) / memMaxGB)` workers, headroom being
+  `options(clusters.memoryHeadroom)` (default 0.1) of the host's memory; without a record the memory per worker
+  is the size of the objects shipped times `options(clusters.workerMemoryFactor)` (default 3), at least 1 GB.
+  The reservations ledger books each cluster's `memGB` by host (`reserveCores(memPerWorkerGB = )`), counted in
+  full for the first minutes like cores; older ledgers without the column still read. When memory leaves fewer
+  workers than asked for, the cluster is built smaller, with a message naming the capped hosts, instead of
+  waiting for cores that would not help.
+
 # clusters 0.0.73
 
 * The objective-function figure (`objFun/`, drawn every `plotEvery` generations) now shows the

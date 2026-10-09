@@ -18,7 +18,9 @@ plan_psock_min(
   auto_stop = TRUE,
   logPath = NULL,
   libPath = NULL,
-  build_final_cluster = TRUE
+  build_final_cluster = TRUE,
+  runName = NULL,
+  memPerWorkerGB = NULL
 )
 }
 \arguments{
@@ -57,6 +59,16 @@ cache folder instead (see \code{.hostLogPaths()}).}
 \item{libPath}{Optional site library path to prepend and use if writable.}
 
 \item{build_final_cluster}{Logical; if \code{TRUE} launch the final cluster (default \code{TRUE}).}
+
+\item{runName}{Name of the fit the workers are for (the \code{runName} of \code{\link[=DEoptimIterative]{DEoptimIterative()}}). A host gets at
+most as many workers as its free memory holds, at the memory per worker this fit used the last time it
+ran (\code{memMaxGB} of its latest record in \code{fitMemory.rds}, beside the reservations ledger). \code{NULL}: no
+record is looked for.}
+
+\item{memPerWorkerGB}{GB of memory a worker is expected to need when \code{runName} has no record. \code{NULL} or
+\code{NA}, with no record, caps no host by memory. \code{\link[=clusterSetup]{clusterSetup()}} gives the size of the objects it ships
+times \code{options(clusters.workerMemoryFactor)}.
+Every host keeps \code{options(clusters.memoryHeadroom)} (default 0.1) of its memory free.}
 }
 \value{
 A list with:

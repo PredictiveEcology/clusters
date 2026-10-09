@@ -75,7 +75,7 @@
         if (length(m$remove) >= max(1, minMoves) && !is.null(ownId)) {
           newHosts <- hosts
           newHosts[m$remove] <- m$add
-          .rebookCores(ownId, .hostCounts(newHosts))
+          .rebookCores(ownId, .hostCounts(newHosts), memPerWorkerGB = plan$memPerWorkerGB())
         }
         m
       })
@@ -91,7 +91,7 @@
       on.exit(if (!done) {
         if (!is.null(fresh)) .stopNodes(fresh)
         if (!is.null(ownId)) {
-          .rebookCores(ownId, .hostCounts(hosts))
+          .rebookCores(ownId, .hostCounts(hosts), memPerWorkerGB = plan$memPerWorkerGB())
         }
       }, add = TRUE)
       fresh <- plan$startNodes(moves$add, autoStop = FALSE)

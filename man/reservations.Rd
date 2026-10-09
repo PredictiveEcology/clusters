@@ -15,6 +15,7 @@ reserveCores(
   alloc,
   id = basename(tempfile("resv")),
   pid = Sys.getpid(),
+  memPerWorkerGB = NULL,
   path = getOption("clusters.reservationsPath")
 )
 
@@ -35,10 +36,14 @@ releaseCores(
 releases are keyed by reservation rather than by process.}
 
 \item{pid}{Owning process id; defaults to this process.}
+
+\item{memPerWorkerGB}{GB of memory each of the workers is expected to need, booked beside the cores
+(\code{NULL}, the default, books none).}
 }
 \value{
 \code{reservationsPath()} a file path; \code{liveReservations()} a data.frame
-with columns \code{id}, \code{pid}, \code{host}, \code{workers}, \code{created}; \code{reserveCores()}
+with columns \code{id}, \code{pid}, \code{host}, \code{workers}, \code{created}, \code{memGB} (\code{NA} in rows
+written before the column existed); \code{reserveCores()}
 returns its reservation \code{id}; \code{releaseCores()} returns invisibly.
 }
 \description{
@@ -52,8 +57,8 @@ and the number of concurrent jobs against the size of the fleet.
 
 These functions keep a small ledger of what has actually been handed out, so
 allocation is based on \emph{reservations} rather than on a lagging measurement.
-Each successful build records \code{host -> workers} under a reservation id owned
-by the building process; \code{\link[=freeCoresLessReserved]{freeCoresLessReserved()}} subtracts those from the
+Each successful build records \code{host -> workers} (and the memory those workers are expected to need,
+\code{memGB}) under a reservation id owned by the building process; \code{\link[=freeCoresLessReserved]{freeCoresLessReserved()}} subtracts those from the
 measured free cores. Releases are keyed by id, because one process may hold
 several clusters at once.
 

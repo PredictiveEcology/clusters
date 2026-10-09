@@ -3,10 +3,11 @@
 ## A per-process record of objective-function evaluations. DEoptim() returns the final population
 ## but not its objective values, so each new evaluation -- its value and how long it took -- is
 ## recorded where it runs (this process, or a PSOCK worker) and gathered after every chunk: seconds,
-## value, the host and process that ran it, and its start and end time (that machine's clock).
+## value, the host and process that ran it, its start and end time (that machine's clock), and the
+## process's peak memory so far (`rss`, GB; see .peakRssGB()).
 .deoptimRecord <- new.env(parent = emptyenv())
 
-.deoptimRecordFields <- c("keys", "vals", "secs", "hosts", "pids", "starts", "ends")
+.deoptimRecordFields <- c("keys", "vals", "secs", "hosts", "pids", "starts", "ends", "rss")
 
 .parKey <- function(par) paste(sprintf("%a", as.numeric(par)), collapse = ",")
 
@@ -41,6 +42,7 @@
     .deoptimRecord$pids <- c(.deoptimRecord$pids, Sys.getpid())
     .deoptimRecord$starts <- c(.deoptimRecord$starts, startedAt)
     .deoptimRecord$ends <- c(.deoptimRecord$ends, as.numeric(Sys.time()))
+    .deoptimRecord$rss <- c(.deoptimRecord$rss, .peakRssGB())
     .deoptimRecord$secs <- c(.deoptimRecord$secs, proc.time()[["elapsed"]] - started)
     .deoptimRecord$keys <- c(.deoptimRecord$keys, key)
     .deoptimRecord$vals <- c(.deoptimRecord$vals, val)
@@ -52,7 +54,7 @@
 ## evaluations: DEoptim evaluates its initial population first, and the carried population's values
 ## (`known`) come from the lookup instead. The final population's values are returned as
 ## `member$popval`, which seeds the next chunk, also when this chunk is loaded from the cache; every
-## new evaluation's seconds, value, host, pid, start and end as `member$evaluations`.
+## new evaluation's seconds, value, host, pid, start, end and the worker's peak memory as `member$evaluations`.
 .DEoptimChunk <- function(fn, lower, upper, control, known, dotsList) {
   memoFn <- .memoObjFun(fn, known$keys, known$vals)
   seed <- if (exists(".Random.seed", envir = globalenv(), inherits = FALSE)) get(".Random.seed", envir = globalenv())
@@ -77,7 +79,8 @@
   out$member$evaluations <- data.frame(
     seconds = as.numeric(recs$secs), value = as.numeric(recs$vals),
     host = as.character(recs$hosts), pid = as.integer(recs$pids),
-    start = as.POSIXct(recs$starts, origin = "1970-01-01"), end = as.POSIXct(recs$ends, origin = "1970-01-01"))
+    start = as.POSIXct(recs$starts, origin = "1970-01-01"), end = as.POSIXct(recs$ends, origin = "1970-01-01"),
+    peakGB = rep_len(as.numeric(recs$rss), length(recs$secs)))   # NA from workers that do not report it
   out
 }
 
@@ -364,6 +367,7 @@ DEoptimIterative <- function(fn, lower, upper, control, ...,
       if (computedNow && !is.null(DE[[iter]]$member$evaluations)) {
         ranEvaluations[[length(ranEvaluations) + 1L]] <- DE[[iter]]$member$evaluations
         .recordHostSpeed(list(DE[[iter]]$member$evaluations), id = paste0(runName, "_", iter))
+        .recordFitMemory(list(DE[[iter]]$member$evaluations), runName = runName, id = paste0(runName, "_", iter))
         message(.evaluationTimes(DE[[iter]]$member$evaluations, chunkLengths[iter],
                                  proc.time()[["elapsed"]] - chunkStarted))
       }

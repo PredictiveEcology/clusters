@@ -15,6 +15,16 @@
 .withHost <- function(evaluations)
   Filter(function(x) is.data.frame(x) && "host" %in% names(x), evaluations)
 
+## Add `new` rows to the records in `file` (hostSpeed.rds, fitMemory.rds), dropping the rows of the same
+## `id` and those older than the window. One lock for the read and the write.
+.replaceRecords <- function(file, new, columns) {
+  .withReservationLock(file, {
+    old <- if (file.exists(file)) tryCatch(readRDS(file), error = function(e) NULL)
+    old <- old[!old$id %in% new$id, columns, drop = FALSE]
+    saveRDS(.hostSpeedRecent(rbind(old, new)), file)
+  })
+}
+
 ## Append the per-host speeds of one chunk of evaluations to hostSpeed.rds. Called after every computed
 ## chunk, so a fit that is killed still leaves its records. `id` names the chunk (runName and chunk
 ## number): a chunk computed again, e.g. after a restart, replaces its earlier rows instead of adding a
@@ -30,11 +40,7 @@
     file <- .hostSpeedFile(path)
     new <- cbind(tab[setdiff(.hostSpeedColumns, c("time", "id"))], time = Sys.time(), id = id,
                  stringsAsFactors = FALSE)
-    .withReservationLock(file, {
-      old <- if (file.exists(file)) tryCatch(readRDS(file), error = function(e) NULL)
-      old <- old[!old$id %in% id, .hostSpeedColumns, drop = FALSE]
-      saveRDS(.hostSpeedRecent(rbind(old, new)), file)
-    })
+    .replaceRecords(file, new, .hostSpeedColumns)
     invisible(new)
   }, error = function(e) {
     warning("Could not record host speeds: ", conditionMessage(e), call. = FALSE)

@@ -18,7 +18,9 @@
 }
 \arguments{
 \item{probe}{A function returning the node table (\code{host}, \code{cores_total}, \code{free_est}),
-with reservations already subtracted.}
+with reservations already subtracted. A \code{ram_lost} column (see \code{.fitCapacity()}) is the cores each
+host's free memory cannot hold workers for: the workers lost to it are neither waited for nor an error, so
+the cluster is built smaller.}
 
 \item{total}{Workers requested.}
 

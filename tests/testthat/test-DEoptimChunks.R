@@ -84,8 +84,9 @@ test_that("every new evaluation's time is recorded, and each chunk reports the t
                     fn = slowFn)
   ev <- out$DE[[1]]$member$evaluations
   expect_s3_class(ev, "data.frame")
-  expect_named(ev, c("seconds", "value", "host", "pid", "start", "end"))
+  expect_named(ev, c("seconds", "value", "host", "pid", "start", "end", "peakGB"))
   expect_true(all(ev$host == Sys.info()[["nodename"]]) && all(ev$pid == Sys.getpid()))
+  expect_true(all(is.na(ev$peakGB) | ev$peakGB > 0))
   expect_true(all(ev$end >= ev$start))
   ## chunk 1: the random initial population (8) and at most 8 trials in each of its 2 generations
   expect_gt(nrow(ev), 8L)

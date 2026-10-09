@@ -34,6 +34,14 @@
 #' @param libPath Optional site library path to prepend and use if writable.
 #' @param auto_stop Logical; auto-stop clusters on GC (default `TRUE`).
 #' @param build_final_cluster Logical; if `TRUE` launch the final cluster (default `TRUE`).
+#' @param runName Name of the fit the workers are for (the `runName` of [DEoptimIterative()]). A host gets at
+#'   most as many workers as its free memory holds, at the memory per worker this fit used the last time it
+#'   ran (`memMaxGB` of its latest record in `fitMemory.rds`, beside the reservations ledger). With no record
+#'   for it, the largest `memMaxGB` of any fit in the window (`options(clusters.hostSpeedDays)`), and with no
+#'   records at all `options(clusters.workerMemoryGB)`; when that is unset (the default) no host is capped by
+#'   memory. For FireSense DEoptim workers 14 fits: peak memory was median 4.5 GB, 90th percentile about
+#'   6.5 GB, maximum 14.1 GB (457 workers on 15 hosts, 2026-10-09).
+#'   Every host keeps `options(clusters.memoryHeadroom)` (default 0.1) of its memory free.
 #'
 #' @return A list with:
 #' - `probe`: per-host capacity & load,
@@ -78,7 +86,8 @@ plan_psock_min <- function(
   auto_stop = TRUE,
   logPath = NULL,
   libPath = NULL,
-  build_final_cluster = TRUE
+  build_final_cluster = TRUE,
+  runName = NULL
 ) {
   
   pkgsNeeded <- unique(c(pkgsNeeded, c("parallelly","future","foreach")))
@@ -105,6 +114,10 @@ plan_psock_min <- function(
     '.libPaths(c(user_lib, .libPaths()))'
   )
   
+  ## GB per worker, looked up when asked: a fit's first chunk records it, and a running cluster
+  ## deciding where its workers belong (.rebalanceFn()) should use what it has recorded since
+  memPerWorker <- function() .memPerWorkerGB(runName)
+
   # 1) Probe cluster (one worker per host), minimal robust options
   
   ## also used, after the build, by .rebalanceFn() to probe the hosts again
@@ -338,7 +351,7 @@ plan_psock_min <- function(
     nodes <- .probeNodes(cl_probe, hosts, load_memory, fraction)
     # Hosts that failed verification (action = "drop") must not be allocated.
     if (!allLocalhost) nodes <- nodes[nodes$host %in% verifiedHosts, , drop = FALSE]
-    nodes <- .fitCapacity(nodes, total, load_memory)
+    nodes <- .fitCapacity(nodes, total, load_memory, memPerWorkerGB = memPerWorker())
     nodes <<- nodes
     nodes
   }
@@ -347,7 +360,7 @@ plan_psock_min <- function(
   # cores. Given back if this build fails; re-booked below if workers are dropped.
   resvId <- NULL
   book <- if (isTRUE(build_final_cluster) && isTRUE(getOption("clusters.useReservations", TRUE)))
-    function(alloc) resvId <<- reserveCores(alloc)
+    function(alloc) resvId <<- reserveCores(alloc, memPerWorkerGB = memPerWorker())
   alloc_df <- .allocateWhenAvailable(probeCapacity, total = total, beta = beta,
                                      minFraction = getOption("clusters.minWorkersFraction", 1),
                                      waitSeconds = getOption("clusters.waitForCores", 0),
@@ -425,7 +438,8 @@ plan_psock_min <- function(
     res$startProbe <- function() startProbe(verifiedHosts)
     res$capacity <- function(probe, own = NULL, ownId = NULL)
       .fitCapacity(.probeNodes(probe, verifiedHosts, load_memory, fraction), total, load_memory,
-                   own = own, ownId = ownId)
+                   own = own, ownId = ownId, memPerWorkerGB = memPerWorker())
+    res$memPerWorkerGB <- memPerWorker
     res$beta <- beta
 
     on.exit()
@@ -447,9 +461,7 @@ plan_psock_min <- function(
     # cluster stops (above). Workers dropped at start-up are given back.
     if (!is.null(resvId)) {
       if (length(checked$dropped)) {
-        kept <- as.data.frame(table(host = workers), stringsAsFactors = FALSE)
-        names(kept)[2] <- "assign"
-        .rebookCores(resvId, kept)
+        .rebookCores(resvId, .hostCounts(workers))
       }
       # Tie the release to the lifetime of the cluster object: when it is garbage
       # collected, or R exits, this reservation goes with it. liveReservations()
@@ -468,7 +480,8 @@ plan_psock_min <- function(
 }
 
 ## One row per host of `probe` (one worker per host, labelled by `hosts`, the SSH aliases): its threads,
-## physical cores, and parallelly::freeCores() over `load_memory`, scaled by `fraction`
+## physical cores, parallelly::freeCores() over `load_memory`, scaled by `fraction`, and the memory the
+## kernel says is available and total (GB; NA where /proc/meminfo cannot be read)
 .probeNodes <- function(probe, hosts, load_memory, fraction) {
   parallel::clusterExport(probe, varlist = c("load_memory", "fraction"), envir = environment())
   caps <- parallel::clusterEvalQ(probe, {
@@ -482,7 +495,9 @@ plan_psock_min <- function(
       # memory modules, from the kernel's EDAC records (readable without root); 0 where it has none
       dimms       = length(Sys.glob("/sys/devices/system/edac/mc/mc*/dimm*")),
       free_est    = as.integer(freeC),
-      loadavg     = attr(freeC, "loadavg")
+      loadavg     = attr(freeC, "loadavg"),
+      mem_available_gb = tryCatch(clusters:::.procMemoryGB("MemAvailable", "/proc/meminfo"), error = function(e) NA_real_),
+      mem_total_gb     = tryCatch(clusters:::.procMemoryGB("MemTotal", "/proc/meminfo"), error = function(e) NA_real_)
     )
   })
   do.call(rbind, Map(function(lbl, cap) {
@@ -496,6 +511,8 @@ plan_psock_min <- function(
       loadavg_1   = unname(cap$loadavg["1min"]),
       loadavg_5   = unname(cap$loadavg["5min"]),
       loadavg_15  = unname(cap$loadavg["15min"]),
+      mem_available_gb = if (is.null(cap$mem_available_gb)) NA_real_ else cap$mem_available_gb,
+      mem_total_gb     = if (is.null(cap$mem_total_gb)) NA_real_ else cap$mem_total_gb,
       stringsAsFactors = FALSE
     )
   }, hosts, caps))
@@ -507,10 +524,19 @@ plan_psock_min <- function(
 ## workers belong (.rebalanceFn()): `own`, that cluster's workers by host, are added back to the free cores
 ## and taken off the load, since moving them frees what they use, and its own reservation `ownId` is not
 ## counted. A new build has neither. Where the workers go within these cores is .speedAllocate()'s.
-.fitCapacity <- function(nodes, total, load_memory, own = NULL, ownId = NULL) {
+##
+## Memory limits the cores too, when the memory per worker is known (`memPerWorkerGB`, see
+## .memPerWorkerGB()): a host keeps `getOption("clusters.memoryHeadroom", 0.1)` of its memory free, and its
+## workers are at most floor((available memory - headroom) / memPerWorkerGB). Available memory is the
+## probed MemAvailable, less what other builds booked and their workers have not yet grown into (see
+## freeCoresLessReserved()), plus what `own` workers use. `ram_lost` is the cores memory took away.
+.fitCapacity <- function(nodes, total, load_memory, own = NULL, ownId = NULL, memPerWorkerGB = NA_real_) {
+  memPerWorkerGB <- if (is.null(memPerWorkerGB)) NA_real_ else as.numeric(memPerWorkerGB)[1]
+  useMemory <- !is.na(memPerWorkerGB) && all(c("mem_available_gb", "mem_total_gb") %in% names(nodes))
   mine <- if (length(own)) as.numeric(own[nodes$host]) else rep(NA_real_, NROW(nodes))
   mine[is.na(mine)] <- 0
   nodes$free_est <- as.numeric(nodes$free_est) + mine
+  if (useMemory) nodes$mem_free_gb <- as.numeric(nodes$mem_available_gb) + mine * memPerWorkerGB
   load <- nodes[[paste0("loadavg_", sub("min$", "", load_memory))]]
   nodes$busy <- round(pmax(if (is.null(load)) 0 else as.numeric(load) - mine, 0))
   # freeCores() reads a trailing load average, so a cluster built moments ago
@@ -524,6 +550,18 @@ plan_psock_min <- function(
               paste0(nodes$host[nodes$reserved > 0], "=", nodes$reserved[nodes$reserved > 0],
                      collapse = ", "))
     nodes$busy <- pmax(nodes$busy, nodes$reserved)
+  }
+  nodes$ram_lost <- 0
+  if (useMemory) {
+    headroom <- getOption("clusters.memoryHeadroom", 0.1) * as.numeric(nodes$mem_total_gb)
+    byMemory <- pmax(floor((nodes$mem_free_gb - headroom) / memPerWorkerGB), 0)
+    capped <- !is.na(byMemory) & byMemory < floor(nodes$free_est)   # a host that cannot say is not capped
+    nodes$ram_lost[capped] <- floor(nodes$free_est[capped]) - byMemory[capped]
+    nodes$free_est[capped] <- byMemory[capped]
+    if (any(capped))
+      message("Workers limited by free memory (", round(memPerWorkerGB, 1), " GB per worker): ",
+              paste0(nodes$host[capped], "=", byMemory[capped], " (", round(nodes$mem_free_gb[capped]), " GB free)",
+                     collapse = ", "))
   }
   nodes
 }

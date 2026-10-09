@@ -1,5 +1,20 @@
 # clusters (development version)
 
+* A host now gets only as many workers as its free memory can hold, not just as many as it has idle cores
+  (FireSense, 2026-10-09: a host filled to 187.1 of 187.5 GB hung for 1.5 h and every fit with a worker on it
+  died). Each worker reports its peak memory with every evaluation; `DEoptimIterative()` saves one row per
+  computed chunk (`runName`, `id`, `time`, `workers`, `memMedianGB`, `memMaxGB`) in `fitMemory.rds`, beside
+  `hostSpeed.rds`. A build or refit of the same `runName` (new `runName` argument of `clusterSetup()` and
+  `plan_psock_min()`) caps each host at `floor((MemAvailable - headroom) / memMaxGB)` workers, headroom being
+  `options(clusters.memoryHeadroom)` (default 0.1) of the host's memory; without one, the largest `memMaxGB` of any
+  fit in the window, and with no records `options(clusters.workerMemoryGB)`, unset by default
+  (no memory cap until a fit has recorded one; FireSense sets 14 GB: 457 workers measured 2026-10-09 had
+  peak memory median 4.5, 90th percentile ~6.5, maximum 14.1 GB).
+  The reservations ledger books each cluster's `memGB` by host (`reserveCores(memPerWorkerGB = )`), counted in
+  full for the first minutes like cores; older ledgers without the column still read. When memory leaves fewer
+  workers than asked for, the cluster is built smaller, with a message naming the capped hosts, instead of
+  waiting for cores that would not help; if nothing fits, the error says memory kept the workers off.
+
 * A rebuild of the cluster after a worker is lost (`.restartClusterFn()`) leaves out a host that cannot be reached
   instead of failing. Each remote host is first probed with `ssh -o BatchMode=yes -o ConnectTimeout=10`
   (`options(clusters.hostProbeTimeout)`); a host that fails the probe, cannot start its workers, or whose workers do not

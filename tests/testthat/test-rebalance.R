@@ -94,6 +94,7 @@ labelled <- function(hosts) {
 fakePlan <- function(free, started) list(
   beta = 0.5,
   startProbe = function() NULL,
+  memPerWorkerGB = function() 4,
   capacity = function(probe, own = NULL, ownId = NULL)
     data.frame(host = names(free), cores_total = 8L, cores_physical = 8L,
                dimms = ifelse(names(free) == "full", 4L, 8L),

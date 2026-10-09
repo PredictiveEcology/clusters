@@ -18,7 +18,8 @@ plan_psock_min(
   auto_stop = TRUE,
   logPath = NULL,
   libPath = NULL,
-  build_final_cluster = TRUE
+  build_final_cluster = TRUE,
+  runName = NULL
 )
 }
 \arguments{
@@ -57,6 +58,15 @@ cache folder instead (see \code{.hostLogPaths()}).}
 \item{libPath}{Optional site library path to prepend and use if writable.}
 
 \item{build_final_cluster}{Logical; if \code{TRUE} launch the final cluster (default \code{TRUE}).}
+
+\item{runName}{Name of the fit the workers are for (the \code{runName} of \code{\link[=DEoptimIterative]{DEoptimIterative()}}). A host gets at
+most as many workers as its free memory holds, at the memory per worker this fit used the last time it
+ran (\code{memMaxGB} of its latest record in \code{fitMemory.rds}, beside the reservations ledger). With no record
+for it, the largest \code{memMaxGB} of any fit in the window (\code{options(clusters.hostSpeedDays)}), and with no
+records at all \code{options(clusters.workerMemoryGB)}; when that is unset (the default) no host is capped by
+memory. For FireSense DEoptim workers 14 fits: peak memory was median 4.5 GB, 90th percentile about
+6.5 GB, maximum 14.1 GB (457 workers on 15 hosts, 2026-10-09).
+Every host keeps \code{options(clusters.memoryHeadroom)} (default 0.1) of its memory free.}
 }
 \value{
 A list with:

@@ -11,8 +11,8 @@
 #'
 #' These functions keep a small ledger of what has actually been handed out, so
 #' allocation is based on *reservations* rather than on a lagging measurement.
-#' Each successful build records `host -> workers` under a reservation id owned
-#' by the building process; [freeCoresLessReserved()] subtracts those from the
+#' Each successful build records `host -> workers` (and the memory those workers are expected to need,
+#' `memGB`) under a reservation id owned by the building process; [freeCoresLessReserved()] subtracts those from the
 #' measured free cores. Releases are keyed by id, because one process may hold
 #' several clusters at once.
 #'
@@ -30,7 +30,8 @@
 #' @param path Directory holding the ledger. Defaults to
 #'   `getOption("clusters.reservationsPath")`, else a per-user data directory.
 #' @return `reservationsPath()` a file path; `liveReservations()` a data.frame
-#'   with columns `id`, `pid`, `host`, `workers`, `created`; `reserveCores()`
+#'   with columns `id`, `pid`, `host`, `workers`, `created`, `memGB` (`NA` in rows
+#'   written before the column existed); `reserveCores()`
 #'   returns its reservation `id`; `releaseCores()` returns invisibly.
 #' @rdname reservations
 #' @export
@@ -97,8 +98,20 @@ reservationsPath <- function(path = getOption("clusters.reservationsPath")) {
 
 .emptyReservations <- function()
   data.frame(id = character(0), pid = integer(0), host = character(0),
-             workers = integer(0), created = as.POSIXct(character(0)),
+             workers = integer(0), created = as.POSIXct(character(0)), memGB = numeric(0),
              stringsAsFactors = FALSE)
+
+## The ledger as saved in `file`; rows written before `memGB` existed have it NA, so every reader and
+## every rbind() sees the same columns.
+.readReservations <- function(file) {
+  res <- tryCatch(readRDS(file), error = function(e) .emptyReservations())
+  if (is.data.frame(res) && !"memGB" %in% names(res)) res$memGB <- rep(NA_real_, NROW(res))
+  res
+}
+
+## GB booked for `assign` workers at `memPerWorkerGB` each; NA when the memory per worker is not known
+.bookedMemoryGB <- function(assign, memPerWorkerGB)
+  as.numeric(assign) * (if (is.null(memPerWorkerGB)) NA_real_ else as.numeric(memPerWorkerGB)[1])
 
 #' @rdname reservations
 #' @export
@@ -106,7 +119,7 @@ liveReservations <- function(path = getOption("clusters.reservationsPath")) {
   file <- reservationsPath(path)
   if (!file.exists(file)) return(.emptyReservations())
   .withReservationLock(file, {
-    res <- tryCatch(readRDS(file), error = function(e) .emptyReservations())
+    res <- .readReservations(file)
     if (!NROW(res)) {
       .emptyReservations()
     } else {
@@ -126,9 +139,11 @@ liveReservations <- function(path = getOption("clusters.reservationsPath")) {
 #' @param id Reservation id. One process may hold several clusters at once, so
 #'   releases are keyed by reservation rather than by process.
 #' @param pid Owning process id; defaults to this process.
+#' @param memPerWorkerGB GB of memory each of the workers is expected to need, booked beside the cores
+#'   (`NULL`, the default, books none).
 #' @rdname reservations
 #' @export
-reserveCores <- function(alloc, id = basename(tempfile("resv")), pid = Sys.getpid(),
+reserveCores <- function(alloc, id = basename(tempfile("resv")), pid = Sys.getpid(), memPerWorkerGB = NULL,
                          path = getOption("clusters.reservationsPath")) {
   stopifnot(all(c("host", "assign") %in% names(alloc)))
   alloc <- alloc[alloc$assign > 0, , drop = FALSE]
@@ -136,11 +151,12 @@ reserveCores <- function(alloc, id = basename(tempfile("resv")), pid = Sys.getpi
   file <- reservationsPath(path)
   .withReservationLock(file, {
     res <- if (file.exists(file))
-      tryCatch(readRDS(file), error = function(e) .emptyReservations()) else .emptyReservations()
+      .readReservations(file) else .emptyReservations()
     res <- res[.pidAlive(res$pid), , drop = FALSE]
     res <- rbind(res, data.frame(id = id, pid = as.integer(pid), host = alloc$host,
                                  workers = as.integer(alloc$assign),
-                                 created = Sys.time(), stringsAsFactors = FALSE))
+                                 created = Sys.time(), memGB = .bookedMemoryGB(alloc$assign, memPerWorkerGB),
+                                 stringsAsFactors = FALSE))
     saveRDS(res, file)
   })
   invisible(id)
@@ -153,7 +169,7 @@ releaseCores <- function(id = NULL, pid = Sys.getpid(),
   file <- reservationsPath(path)
   if (!file.exists(file)) return(invisible(NULL))
   .withReservationLock(file, {
-    res <- tryCatch(readRDS(file), error = function(e) .emptyReservations())
+    res <- .readReservations(file)
     if (NROW(res)) {
       drop <- if (is.null(id)) res$pid %in% pid else res$id %in% id
       saveRDS(res[!drop, , drop = FALSE], file)
@@ -189,11 +205,17 @@ releaseCores <- function(id = NULL, pid = Sys.getpid(),
 #'   with 48 threads carried 50-52 workers. So `free_est` is also capped at `cores_total` less every
 #'   worker booked on the host, absorbed or not, and less `getOption("clusters.keepFreeCores", 2)` cores
 #'   left for the host's other users, when `nodes` has `cores_total`.
+#'
+#'   Memory is booked the same way. When `nodes` has `mem_free_gb` (the host's `MemAvailable`), each
+#'   reservation's `memGB` is subtracted by the same unabsorbed share: a new cluster's workers have not grown
+#'   yet, so `MemAvailable` does not show the memory they will take, and a build deciding in those minutes
+#'   would count it free. Rows without `memGB` (an older ledger) book none.
 #' @param exclude Reservation ids not to count: a cluster asking where its own workers should be
 #'   counts every cluster but itself (see [.rebalanceFn()]).
 #' @return `nodes` with `free_est` reduced by the unabsorbed share of every live
 #'   reservation on that host and capped at `cores_total` less all of them, floored at zero, plus a
-#'   `reserved` column (the reserved workers). Reservations held by this process count
+#'   `reserved` column (the reserved workers); `mem_free_gb`, when present, reduced the same way, floored
+#'   at zero, with `reserved_gb`, the memory booked. Reservations held by this process count
 #'   too: a master that already built one cluster is genuinely using those cores
 #'   while it builds the next.
 #' @export
@@ -204,13 +226,20 @@ freeCoresLessReserved <- function(nodes,
   res <- res[!res$id %in% exclude, , drop = FALSE]
   if (NROW(res)) {
     ageMinutes <- pmax(as.numeric(difftime(Sys.time(), res$created, units = "mins")) - graceMinutes, 0)
-    unabsorbed <- res$workers * exp(-ageMinutes / loadWindowMinutes)
-    reserved <- vapply(nodes$host, function(h) sum(res$workers[res$host %in% h]), numeric(1))
-    subtract <- vapply(nodes$host, function(h) sum(unabsorbed[res$host %in% h]), numeric(1))
+    share <- exp(-ageMinutes / loadWindowMinutes)
+    byHost <- function(x) vapply(nodes$host, function(h) sum(x[res$host %in% h], na.rm = TRUE), numeric(1))
+    reserved <- byHost(res$workers)
+    subtract <- byHost(res$workers * share)
+    reservedGB <- byHost(res$memGB)
+    subtractGB <- byHost(res$memGB * share)
   } else {
-    reserved <- subtract <- rep(0, NROW(nodes))
+    reserved <- subtract <- reservedGB <- subtractGB <- rep(0, NROW(nodes))
   }
   nodes$reserved <- as.integer(reserved)
+  if (!is.null(nodes$mem_free_gb)) {
+    nodes$mem_free_gb <- pmax(as.numeric(nodes$mem_free_gb) - subtractGB, 0)
+    nodes$reserved_gb <- reservedGB
+  }
   free <- as.numeric(nodes$free_est) - round(subtract, 3)
   ## every host keeps getOption("clusters.keepFreeCores", 2) cores for its other users, whatever its load
   if (!is.null(nodes$cores_total))
@@ -221,13 +250,14 @@ freeCoresLessReserved <- function(nodes,
 
 ## Replace reservation `id`'s rows with `alloc` (`host`, `assign`), when a cluster's workers move. A host
 ## whose workers rose gets `created = now`, so builders count the new workers in full until the load
-## average shows them (see freeCoresLessReserved()); the others keep their time.
-.rebookCores <- function(id, alloc, path = getOption("clusters.reservationsPath")) {
+## average shows them (see freeCoresLessReserved()); the others keep their time. Memory is re-booked at
+## `memPerWorkerGB` a worker, or, when not given, at what each host was booked at before.
+.rebookCores <- function(id, alloc, memPerWorkerGB = NULL, path = getOption("clusters.reservationsPath")) {
   alloc <- alloc[alloc$assign > 0, , drop = FALSE]
   file <- reservationsPath(path)
   .withReservationLock(file, {
     res <- if (file.exists(file))
-      tryCatch(readRDS(file), error = function(e) .emptyReservations()) else .emptyReservations()
+      .readReservations(file) else .emptyReservations()
     mine <- res[res$id %in% id, , drop = FALSE]
     pid <- if (NROW(mine)) mine$pid[1] else Sys.getpid()
     before <- mine$workers[match(alloc$host, mine$host)]
@@ -237,6 +267,8 @@ freeCoresLessReserved <- function(nodes,
     res <- rbind(res[!res$id %in% id, , drop = FALSE],
                  data.frame(id = rep(id, NROW(alloc)), pid = rep(as.integer(pid), NROW(alloc)),
                             host = alloc$host, workers = as.integer(alloc$assign), created = created,
+                            memGB = if (is.null(memPerWorkerGB)) alloc$assign * (mine$memGB / mine$workers)[match(alloc$host, mine$host)]
+                                    else .bookedMemoryGB(alloc$assign, memPerWorkerGB),
                             stringsAsFactors = FALSE))
     saveRDS(res, file)
   })

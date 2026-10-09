@@ -18,7 +18,8 @@ clusterSetup(
   pkgsNeeded,
   nCoresNeeded = 100,
   envir = parent.frame(),
-  controlArgs = list()
+  controlArgs = list(),
+  runName = NULL
 )
 }
 \arguments{
@@ -52,6 +53,13 @@ clusterSetup(
 \code{CR}, \code{F}, \code{c}, \code{p}, \code{reltol}), added to the returned control so they reach DEoptim. A name
 \code{DEoptim.control()} does not have is an error. \code{NP} is still the number of workers built, and
 \code{cluster} and \code{parallelType} are set here.}
+
+\item{runName}{The \code{runName} the fit will be given in \code{\link[=DEoptimIterative]{DEoptimIterative()}}. A host gets at most as many
+workers as its free memory holds, at the memory per worker that fit recorded the last time it ran; see
+\code{\link[=plan_psock_min]{plan_psock_min()}} for what is used without a record (\code{options(clusters.workerMemoryGB)}, unset: no cap).
+Hosts keep \code{options(clusters.memoryHeadroom)} (default 0.1) of their memory free. When memory leaves
+fewer workers than \code{nCoresNeeded}, the cluster is built smaller (with a message naming the hosts) and
+\code{NP} follows the workers.}
 }
 \value{
 A list of items that can be passed to \code{DEoptim.control()}. When \code{objsNeeded} is given,

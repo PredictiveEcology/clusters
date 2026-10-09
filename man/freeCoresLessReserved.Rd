@@ -32,7 +32,8 @@ counts every cluster but itself (see \code{\link[=.rebalanceFn]{.rebalanceFn()}}
 \value{
 \code{nodes} with \code{free_est} reduced by the unabsorbed share of every live
 reservation on that host and capped at \code{cores_total} less all of them, floored at zero, plus a
-\code{reserved} column (the reserved workers). Reservations held by this process count
+\code{reserved} column (the reserved workers); \code{mem_free_gb}, when present, reduced the same way, floored
+at zero, with \code{reserved_gb}, the memory booked. Reservations held by this process count
 too: a master that already built one cluster is genuinely using those cores
 while it builds the next.
 }
@@ -55,4 +56,9 @@ load of 30-35 (2026-10-02). Read as free, that gap was booked by every later bui
 with 48 threads carried 50-52 workers. So \code{free_est} is also capped at \code{cores_total} less every
 worker booked on the host, absorbed or not, and less \code{getOption("clusters.keepFreeCores", 2)} cores
 left for the host's other users, when \code{nodes} has \code{cores_total}.
+
+Memory is booked the same way. When \code{nodes} has \code{mem_free_gb} (the host's \code{MemAvailable}), each
+reservation's \code{memGB} is subtracted by the same unabsorbed share: a new cluster's workers have not grown
+yet, so \code{MemAvailable} does not show the memory they will take, and a build deciding in those minutes
+would count it free. Rows without \code{memGB} (an older ledger) book none.
 }

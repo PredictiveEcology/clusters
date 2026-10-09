@@ -25,7 +25,7 @@ test_that("a host with free cores but little free memory is capped by its memory
 
 test_that("memory per worker comes from the latest fitMemory record of the same runName", {
   withr::local_options(clusters.reservationsPath = withr::local_tempdir())
-  expect_equal(clusters:::.memPerWorkerGB("elf1"), 14)   # no file: the default
+  expect_true(is.na(clusters:::.memPerWorkerGB("elf1")))   # no file, no option: no memory cap
   clusters:::.recordFitMemory(list(mkMem("h", 1:3, c(1, 2, 5))), runName = "elf1", id = "elf1_1")
   clusters:::.recordFitMemory(list(mkMem("h", 1:3, c(1, 2, 9))), runName = "elf2", id = "elf2_1")
   expect_equal(clusters:::.memPerWorkerGB("elf1"), 5)
@@ -44,9 +44,13 @@ test_that("memory per worker comes from the latest fitMemory record of the same 
   expect_equal(capacity(memNodes(avail = 30), memPerWorkerGB = clusters:::.memPerWorkerGB("elf2"))$free_est, 2)
 })
 
-test_that("with no records at all clusters.workerMemoryGB is used, 14 GB by default", {
-  withr::local_options(clusters.reservationsPath = withr::local_tempdir())
-  expect_equal(clusters:::.memPerWorkerGB("elf1"), 14)
+test_that("with no records at all clusters.workerMemoryGB is used, and with no option nothing is capped", {
+  withr::local_options(clusters.reservationsPath = withr::local_tempdir(), clusters.keepFreeCores = 0)
+  expect_true(is.na(clusters:::.memPerWorkerGB("elf1")))
+  nodes <- memNodes(avail = 15, total = 16)   # a small machine
+  expect_equal(capacity(nodes, memPerWorkerGB = clusters:::.memPerWorkerGB("elf1"))$free_est, 40)
+  withr::local_options(clusters.workerMemoryGB = 14)
+  expect_equal(capacity(nodes, memPerWorkerGB = clusters:::.memPerWorkerGB("elf1"))$free_est, 0)
   withr::local_options(clusters.workerMemoryGB = 6)
   expect_equal(clusters:::.memPerWorkerGB("elf1"), 6)
   saveRDS(NULL, clusters:::.fitMemoryFile())   # an unusable file is no record either
@@ -125,6 +129,10 @@ test_that("workers lost to memory give a smaller cluster, not a wait or an error
   expect_equal(nodes$ram_lost, c(35, 0))
   alloc <- suppressMessages(clusters:::.allocateWhenAvailable(function() nodes, total = 50, waitSeconds = 0))
   expect_equal(sum(alloc$assign), 15L)
+  ## when memory leaves nothing, the error names memory, not just cores
+  none <- capacity(memNodes(avail = 5, free = 8), memPerWorkerGB = 4)
+  expect_error(suppressMessages(clusters:::.allocateWhenAvailable(function() none, total = 4, waitSeconds = 0)),
+               "free memory kept workers off: a=8 \\(5 GB free\\)")
   ## a shortage of cores as well as memory still stops
   expect_error(suppressMessages(clusters:::.allocateWhenAvailable(function() nodes, total = 80, waitSeconds = 0)),
                "could only get")

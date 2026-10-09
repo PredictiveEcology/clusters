@@ -56,7 +56,7 @@ clusterSetup(
 
 \item{runName}{The \code{runName} the fit will be given in \code{\link[=DEoptimIterative]{DEoptimIterative()}}. A host gets at most as many
 workers as its free memory holds, at the memory per worker that fit recorded the last time it ran; see
-\code{\link[=plan_psock_min]{plan_psock_min()}} for what is used without a record (\code{options(clusters.workerMemoryGB)}, default 14).
+\code{\link[=plan_psock_min]{plan_psock_min()}} for what is used without a record (\code{options(clusters.workerMemoryGB)}, unset: no cap).
 Hosts keep \code{options(clusters.memoryHeadroom)} (default 0.1) of their memory free. When memory leaves
 fewer workers than \code{nCoresNeeded}, the cluster is built smaller (with a message naming the hosts) and
 \code{NP} follows the workers.}

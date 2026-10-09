@@ -63,8 +63,9 @@ cache folder instead (see \code{.hostLogPaths()}).}
 most as many workers as its free memory holds, at the memory per worker this fit used the last time it
 ran (\code{memMaxGB} of its latest record in \code{fitMemory.rds}, beside the reservations ledger). With no record
 for it, the largest \code{memMaxGB} of any fit in the window (\code{options(clusters.hostSpeedDays)}), and with no
-records at all \code{options(clusters.workerMemoryGB)}, default 14: FireSense DEoptim workers' peak memory
-was median 4.5 GB, 90th percentile about 6.5 GB, maximum 14.1 GB (457 workers on 15 hosts, 2026-10-09).
+records at all \code{options(clusters.workerMemoryGB)}; when that is unset (the default) no host is capped by
+memory. For FireSense DEoptim workers 14 fits: peak memory was median 4.5 GB, 90th percentile about
+6.5 GB, maximum 14.1 GB (457 workers on 15 hosts, 2026-10-09).
 Every host keeps \code{options(clusters.memoryHeadroom)} (default 0.1) of its memory free.}
 }
 \value{

@@ -53,6 +53,8 @@
     if (got >= needed) return(alloc)
 
     freeByHost <- paste0(nodes$host, "=", nodes$free_est, "/", nodes$cores_total, collapse = ", ")
+    ## when memory, not cores, is what is short, say so
+    byRam <- .ramLimitNote(nodes)
     if (sum(nodes$cores_total) < needed)
       stop("This cluster needs ", needed, " workers, more workers than the ",
            sum(nodes$cores_total), " cores on its hosts (free/total: ", freeByHost,
@@ -61,12 +63,12 @@
     waited <- round(as.numeric(difftime(now(), started, units = "mins")), 1)
     if (now() >= deadline)
       stop("could only get ", got, " of ", needed, " workers after waiting ", waited,
-           " min (options(clusters.waitForCores)); free/total cores by host: ", freeByHost,
+           " min (options(clusters.waitForCores)); free/total cores by host: ", freeByHost, byRam,
            ". Not starting with fewer workers; options(clusters.minWorkersFraction = ) allows a ",
            "partial start.", call. = FALSE)
 
     message("Waiting for cores: could get ", got, " of ", needed, " workers (free/total cores by host: ",
-            freeByHost, "); probing again in ", interval, " s, until ",
+            freeByHost, ")", byRam, "; probing again in ", interval, " s, until ",
             format(deadline, "%Y-%m-%d %H:%M"), " at most")
     sleep(interval)
   }
@@ -77,4 +79,13 @@
 .neededAfterMemory <- function(needed, nodes) {
   lost <- if (is.null(nodes$ram_lost)) 0 else sum(nodes$ram_lost, na.rm = TRUE)
   as.integer(max(min(needed, 1L), needed - lost))
+}
+
+## What memory took away, for a message: "; free memory kept workers off: a=35 (12 GB free), ..."
+.ramLimitNote <- function(nodes) {
+  if (is.null(nodes$ram_lost) || !any(nodes$ram_lost > 0)) return("")
+  lost <- nodes$ram_lost > 0
+  paste0("; free memory kept workers off: ",
+         paste0(nodes$host[lost], "=", nodes$ram_lost[lost], " (", round(nodes$mem_free_gb[lost]), " GB free)",
+                collapse = ", "))
 }

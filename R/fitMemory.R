@@ -58,13 +58,15 @@
 ## GB each worker is expected to need, in this order:
 ## 1. the largest worker memory (`memMaxGB`) of the most recent record for `runName`: the same fit, last time;
 ## 2. the largest `memMaxGB` of any runName in the window: fits actually run on this cluster, so cautious;
-## 3. `getOption("clusters.workerMemoryGB", 14)`. Measured 2026-10-09 on 15 hosts, 457 FireSense DEoptim
-##    workers' peak resident memory (VmHWM): median 4.5 GB, 90th percentile about 6.5 GB, maximum 14.1 GB.
+## 3. `getOption("clusters.workerMemoryGB")`, NA when unset: no memory cap, which is what a machine of any
+##    size gets until a fit has recorded something. (FireSense sets 14: measured 2026-10-09 on 15 hosts, 457
+##    DEoptim workers' peak resident memory (VmHWM) had median 4.5 GB, 90th percentile about 6.5 GB, maximum
+##    14.1 GB.)
 ## A fit's first recorded chunk replaces (3) with (1), and a running cluster re-reads it when it rebalances.
 .memPerWorkerGB <- function(runName = NULL, path = getOption("clusters.reservationsPath")) {
   rows <- .fitMemoryRecent(path)
   mine <- rows[rows$runName %in% as.character(runName), , drop = FALSE]
   if (NROW(mine)) return(mine$memMaxGB[which.max(mine$time)])
   if (NROW(rows)) return(max(rows$memMaxGB))
-  getOption("clusters.workerMemoryGB", 14)
+  as.numeric(getOption("clusters.workerMemoryGB", NA_real_))[1]
 }

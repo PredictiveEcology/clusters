@@ -18,7 +18,7 @@
 #' @param envir Environment holding `objsNeeded`; defaults to the caller's.
 #' @param runName The `runName` the fit will be given in [DEoptimIterative()]. A host gets at most as many
 #'   workers as its free memory holds, at the memory per worker that fit recorded the last time it ran; see
-#'   [plan_psock_min()] for what is used without a record (`options(clusters.workerMemoryGB)`, default 14).
+#'   [plan_psock_min()] for what is used without a record (`options(clusters.workerMemoryGB)`, unset: no cap).
 #'   Hosts keep `options(clusters.memoryHeadroom)` (default 0.1) of their memory free. When memory leaves
 #'   fewer workers than `nCoresNeeded`, the cluster is built smaller (with a message naming the hosts) and
 #'   `NP` follows the workers.

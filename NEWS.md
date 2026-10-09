@@ -7,12 +7,13 @@
   `hostSpeed.rds`. A build or refit of the same `runName` (new `runName` argument of `clusterSetup()` and
   `plan_psock_min()`) caps each host at `floor((MemAvailable - headroom) / memMaxGB)` workers, headroom being
   `options(clusters.memoryHeadroom)` (default 0.1) of the host's memory; without one, the largest `memMaxGB` of any
-  fit in the window, and with no records `options(clusters.workerMemoryGB)` (default 14 GB; measured 2026-10-09,
-  457 workers: median 4.5, 90th percentile ~6.5, maximum 14.1 GB).
+  fit in the window, and with no records `options(clusters.workerMemoryGB)`, unset by default
+  (no memory cap until a fit has recorded one; FireSense sets 14 GB: 457 workers measured 2026-10-09 had
+  peak memory median 4.5, 90th percentile ~6.5, maximum 14.1 GB).
   The reservations ledger books each cluster's `memGB` by host (`reserveCores(memPerWorkerGB = )`), counted in
   full for the first minutes like cores; older ledgers without the column still read. When memory leaves fewer
   workers than asked for, the cluster is built smaller, with a message naming the capped hosts, instead of
-  waiting for cores that would not help.
+  waiting for cores that would not help; if nothing fits, the error says memory kept the workers off.
 
 # clusters 0.0.73
 

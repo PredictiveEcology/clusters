@@ -38,8 +38,9 @@
 #'   most as many workers as its free memory holds, at the memory per worker this fit used the last time it
 #'   ran (`memMaxGB` of its latest record in `fitMemory.rds`, beside the reservations ledger). With no record
 #'   for it, the largest `memMaxGB` of any fit in the window (`options(clusters.hostSpeedDays)`), and with no
-#'   records at all `options(clusters.workerMemoryGB)`, default 14: FireSense DEoptim workers' peak memory
-#'   was median 4.5 GB, 90th percentile about 6.5 GB, maximum 14.1 GB (457 workers on 15 hosts, 2026-10-09).
+#'   records at all `options(clusters.workerMemoryGB)`; when that is unset (the default) no host is capped by
+#'   memory. For FireSense DEoptim workers 14 fits: peak memory was median 4.5 GB, 90th percentile about
+#'   6.5 GB, maximum 14.1 GB (457 workers on 15 hosts, 2026-10-09).
 #'   Every host keeps `options(clusters.memoryHeadroom)` (default 0.1) of its memory free.
 #'
 #' @return A list with:

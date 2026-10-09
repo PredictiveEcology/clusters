@@ -14,7 +14,7 @@ for (f in c(".replaceDeadNodes", ".deadNodes", ".runWithRebuild", ".setWorkerTim
   assign(f, getFromNamespace(f, "clusters"))
 
 localCluster <- function(n) {
-  cl <- parallel::makeCluster(n)
+  cl <- setWorkerLibs(parallel::makeCluster(n))
   attr(cl, "pids") <- unlist(parallel::clusterCall(cl, Sys.getpid))
   cl
 }
@@ -61,11 +61,12 @@ test_that("a node that never answers is found within the timeout while later's i
   ## worker process, which then runs the check on a cluster of its own.
   outer <- localTestCluster(1L)
   socketTimeout(outer[[1]]$con, 60)                     # a hang here is a failure, not a stuck suite
-  check <- function() {
+  check <- function(libs) {
     later::later(function() NULL, 0)
     Sys.sleep(0.2)
     later::run_now()
     cl <- parallel::makeCluster(2L)
+    parallel::clusterCall(cl, function(libs) { .libPaths(libs); loadNamespace("clusters") }, libs)   # as setWorkerLibs()
     pids <- unlist(parallel::clusterCall(cl, Sys.getpid))
     on.exit(for (p in pids) tools::pskill(p, tools::SIGKILL))
     tools::pskill(pids[1], tools::SIGSTOP)
@@ -74,7 +75,7 @@ test_that("a node that never answers is found within the timeout while later's i
     list(dead = dead, took = took)
   }
   environment(check) <- globalenv()
-  out <- parallel::clusterCall(outer, check)[[1]]
+  out <- parallel::clusterCall(outer, check, .libPaths())[[1]]
   expect_identical(out$dead, 1L)
   expect_lt(out$took, 20)
 })

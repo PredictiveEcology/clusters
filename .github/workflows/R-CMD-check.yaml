@@ -23,5 +23,7 @@ concurrency:
 
 jobs:
   R-CMD-check:
-    uses: PredictiveEcology/actions/.github/workflows/R-CMD-check.yaml@main
+    uses: PredictiveEcology/actions/.github/workflows/R-CMD-check.yaml@ci/test-apt-cache-refs2
     secrets: inherit
+    with:
+      deps-timeout-minutes: 1

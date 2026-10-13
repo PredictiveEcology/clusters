@@ -1,5 +1,8 @@
 # clusters (development version)
 
+* Host speeds are recorded again when `hostSpeed.rds` holds rows written before 0.0.65 (FireSense: none were
+  recorded after 2026-10-02, so speed-based placement ran on stale data). Old rows are kept, with `NA` workers.
+
 * A host now gets only as many workers as its free memory can hold, not just as many as it has idle cores
   (FireSense, 2026-10-09: a host filled to 187.1 of 187.5 GB hung for 1.5 h and every fit with a worker on it
   died). Each worker reports its peak memory with every evaluation; `DEoptimIterative()` saves one row per

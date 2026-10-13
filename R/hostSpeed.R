@@ -20,6 +20,8 @@
 .replaceRecords <- function(file, new, columns) {
   .withReservationLock(file, {
     old <- if (file.exists(file)) tryCatch(readRDS(file), error = function(e) NULL)
+    ## rows from before a column existed (e.g. `workers`, added in 0.0.65) get NA there
+    if (is.data.frame(old)) old[setdiff(columns, names(old))] <- NA
     old <- old[!old$id %in% new$id, columns, drop = FALSE]
     saveRDS(.hostSpeedRecent(rbind(old, new)), file)
   })

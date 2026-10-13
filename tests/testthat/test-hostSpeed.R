@@ -26,6 +26,19 @@ test_that("recording appends rows, trims by age, and skips evaluations without h
   expect_setequal(got$host[got$id == "r3"], c("a", "b"))
 })
 
+test_that("rows written before the workers column existed are kept and the new record is written", {
+  d <- withr::local_tempdir()
+  withr::local_options(clusters.reservationsPath = d, clusters.hostSpeedDays = 30)
+  file <- file.path(d, "hostSpeed.rds")
+  saveRDS(data.frame(host = "old", n = 3L, median = 1, p90 = 2, ratio = 1, time = Sys.time(), id = "r0",
+                     stringsAsFactors = FALSE), file)
+  expect_no_warning(.recordHostSpeed(list(mkEv(c("a", "b"), c(1, 2))), id = "r1"))
+  got <- readRDS(file)
+  expect_equal(got$id, c("r0", "r1", "r1"))
+  expect_true(is.na(got$workers[got$id == "r0"]))
+  expect_false(anyNA(got$workers[got$id == "r1"]))
+})
+
 test_that("the end-of-fit table is shown once for all evaluations", {
   expect_message(.showHostSpeed(list(mkEv(c("a", "b"), c(1, 3)), mkEv("a", 1))), "Evaluation speed")
   expect_silent(.showHostSpeed(list(data.frame(seconds = 1, value = 0))))

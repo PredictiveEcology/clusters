@@ -13,7 +13,9 @@
   interval = 60,
   sleep = Sys.sleep,
   now = Sys.time,
-  book = NULL
+  book = NULL,
+  allocate = NULL,
+  what = "workers"
 )
 }
 \arguments{
@@ -40,9 +42,15 @@ is short: a build that memory left 2 of its 40 workers started with the 2 and di
 \item{book}{\code{NULL}, or a function of the allocation that books it (see \code{\link[=reserveCores]{reserveCores()}}). Each probe,
 allocation and booking runs under one lock shared with every other build and rebalance
 (\code{.withAllocationLock()}), so no other cluster decides between this probe and this booking.}
+
+\item{allocate}{\code{NULL}, or a function of the node table returning the allocation in place of
+\code{\link[=.speedAllocate]{.speedAllocate()}}: a job that needs all its cores on one host (\code{\link[=reserveCapacity]{reserveCapacity()}}) allocates all or
+nothing, so \code{minFraction} does not apply and the error does not suggest it.}
+
+\item{what}{What is counted in the messages: \code{"workers"} (the default) or \code{"cores"}.}
 }
 \value{
-The allocation data.frame from \code{\link[=.speedAllocate]{.speedAllocate()}}.
+The allocation data.frame from \code{\link[=.speedAllocate]{.speedAllocate()}} (or \code{allocate}).
 }
 \description{
 Probes the hosts, allocates with \code{\link[=.speedAllocate]{.speedAllocate()}} (where workers run fastest),

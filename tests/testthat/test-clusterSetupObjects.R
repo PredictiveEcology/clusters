@@ -92,7 +92,7 @@ test_that("after a rebuild, the exit handler closes no connection that took the 
   opened <- list()
   logPath <- withr::local_tempdir()
   suppressMessages(fitWithRebuild(function(rebuilt, old) {
-    srv <- serverSocket(port <- sample(20000:30000, 1L))
+    srv <- serverSocket(port <- parallelly::freePort(20000:30000))   # a free one: a busy host has many taken
     on.exit(close(srv))
     clusters:::.stopCluster(rebuilt)          # done with it, as its autoStop finalizer would do
     ## new socket connections (as a next cluster's would be), until two have the first cluster's numbers

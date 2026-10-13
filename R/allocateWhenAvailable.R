@@ -30,20 +30,27 @@
 #' @param book `NULL`, or a function of the allocation that books it (see [reserveCores()]). Each probe,
 #'   allocation and booking runs under one lock shared with every other build and rebalance
 #'   (`.withAllocationLock()`), so no other cluster decides between this probe and this booking.
-#' @return The allocation data.frame from [.speedAllocate()].
+#' @param allocate `NULL`, or a function of the node table returning the allocation in place of
+#'   [.speedAllocate()]: a job that needs all its cores on one host ([reserveCapacity()]) allocates all or
+#'   nothing, so `minFraction` does not apply and the error does not suggest it.
+#' @param what What is counted in the messages: `"workers"` (the default) or `"cores"`.
+#' @return The allocation data.frame from [.speedAllocate()] (or `allocate`).
 #' @keywords internal
 .allocateWhenAvailable <- function(probe, total, beta = 0.75,
                                    minFraction = getOption("clusters.minWorkersFraction", 1),
                                    waitSeconds = getOption("clusters.waitForCores", 0),
-                                   interval = 60, sleep = Sys.sleep, now = Sys.time, book = NULL) {
+                                   interval = 60, sleep = Sys.sleep, now = Sys.time, book = NULL,
+                                   allocate = NULL, what = "workers") {
   stopifnot(is.function(probe), is.numeric(minFraction), length(minFraction) == 1L,
             minFraction > 0, minFraction <= 1)
+  partial <- is.null(allocate)
+  if (partial) allocate <- function(nodes) .speedAllocate(nodes, total = total, beta = beta)
   needed <- as.integer(ceiling(minFraction * total))
   started <- now()
   deadline <- started + waitSeconds
   attempt <- function() {
     nodes <- probe()
-    alloc <- .speedAllocate(nodes, total = total, beta = beta)
+    alloc <- allocate(nodes)
     got <- as.integer(sum(alloc$assign))
     if (got >= needed && is.function(book)) book(alloc)
     list(nodes = nodes, alloc = alloc, got = got)
@@ -55,20 +62,21 @@
 
     freeByHost <- paste0(nodes$host, "=", nodes$free_est, "/", nodes$cores_total, collapse = ", ")
     ## when memory, not cores, is what is short, say so
-    byRam <- .ramLimitNote(nodes)
+    byRam <- .ramLimitNote(nodes, what)
     if (sum(nodes$cores_total) < needed)
-      stop("This cluster needs ", needed, " workers, more workers than the ",
-           sum(nodes$cores_total), " cores on its hosts (free/total: ", freeByHost,
-           "), so it could never start. Ask for fewer workers or add hosts.", call. = FALSE)
+      stop("This ", if (partial) "cluster" else "job", " needs ", needed, " ", what, ", more ", what,
+           " than the ", sum(nodes$cores_total), " cores on its hosts (free/total: ", freeByHost,
+           "), so it could never start. Ask for fewer ", what, " or add hosts.", call. = FALSE)
 
     waited <- round(as.numeric(difftime(now(), started, units = "mins")), 1)
     if (now() >= deadline)
-      stop("could only get ", got, " of ", needed, " workers after waiting ", waited,
+      stop("could only get ", got, " of ", needed, " ", what, " after waiting ", waited,
            " min (options(clusters.waitForCores)); free/total cores by host: ", freeByHost, byRam,
-           ". Not starting with fewer workers; options(clusters.minWorkersFraction = ) allows a ",
-           "partial start.", call. = FALSE)
+           ". Not starting with fewer ", what,
+           if (partial) "; options(clusters.minWorkersFraction = ) allows a partial start", ".",
+           call. = FALSE)
 
-    message("Waiting for cores: could get ", got, " of ", needed, " workers (free/total cores by host: ",
+    message("Waiting for cores: could get ", got, " of ", needed, " ", what, " (free/total cores by host: ",
             freeByHost, ")", byRam, "; probing again in ", interval, " s, until ",
             format(deadline, "%Y-%m-%d %H:%M"), " at most")
     sleep(interval)
@@ -76,10 +84,10 @@
 }
 
 ## What memory took away, for a message: "; free memory kept workers off: a=35 (12 GB free), ..."
-.ramLimitNote <- function(nodes) {
+.ramLimitNote <- function(nodes, what = "workers") {
   if (is.null(nodes$ram_lost) || !any(nodes$ram_lost > 0)) return("")
   lost <- nodes$ram_lost > 0
-  paste0("; free memory kept workers off: ",
+  paste0("; free memory kept ", what, " off: ",
          paste0(nodes$host[lost], "=", nodes$ram_lost[lost], " (", round(nodes$mem_free_gb[lost]), " GB free)",
                 collapse = ", "))
 }

@@ -488,24 +488,30 @@ plan_psock_min <- function(
 ## One row per host of `probe` (one worker per host, labelled by `hosts`, the SSH aliases): its threads,
 ## physical cores, parallelly::freeCores() over `load_memory`, scaled by `fraction`, and the memory the
 ## kernel says is available and total (GB; NA where /proc/meminfo cannot be read)
-.probeNodes <- function(probe, hosts, load_memory, fraction) {
-  parallel::clusterExport(probe, varlist = c("load_memory", "fraction"), envir = environment())
-  caps <- parallel::clusterEvalQ(probe, {
-    maxC  <- parallelly::availableCores()
-    freeC <- parallelly::freeCores(memory = load_memory, fraction = fraction)
-    list(
-      nodename = Sys.info()[["nodename"]],
-      cores_total = as.integer(maxC),
-      # NA if the host cannot say (or runs an older clusters): the allocator then assumes 2 threads/core
-      cores_physical = tryCatch(clusters:::.availablePhysicalCores(maxC), error = function(e) NA_integer_),
-      # memory modules, from the kernel's EDAC records (readable without root); 0 where it has none
-      dimms       = length(Sys.glob("/sys/devices/system/edac/mc/mc*/dimm*")),
-      free_est    = as.integer(freeC),
-      loadavg     = attr(freeC, "loadavg"),
-      mem_available_gb = tryCatch(clusters:::.procMemoryGB("MemAvailable", "/proc/meminfo"), error = function(e) NA_real_),
-      mem_total_gb     = tryCatch(clusters:::.procMemoryGB("MemTotal", "/proc/meminfo"), error = function(e) NA_real_)
-    )
-  })
+.probeNodes <- function(probe, hosts, load_memory, fraction)
+  .nodeTable(hosts, parallel::clusterCall(probe, .probeHost, load_memory, fraction))
+
+## What one host says of itself, measured in the process that calls this: on every host by .probeNodes()
+## (through its probe cluster), and by reserveCapacity() for the host a job runs on
+.probeHost <- function(load_memory, fraction) {
+  maxC  <- parallelly::availableCores()
+  freeC <- parallelly::freeCores(memory = load_memory, fraction = fraction)
+  list(
+    nodename = Sys.info()[["nodename"]],
+    cores_total = as.integer(maxC),
+    # NA if the host cannot say (or runs an older clusters): the allocator then assumes 2 threads/core
+    cores_physical = tryCatch(.availablePhysicalCores(maxC), error = function(e) NA_integer_),
+    # memory modules, from the kernel's EDAC records (readable without root); 0 where it has none
+    dimms       = length(Sys.glob("/sys/devices/system/edac/mc/mc*/dimm*")),
+    free_est    = as.integer(freeC),
+    loadavg     = attr(freeC, "loadavg"),
+    mem_available_gb = tryCatch(.procMemoryGB("MemAvailable", "/proc/meminfo"), error = function(e) NA_real_),
+    mem_total_gb     = tryCatch(.procMemoryGB("MemTotal", "/proc/meminfo"), error = function(e) NA_real_)
+  )
+}
+
+## The node table: one row per host from what each said of itself (`caps`, .probeHost()'s lists)
+.nodeTable <- function(hosts, caps) {
   do.call(rbind, Map(function(lbl, cap) {
     data.frame(
       host        = lbl,                         # PRESERVE SSH NAME (not Sys.info()[["nodename"]])

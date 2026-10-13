@@ -10,15 +10,7 @@
 nodesWith <- function(free, cores = 48L, hosts = letters[seq_along(free)])
   data.frame(host = hosts, cores_total = cores, free_est = free, stringsAsFactors = FALSE)
 
-## A fake clock: sleep() advances now().
-fakeClock <- function() {
-  e <- new.env()
-  e$t <- as.POSIXct("2026-09-15 12:00:00", tz = "UTC")
-  e$sleeps <- 0L
-  list(now = function() e$t,
-       sleep = function(s) { e$t <- e$t + s; e$sleeps <- e$sleeps + 1L; invisible(NULL) },
-       sleeps = function() e$sleeps)
-}
+## fakeClock() is in helper-placement.R
 
 test_that("with enough free cores the full population is allocated without waiting", {
   clk <- fakeClock()

@@ -1,5 +1,13 @@
 # clusters (development version)
 
+* New `reserveCapacity()`, `releaseCapacity()` and `withCapacity()` book cores and memory for a job that is
+  not a cluster -- a FireSense prediction, one SpaDES simulation of about 38 GB and 1-2 cores in a tmux pane of
+  `SpaDES.project::experimentTmux()` -- in the same ledger and under the same per-host caps as a cluster
+  build, waiting up to `options(clusters.waitForCores)` until the whole job fits on one of its candidate hosts
+  (default `"localhost"`, the name every build on the machine books it under). A build that follows subtracts
+  the job's cores and memory. The booking is released explicitly, when R exits, and when its process is gone,
+  as a cluster's is. Such jobs were invisible to the ledger, so fits and predictions overbooked a host.
+
 * Every host now has hard caps that placement never exceeds, for a new cluster and for a running cluster
   moving its workers alike (`.fitCapacity()`): all workers and other load within the host's threads less
   `options(clusters.keepFreeCores)` (default 2), and memory used plus the new workers' memory within

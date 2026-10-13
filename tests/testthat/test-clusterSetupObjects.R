@@ -26,7 +26,13 @@ localClusterOptions <- function(env = parent.frame()) {
                        clusters.keepFreeCores = 0, .local_envir = env)
   ## clusterSetup() refuses fewer than 4 workers (DEoptim's minimum population), but R CMD check
   ## allows 2 processes; these tests are about moving objects, not the population size.
-  testthat::local_mocked_bindings(.clusterNP = function(NP, nWorkers) nWorkers, .package = "clusters", .env = env)
+  ## And placement keeps every worker and all other load within those 2 cores, so the machine's real load
+  ## (49 on a shared host, 2026-10-13) would leave no room: the probe reports the host idle.
+  probeNodes <- clusters:::.probeNodes
+  testthat::local_mocked_bindings(
+    .clusterNP = function(NP, nWorkers) nWorkers,
+    .probeNodes = function(...) { n <- probeNodes(...); n$loadavg_1 <- n$loadavg_5 <- n$loadavg_15 <- 0; n },
+    .package = "clusters", .env = env)
   ## clusterSetup() also puts the objects in the master's global environment for local workers
   withr::defer(if (exists("x1", envir = .GlobalEnv, inherits = FALSE)) rm("x1", envir = .GlobalEnv), envir = env)
 }

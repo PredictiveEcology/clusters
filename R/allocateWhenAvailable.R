@@ -15,13 +15,15 @@
 #' larger than every core on the hosts stops at once, since waiting cannot satisfy it.
 #'
 #' @param probe A function returning the node table (`host`, `cores_total`, `free_est`),
-#'   with reservations already subtracted. A `ram_lost` column (see `.fitCapacity()`) is the cores each
-#'   host's free memory cannot hold workers for: the workers lost to it are neither waited for nor an error, so
-#'   the cluster is built smaller.
+#'   with reservations already subtracted and the memory cap applied (see `.fitCapacity()`); a `ram_lost`
+#'   column, the cores each host's free memory cannot hold workers for, is named in the messages. Memory
+#'   is waited for like cores: it frees up when other fits end.
 #' @param total Workers requested.
 #' @param beta What a hyperthread adds to a core, in [.speedAllocate()].
 #' @param minFraction Smallest fraction of `total` to start with; 1 (the default, from
-#'   `options(clusters.minWorkersFraction)`) means the whole population.
+#'   `options(clusters.minWorkersFraction)`) means the whole population, whether cores or memory are what
+#'   is short: a build that memory left 2 of its 40 workers started with the 2 and died in
+#'   [DEoptimIterative()] seven minutes later instead of waiting (FireSense fit 12.3, 2026-10-12).
 #' @param waitSeconds How long to keep waiting (`options(clusters.waitForCores)`).
 #' @param interval Seconds between probes.
 #' @param sleep,now Clock functions, replaceable in tests.
@@ -36,20 +38,19 @@
                                    interval = 60, sleep = Sys.sleep, now = Sys.time, book = NULL) {
   stopifnot(is.function(probe), is.numeric(minFraction), length(minFraction) == 1L,
             minFraction > 0, minFraction <= 1)
-  requested <- as.integer(ceiling(minFraction * total))
+  needed <- as.integer(ceiling(minFraction * total))
   started <- now()
   deadline <- started + waitSeconds
   attempt <- function() {
     nodes <- probe()
     alloc <- .speedAllocate(nodes, total = total, beta = beta)
     got <- as.integer(sum(alloc$assign))
-    needed <- .neededAfterMemory(requested, nodes)
     if (got >= needed && is.function(book)) book(alloc)
-    list(nodes = nodes, alloc = alloc, got = got, needed = needed)
+    list(nodes = nodes, alloc = alloc, got = got)
   }
   repeat {
     a <- if (is.function(book)) .withAllocationLock(attempt()) else attempt()
-    nodes <- a$nodes; alloc <- a$alloc; got <- a$got; needed <- a$needed
+    nodes <- a$nodes; alloc <- a$alloc; got <- a$got
     if (got >= needed) return(alloc)
 
     freeByHost <- paste0(nodes$host, "=", nodes$free_est, "/", nodes$cores_total, collapse = ", ")
@@ -72,13 +73,6 @@
             format(deadline, "%Y-%m-%d %H:%M"), " at most")
     sleep(interval)
   }
-}
-
-## Workers lost to memory (`nodes$ram_lost`) are not waited for: the build is smaller by them, but still
-## has one worker at least, and a shortage of cores as well as memory still waits.
-.neededAfterMemory <- function(needed, nodes) {
-  lost <- if (is.null(nodes$ram_lost)) 0 else sum(nodes$ram_lost, na.rm = TRUE)
-  as.integer(max(min(needed, 1L), needed - lost))
 }
 
 ## What memory took away, for a message: "; free memory kept workers off: a=35 (12 GB free), ..."

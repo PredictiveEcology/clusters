@@ -263,6 +263,7 @@
     attr(fresh, "reservationToken") <- token
     attr(fresh, "restartCluster") <- self
     attr(fresh, "rebalance") <- attr(old, "rebalance", exact = TRUE)
+    attr(fresh, "hostNodenames") <- attr(old, "hostNodenames", exact = TRUE)
     ## plan_psock_min()'s exit handler stops whichever cluster this is (see "currentCluster" there)
     current <- attr(old, "currentCluster", exact = TRUE)
     if (is.environment(current)) {

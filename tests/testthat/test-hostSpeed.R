@@ -11,7 +11,8 @@ test_that("recording appends rows, trims by age, and skips evaluations without h
   .recordHostSpeed(list(mkEv(c("a", "a", "b"), c(1, 1, 3))), id = "r1")
   suppressMessages(.recordHostSpeed(list(mkEv("a", 1)), id = "r2"))
   got <- readRDS(file)
-  expect_setequal(names(got), c("host", "n", "median", "p90", "ratio", "time", "id", "workers"))
+  expect_setequal(names(got), c("host", "n", "median", "p90", "ratio", "time", "id", "workers", "booked"))
+  expect_true(all(is.na(got$booked)))
   expect_equal(got$id, c("r1", "r1", "r2"))
   expect_equal(got$host, c("b", "a", "a"))
   ## age out the first run
@@ -84,4 +85,39 @@ test_that(".recordHostSpeed stores the number of distinct workers per host", {
   .recordHostSpeed(list(ev), id = "w")
   got <- readRDS(.hostSpeedFile())
   expect_equal(got$workers[match(c("a", "b"), got$host)], c(2L, 1L))
+})
+
+test_that("a chunk's id carries the run name, and a fit without one is named by its process", {
+  expect_equal(.chunkId("hs", 3L), "hs_3")
+  expect_equal(.chunkId(NULL, 3L), paste0("pid", Sys.getpid(), "_3"))
+  expect_equal(.chunkId("", 3L), paste0("pid", Sys.getpid(), "_3"))
+  expect_equal(.chunkId(12.3, 930L), "12.3_930")
+})
+
+test_that("the speeds file is read under the lock, or NULL without one", {
+  withr::local_options(clusters.reservationsPath = withr::local_tempdir())
+  expect_null(.readHostSpeeds())
+  .recordHostSpeed(list(mkEv(c("a", "b"), c(1, 2))), id = "r1")
+  expect_equal(.readHostSpeeds()$id, c("r1", "r1"))
+  saveRDS("not a table", .hostSpeedFile())
+  expect_equal(.readHostSpeeds(), "not a table")   # .hostSpeedFactor() ignores what is not a data frame
+})
+
+test_that("each row records the workers every cluster had booked on the host, by nodename", {
+  withr::local_options(clusters.reservationsPath = withr::local_tempdir())
+  cl <- structure(list(), class = "cluster")
+  expect_null(.bookedByNodename(cl))                       # not built by plan_psock_min()
+  attr(cl, "hostNodenames") <- c(pinus = "A127584", localhost = "A159568", abies = "A127585")
+  expect_null(.bookedByNodename(cl))                       # nothing booked
+  reserveCores(data.frame(host = c("pinus", "localhost"), assign = c(3L, 10L)))
+  reserveCores(data.frame(host = c("pinus", "zzz"), assign = c(11L, 2L)))
+  booked <- .bookedByNodename(cl)
+  expect_equal(booked[c("A127584", "A159568")], c(A127584 = 14L, A159568 = 10L))
+  expect_false("zzz" %in% names(booked))
+  .recordHostSpeed(list(mkEv(c("A127584", "A127585"), c(1, 2))), id = "r1", booked = booked)
+  got <- readRDS(.hostSpeedFile())
+  expect_equal(got$booked[match(c("A127584", "A127585"), got$host)], c(14L, NA))
+  ## a cluster whose reservation ledger cannot be read is no reason to fail the fit
+  withr::local_options(clusters.useReservations = FALSE)
+  expect_null(.bookedByNodename(cl))
 })

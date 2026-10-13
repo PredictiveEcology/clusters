@@ -366,8 +366,9 @@ DEoptimIterative <- function(fn, lower, upper, control, ...,
                              else paste0("Iterations ", firstGeneration, "-", chunkEnds[iter], " done!")))
       if (computedNow && !is.null(DE[[iter]]$member$evaluations)) {
         ranEvaluations[[length(ranEvaluations) + 1L]] <- DE[[iter]]$member$evaluations
-        .recordHostSpeed(list(DE[[iter]]$member$evaluations), id = paste0(runName, "_", iter))
-        .recordFitMemory(list(DE[[iter]]$member$evaluations), runName = runName, id = paste0(runName, "_", iter))
+        .recordHostSpeed(list(DE[[iter]]$member$evaluations), id = .chunkId(runName, iter),
+                         booked = .bookedByNodename(control$cluster))
+        .recordFitMemory(list(DE[[iter]]$member$evaluations), runName = runName, id = .chunkId(runName, iter))
         message(.evaluationTimes(DE[[iter]]$member$evaluations, chunkLengths[iter],
                                  proc.time()[["elapsed"]] - chunkStarted))
       }
@@ -889,12 +890,14 @@ DEoptimIterative2 <- function(...) {
 #' After every chunk of generations [DEoptimIterative()] computes (not chunks replayed from the
 #' cache), its evaluations are summarised with `workerSpeed(by = "host")` and the rows are appended
 #' to `hostSpeed.rds` in the folder of the core-reservation ledger (`dirname(reservationsPath())`,
-#' option `clusters.reservationsPath`), with the time and a run id, so a fit that is killed still
-#' leaves its records. The table for the whole fit is shown with `message()` at its end.
+#' option `clusters.reservationsPath`), with the time, the workers the fit had on the host (`workers`), the
+#' workers every cluster had booked there (`booked`, for a cluster built by [plan_psock_min()]), and the id
+#' `<runName>_<chunk>` (a fit without a `runName` is named by its process id), so a fit that is killed
+#' still leaves its records. The table for the whole fit is shown with `message()` at its end.
 #' Rows older than the option `clusters.hostSpeedDays` (default 30 days) are dropped at each write.
-#' When [plan_psock_min()] builds a cluster it averages each host's recorded ratios, weighted by `n`,
-#' and gives a host whose ratio is above the option `clusters.slowHostRatio` (default 1.25) no workers,
-#' slowest first, as long as the other hosts' free cores still cover the workers requested.
+#' When [plan_psock_min()] builds a cluster, or a running cluster asks where its workers belong, each
+#' host's recorded ratios correct the hardware speed model (see [.hostSpeedFactor()]): a host that
+#' measured slower than the model predicts gets workers later, and fewer, but is not left out.
 #'
 #' @return A data frame with one row per host (or worker), slowest first: `host` (and `pid` if
 #'   `by = "worker"`), `n` evaluations, `median` and `p90` seconds, and `ratio`, the host's median

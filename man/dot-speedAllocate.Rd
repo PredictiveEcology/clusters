@@ -7,8 +7,8 @@
 .speedAllocate(nodes, total, beta)
 }
 \arguments{
-\item{nodes}{data.frame with \code{host}, \code{cores_total}, \code{free_est}, and optionally \code{busy}, \code{cores_physical}
-and \code{dimms}.}
+\item{nodes}{data.frame with \code{host}, \code{cores_total}, \code{free_est}, and optionally \code{busy}, \code{cores_physical},
+\code{dimms} and \code{speedFactor}.}
 
 \item{total}{Integer total workers requested.}
 
@@ -16,15 +16,18 @@ and \code{dimms}.}
 }
 \value{
 data.frame with \code{host}, \code{cores_total}, \code{free_est}, \code{busy} (workers already there), \code{assign} and
-\code{speed} (of every worker on the host once these are added), and attributes \code{total_requested} and
-\code{total_assigned}.
+\code{speed} (of every worker on the host once these are added, measured factor included), and attributes
+\code{total_requested} and \code{total_assigned}.
 }
 \description{
 A DEoptim generation lasts as long as its slowest evaluation, so a cluster is as fast as its slowest
 worker. Workers are placed one at a time, each on the host where the workers would then run fastest
-(\code{\link[=.workerSpeed]{.workerSpeed()}}), counting the workers already there (\code{busy}: other clusters' and other load; when
-\code{nodes} has no \code{busy}, \code{cores_total - free_est}), and never past a host's \code{free_est}. A host is filled up to its memory modules and
-physical cores before any host goes past its own; a host with few modules still gets workers, as many
-as keep its speed level with the others'.
+(\code{\link[=.workerSpeed]{.workerSpeed()}} times the host's measured \code{speedFactor}, see \code{\link[=.hostSpeedFactor]{.hostSpeedFactor()}}; 1 when \code{nodes} has
+none), counting the workers already there (\code{busy}: other clusters' and other load; when \code{nodes} has no
+\code{busy}, \code{cores_total - free_est}), and never past a host's \code{free_est}, which \code{.fitCapacity()} has already
+capped at the host's threads less the cores kept free less \code{busy}, and at what its memory holds. A host is
+filled up to its memory modules and physical cores before any host goes past its own; a host with few
+modules, or one that measured slow, still gets workers, as many as keep its speed level with the others'.
+When the hosts cannot hold \code{total} workers within those caps, fewer are assigned.
 }
 \keyword{internal}

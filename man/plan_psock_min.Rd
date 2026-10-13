@@ -84,9 +84,12 @@ using \strong{reverse SSH tunneling} (\code{revtunnel = TRUE}) and \strong{seque
 \strong{parallel} otherwise,
 configures a \strong{per-user library} on each worker (created via \code{dir.create(recursive=TRUE)}),
 installs & loads \code{pkgsNeeded} in that user library, measures per-host capacity via
-\code{\link[parallelly:availableCores]{parallelly::availableCores()}} and \code{\link[parallelly:freeCores]{parallelly::freeCores()}}, performs a
-\strong{hyper-threading-aware} allocation of up to \code{total} workers (β penalty beyond ~50\% logical
-occupancy), and optionally launches the final cluster with the computed worker counts.
+\code{\link[parallelly:availableCores]{parallelly::availableCores()}} and \code{\link[parallelly:freeCores]{parallelly::freeCores()}}, places up to \code{total} workers where they
+run fastest (\code{\link[=.speedAllocate]{.speedAllocate()}}: the hardware model \code{\link[=.workerSpeed]{.workerSpeed()}} times each host's measured speed,
+\code{\link[=.hostSpeedFactor]{.hostSpeedFactor()}}), and optionally launches the final cluster with the computed worker counts.
+Every host keeps \code{options(clusters.keepFreeCores)} (default 2) of its threads free of all workers and
+other load, and \code{options(clusters.memoryHeadroom)} (default 0.1) of its memory; a running cluster asks
+again by the same rule every \code{options(clusters.rebalanceEvery)} generations (see \code{\link[=.rebalanceFn]{.rebalanceFn()}}).
 
 This is intentionally minimal—no \code{master} argument, no diagnostics or fallbacks.
 }

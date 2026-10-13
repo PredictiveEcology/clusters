@@ -1,5 +1,31 @@
 # clusters (development version)
 
+* Every host now has hard caps that placement never exceeds, for a new cluster and for a running cluster
+  moving its workers alike (`.fitCapacity()`): all workers and other load within the host's threads less
+  `options(clusters.keepFreeCores)` (default 2), and memory used plus the new workers' memory within
+  `1 - options(clusters.memoryHeadroom)` (default 0.9) of the host's. Load that no cluster had booked was
+  discounted only by `freeCores()`'s fraction, so a 16-thread host with 10 of other load could still be
+  given 5 workers.
+
+* Placement now uses the speeds the fits measured as well as the hardware model: each host's recorded ratios
+  (`hostSpeed.rds`) are compared with what `.workerSpeed()` predicted at the workers recorded, averaged on the
+  log scale weighted by evaluations and by age (halving every `options(clusters.hostSpeedHalfLifeDays)`, default
+  1) and shrunk towards 1 by `options(clusters.hostSpeedPriorN)` (default 100) evaluations, and the factor
+  multiplies the model's speed (`.hostSpeedFactor()`). A host that measured slow gets workers later and fewer,
+  not none; a host with no record is the model alone. FireSense, 2026-10-13: pinus (8 cores on 3 memory
+  channels) measured 1.45x the generation median while the model predicted 0.87 of it, and was the slowest
+  host in 41% of generations with 2 of 40 workers.
+
+* A build short of memory waits for it as it waits for cores, up to `options(clusters.waitForCores)`, instead of
+  starting with the workers memory left (FireSense fit 12.3, 2026-10-12: it started with 2 of 40 and died in
+  `DEoptimIterative()`, which needs 4). `options(clusters.minWorkersFraction)` (default 1) is still the explicit
+  opt-in for a partial start.
+
+* A fit without a `runName` (`NULL`) now records its memory (`fitMemory.rds`; `as.character(NULL)` made a
+  zero-row frame and nothing was ever written, so every build sized its hosts at `clusters.workerMemoryGB`) and
+  its host speeds under an id of its own (`pid<pid>_<chunk>`; 13 concurrent fits all wrote `_<chunk>` and
+  overwrote each other's rows).
+
 * Host speeds are recorded again when `hostSpeed.rds` holds rows written before 0.0.65 (FireSense: none were
   recorded after 2026-10-02, so speed-based placement ran on stale data). Old rows are kept, with `NA` workers.
 

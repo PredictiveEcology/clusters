@@ -37,7 +37,10 @@
                    function(p) if (all(is.na(p))) NA_real_ else max(p, na.rm = TRUE), numeric(1))
     peak <- peak[!is.na(peak)]
     if (!length(peak)) return(invisible(NULL))
-    new <- data.frame(runName = as.character(runName), id = id, time = Sys.time(), workers = length(peak),
+    ## a fit without a run name (NULL) is recorded too: as.character(NULL) made a zero-row frame and nothing
+    ## was ever written (FireSense, 2026-10-13: no fitMemory.rds after four days of fits)
+    runName <- if (length(runName) && nzchar(as.character(runName)[1])) as.character(runName)[1] else NA_character_
+    new <- data.frame(runName = runName, id = id, time = Sys.time(), workers = length(peak),
                       memMedianGB = stats::median(peak), memMaxGB = max(peak), stringsAsFactors = FALSE)
     .replaceRecords(.fitMemoryFile(path), new, .fitMemoryColumns)
     invisible(new)

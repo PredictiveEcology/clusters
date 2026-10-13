@@ -126,12 +126,13 @@ test_that("an old ledger without memGB still reads, and takes new rows", {
   expect_equal(sort(liveReservations()$memGB), c(8, 8))
 })
 
-test_that("workers lost to memory give a smaller cluster, not a wait or an error", {
+test_that("workers lost to memory are waited for like cores, and the messages name the memory", {
   withr::local_options(clusters.keepFreeCores = 0, clusters.reservationsPath = withr::local_tempdir())
   nodes <- capacity(memNodes(avail = c(30, 200), free = c(40, 10)), memPerWorkerGB = 4)
   expect_equal(nodes$ram_lost, c(35, 0))
-  alloc <- suppressMessages(clusters:::.allocateWhenAvailable(function() nodes, total = 50, waitSeconds = 0))
-  expect_equal(sum(alloc$assign), 15L)
+  ## 2026-10-13: a build started smaller by the workers memory took (here 15 of 50); it waits now
+  expect_error(suppressMessages(clusters:::.allocateWhenAvailable(function() nodes, total = 50, waitSeconds = 0)),
+               "could only get 15 of 50 workers.*free memory kept workers off: a=35 \\(30 GB free\\)")
   ## when memory leaves nothing, the error names memory, not just cores
   none <- capacity(memNodes(avail = 5, free = 8), memPerWorkerGB = 4)
   expect_error(suppressMessages(clusters:::.allocateWhenAvailable(function() none, total = 4, waitSeconds = 0)),
@@ -168,4 +169,18 @@ test_that("DEoptimIterative() writes fitMemory.rds, one row per computed chunk",
   got <- readRDS(file.path(d, "fitMemory.rds"))
   expect_equal(got$id, c("fm_1", "fm_2"))
   expect_true(all(got$runName == "fm" & got$workers == 2L & got$memMaxGB > 0.01))
+})
+
+test_that("a fit without a run name still records its memory, and the record is found", {
+  withr::local_options(clusters.reservationsPath = withr::local_tempdir(), clusters.workerMemoryGB = 14)
+  ## 2026-10-13: as.character(NULL) made a zero-row frame, nothing was written, and every FireSense
+  ## build sized its hosts at the 14 GB option instead of the ~4.5 GB measured
+  expect_no_warning(got <- clusters:::.recordFitMemory(list(mkMem("h", 1:3, c(1, 2, 5))), runName = NULL, id = "pid1_1"))
+  expect_equal(got$memMaxGB, 5)
+  expect_true(is.na(got$runName))
+  expect_equal(nrow(readRDS(clusters:::.fitMemoryFile())), 1L)
+  expect_equal(clusters:::.memPerWorkerGB(NULL), 5)   # the fleet-wide record, not the option
+  expect_equal(clusters:::.memPerWorkerGB("other"), 5)
+  expect_no_warning(clusters:::.recordFitMemory(list(mkMem("h", 1L, 2)), runName = "", id = "pid1_2"))
+  expect_equal(nrow(readRDS(clusters:::.fitMemoryFile())), 2L)
 })

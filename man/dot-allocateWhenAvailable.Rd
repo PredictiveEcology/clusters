@@ -18,16 +18,18 @@
 }
 \arguments{
 \item{probe}{A function returning the node table (\code{host}, \code{cores_total}, \code{free_est}),
-with reservations already subtracted. A \code{ram_lost} column (see \code{.fitCapacity()}) is the cores each
-host's free memory cannot hold workers for: the workers lost to it are neither waited for nor an error, so
-the cluster is built smaller.}
+with reservations already subtracted and the memory cap applied (see \code{.fitCapacity()}); a \code{ram_lost}
+column, the cores each host's free memory cannot hold workers for, is named in the messages. Memory
+is waited for like cores: it frees up when other fits end.}
 
 \item{total}{Workers requested.}
 
 \item{beta}{What a hyperthread adds to a core, in \code{\link[=.speedAllocate]{.speedAllocate()}}.}
 
 \item{minFraction}{Smallest fraction of \code{total} to start with; 1 (the default, from
-\code{options(clusters.minWorkersFraction)}) means the whole population.}
+\code{options(clusters.minWorkersFraction)}) means the whole population, whether cores or memory are what
+is short: a build that memory left 2 of its 40 workers started with the 2 and died in
+\code{\link[=DEoptimIterative]{DEoptimIterative()}} seven minutes later instead of waiting (FireSense fit 12.3, 2026-10-12).}
 
 \item{waitSeconds}{How long to keep waiting (\code{options(clusters.waitForCores)}).}
 

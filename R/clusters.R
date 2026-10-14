@@ -27,11 +27,11 @@
 #' print(st)
 #' getHostCombination(outs, Npops = 100)
 #'
+#' }
 #' @importFrom data.table as.data.table
 #' @importFrom parallelly makeClusterPSOCK
 #' @importFrom parallel detectCores stopCluster clusterApply
 #' @export
-#' }
 testMachine <- function(NcoresMax = parallel::detectCores(), N = 100, thinning = 5) {
   Ncores <- c(1, seq(floor(NcoresMax/thinning)) * thinning)
   coreTimes <- list(); systemTimes <- list(); estTotTime <- list(); optimisticTotTime <- list()
@@ -73,8 +73,8 @@ testMachine <- function(NcoresMax = parallel::detectCores(), N = 100, thinning =
 #' Map(out = outs, nam = names(outs), function(out, nam)
 #'     do.call(plotMachine, append(out, list(nam = nam))))
 #'
-#' @export
 #' }
+#' @export
 plotMachine <- function(Ncores, coreTimes, estTotTime, optimisticTotTime, systemTimes,
                         N = 100, nam, detectedCores) {
   ncoresUsed <- "NCores used"

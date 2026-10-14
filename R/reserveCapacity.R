@@ -32,7 +32,7 @@
 #'   other hosts gives a probe that can see them.
 #' @param load_memory,fraction The load-average window and headroom of [parallelly::freeCores()], as in
 #'   [plan_psock_min()].
-#' @param waitSeconds How long to wait for the job to fit (`options(clusters.waitForCores)`, default 0).
+#' @param waitSeconds How long to wait for the job to fit (`options(clusters.waitForCores)`, default 8 hours).
 #' @param interval Seconds between probes.
 #' @param sleep,now Clock functions, replaceable in tests.
 #' @return `reserveCapacity()` an environment, the token: `id` (the reservation's), `host` (where the job
@@ -52,7 +52,7 @@
 #' @export
 reserveCapacity <- function(cores, memGB, hosts = "localhost", probe = NULL,
                             load_memory = "5min", fraction = 0.9,
-                            waitSeconds = getOption("clusters.waitForCores", 0), interval = 60,
+                            waitSeconds = .clustersOption("waitForCores"), interval = 60,
                             sleep = Sys.sleep, now = Sys.time) {
   stopifnot(is.numeric(cores), length(cores) == 1L, cores > 0, is.numeric(memGB), length(memGB) == 1L,
             memGB >= 0, is.character(hosts), length(hosts) >= 1L)

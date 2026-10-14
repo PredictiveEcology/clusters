@@ -197,7 +197,7 @@
 #' Runs [DEoptim::DEoptim()] a few generations at a time (`iterStep` in `...`, default 1),
 #' starting each call from the previous call's population, and caches every chunk with
 #' [reproducible::Cache()], so a fit that is interrupted resumes from its last finished chunk.
-#' Between chunks it can re-score the surviving population (`options(clusters.deoptimRescoreEvery)`),
+#' Between chunks it can re-score the surviving population (`options(clusters.deoptimRescoreEvery)`, default 10 generations; 0 never),
 #' draws progress figures with `SpaDES.core::Plots()` when `figurePath` is a path, and stops early
 #' once the population has stopped improving (see `.deoptimPopulationConverged()`).
 #'
@@ -249,9 +249,8 @@ DEoptimIterative <- function(fn, lower, upper, control, ...,
   objFunArgs$iterStep <- NULL
   ## Can this objective function receive the adaptive prune bound? Asked once, not once per chunk.
   sendPruneAbove <- .fnTakesPruneAbove(fn)
-  ## Re-score the surviving population every `rescoreEvery` generations (0: never); see .rescoreUpdate
-  rescoreEvery <- getOption("clusters.deoptimRescoreEvery")
-  rescoreEvery <- if (is.null(rescoreEvery)) 0L else max(0L, as.integer(rescoreEvery))
+  ## Re-score the surviving population every `rescoreEvery` generations (default 10; 0: never); see .rescoreUpdate
+  rescoreEvery <- max(0L, as.integer(.clustersOption("deoptimRescoreEvery")))
   rescoreArgs <- as.list(getOption("clusters.deoptimRescoreArgs", list()))
   rescoreStats <- NULL
   ## Move the workers to where a new build would put them every `rebalanceEvery` generations (0: never);

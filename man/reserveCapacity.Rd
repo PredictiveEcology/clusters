@@ -13,7 +13,7 @@ reserveCapacity(
   probe = NULL,
   load_memory = "5min",
   fraction = 0.9,
-  waitSeconds = getOption("clusters.waitForCores", 0),
+  waitSeconds = .clustersOption("waitForCores"),
   interval = 60,
   sleep = Sys.sleep,
   now = Sys.time
@@ -42,7 +42,7 @@ other hosts gives a probe that can see them.}
 \item{load_memory, fraction}{The load-average window and headroom of \code{\link[parallelly:freeCores]{parallelly::freeCores()}}, as in
 \code{\link[=plan_psock_min]{plan_psock_min()}}.}
 
-\item{waitSeconds}{How long to wait for the job to fit (\code{options(clusters.waitForCores)}, default 0).}
+\item{waitSeconds}{How long to wait for the job to fit (\code{options(clusters.waitForCores)}, default 8 hours).}
 
 \item{interval}{Seconds between probes.}
 

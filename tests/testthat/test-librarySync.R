@@ -69,5 +69,5 @@ test_that("probe-cluster teardown cannot mask the outcome, prefix needs one ship
   ## .stopCluster() stops inside try()
   expect_equal(lengths(regmatches(src, gregexpr("\\.stopCluster\\(cl_probe\\)", src))), 2L)
   expect_false(grepl("length\\(existing\\) <= 1L", src))
-  expect_match(src, "clusters.waitForCores")
+  expect_match(src, "clustersOption\\(\"waitForCores\"\\)")
 })

@@ -182,7 +182,6 @@ releaseCores <- function(id = NULL, pid = Sys.getpid(),
 #'
 #' @param nodes A data.frame with `host` and `free_est`, as built by
 #'   [plan_psock_min()] from its probe.
-#' @inheritParams reservations
 #' @param path Path to the reservations ledger; defaults to `getOption("clusters.reservationsPath")`.
 #' @param loadWindowMinutes The averaging window, in minutes, of the load average
 #'   `free_est` was measured from (5 for `parallelly::freeCores(memory = "5min")`).

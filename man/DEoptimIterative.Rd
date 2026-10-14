@@ -61,7 +61,7 @@ A list with one \code{\link[DEoptim:DEoptim]{DEoptim::DEoptim()}} result per chu
 Runs \code{\link[DEoptim:DEoptim]{DEoptim::DEoptim()}} a few generations at a time (\code{iterStep} in \code{...}, default 1),
 starting each call from the previous call's population, and caches every chunk with
 \code{\link[reproducible:Cache]{reproducible::Cache()}}, so a fit that is interrupted resumes from its last finished chunk.
-Between chunks it can re-score the surviving population (\code{options(clusters.deoptimRescoreEvery)}),
+Between chunks it can re-score the surviving population (\code{options(clusters.deoptimRescoreEvery)}, default 10 generations; 0 never),
 draws progress figures with \code{SpaDES.core::Plots()} when \code{figurePath} is a path, and stops early
 once the population has stopped improving (see \code{.deoptimPopulationConverged()}).
 }

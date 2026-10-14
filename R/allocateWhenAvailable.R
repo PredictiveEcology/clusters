@@ -38,7 +38,7 @@
 #' @keywords internal
 .allocateWhenAvailable <- function(probe, total, beta = 0.75,
                                    minFraction = getOption("clusters.minWorkersFraction", 1),
-                                   waitSeconds = getOption("clusters.waitForCores", 0),
+                                   waitSeconds = .clustersOption("waitForCores"),
                                    interval = 60, sleep = Sys.sleep, now = Sys.time, book = NULL,
                                    allocate = NULL, what = "workers") {
   stopifnot(is.function(probe), is.numeric(minFraction), length(minFraction) == 1L,

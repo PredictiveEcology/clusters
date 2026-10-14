@@ -90,6 +90,6 @@ test_that("a population larger than every core on the hosts stops at once instea
 test_that("plan_psock_min allocates through the waiting helper and still honours clusters.waitForCores", {
   src <- paste(deparse(clusters:::plan_psock_min), collapse = "\n")
   expect_match(src, ".allocateWhenAvailable(", fixed = TRUE)
-  expect_match(src, "clusters.waitForCores", fixed = TRUE)
+  expect_match(src, "waitForCores", fixed = TRUE)
   expect_match(src, "clusters.minWorkersFraction", fixed = TRUE)
 })

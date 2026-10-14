@@ -1,5 +1,12 @@
 # clusters (development version)
 
+* Three options now default to the values FireSense production has always set (defined once, in `.optionDefaults`);
+  an explicit setting, including 0, still wins. `clusters.deoptimRescoreEvery` is 10: `DEoptimIterative()` re-scores the
+  surviving population every 10 generations (was never), which converged in about half the generations and reached
+  the best scores without lucky draws. `clusters.onBadHost` is `"drop"`: a host failing verification is dropped with a
+  message (was `"stop"`, which killed the job). `clusters.waitForCores` is 8 hours: a build waits for cores held by
+  other live builds (was 0, which failed at once).
+
 * New `reserveCapacity()`, `releaseCapacity()` and `withCapacity()` book cores and memory for a job that is
   not a cluster -- a FireSense prediction, one SpaDES simulation of about 38 GB and 1-2 cores in a tmux pane of
   `SpaDES.project::experimentTmux()` -- in the same ledger and under the same per-host caps as a cluster

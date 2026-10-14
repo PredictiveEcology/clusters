@@ -4,3 +4,6 @@
 ## rows in the real hostSpeed.rds). Tests that set their own path still override this.
 withr::local_options(clusters.reservationsPath = withr::local_tempdir(.local_envir = teardown_env()),
                      .local_envir = teardown_env())
+## The package waits up to 8 hours for cores by default; a test that expects a shortfall to stop at once
+## must not sleep. test-optionDefaults.R unsets this to check the default.
+withr::local_options(clusters.waitForCores = 0, .local_envir = teardown_env())

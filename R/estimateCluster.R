@@ -290,7 +290,7 @@ plan_psock_min <- function(
     # Same alignment rule as above: one worker per element of `hosts`.
     verifiedHosts <- verifyClusterHosts(cl_verify, hosts = hosts, pkgs = pkgsTopLevel,
                                         libs = master_libs,
-                                        action = getOption("clusters.onBadHost", "stop"))
+                                        action = .clustersOption("onBadHost"))
     
     # parallel::stopCluster(cl_probe)
     # Sys.sleep(2) 
@@ -344,7 +344,7 @@ plan_psock_min <- function(
   
   ## 2) Run the capacity queries (.probeNodes()) everywhere (same code on each worker).
   ##    Repeated until the whole population is free, up to option
-  ##    clusters.waitForCores seconds (default 0: no waiting). A job that has just
+  ##    clusters.waitForCores seconds (default 8 hours; 0: no waiting). A job that has just
   ##    spent hours preparing its inputs should queue for cores, not die
   ##    (2026-09-08: the sixth concurrent build found none free), and it must not
   ##    start with a fraction of its workers either (2026-09-15: fits ran with 5, 2
@@ -366,7 +366,7 @@ plan_psock_min <- function(
     function(alloc) resvId <<- reserveCores(alloc, memPerWorkerGB = memPerWorker())
   alloc_df <- .allocateWhenAvailable(probeCapacity, total = total, beta = beta,
                                      minFraction = getOption("clusters.minWorkersFraction", 1),
-                                     waitSeconds = getOption("clusters.waitForCores", 0),
+                                     waitSeconds = .clustersOption("waitForCores"),
                                      book = book)
   on.exit(if (!is.null(resvId)) try(releaseCores(id = resvId), silent = TRUE), add = TRUE)
 

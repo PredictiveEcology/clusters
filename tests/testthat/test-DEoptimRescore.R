@@ -85,10 +85,15 @@ test_that("a stopped re-scored run resumes from the cache to the same population
   expect_identical(again$DE[[4]]$member$popval, first$DE[[4]]$member$popval)
 })
 
-test_that("re-scoring is off by default", {
-  seen <- newSeen()
-  withr::local_options(clusters.deoptimRescoreEvery = NULL)
-  out <- runRescored(itermax = 3, every = NULL, cachePath = withr::local_tempdir(), seen = seen)
+test_that("with the option unset the population is re-scored every 10 generations", {
+  out <- runRescored(itermax = 10, every = NULL, cachePath = withr::local_tempdir(), seen = newSeen())
+  expect_length(grep("Re-scored", out$messages), 1L)       # after generation 10
+  expect_null(out$DE[[9]]$member$popvalN)
+  expect_true(all(out$DE[[10]]$member$popvalN >= 2L))
+})
+
+test_that("clusters.deoptimRescoreEvery = 0 turns re-scoring off", {
+  out <- runRescored(itermax = 10, every = 0, cachePath = withr::local_tempdir(), seen = newSeen())
   expect_length(grep("Re-scored", out$messages), 0L)
-  expect_null(out$DE[[3]]$member$popvalN)
+  expect_null(out$DE[[10]]$member$popvalN)
 })

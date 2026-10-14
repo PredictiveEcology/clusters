@@ -35,3 +35,13 @@ plotMachine(
 \description{
 Plot the outputs from \code{testMachine}
 }
+\examples{
+\dontrun{
+## Needs the `outs` timings from runTests() on real hosts.
+
+par(mfrow = c(2,length(hosts)))
+Map(out = outs, nam = names(outs), function(out, nam)
+    do.call(plotMachine, append(out, list(nam = nam))))
+
+}
+}

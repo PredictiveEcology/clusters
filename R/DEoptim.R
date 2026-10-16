@@ -192,6 +192,27 @@
   if (is.null(cl)) apply(pop, 1, f) else parallel::parApply(cl, pop, 1, f)
 }
 
+#' The DEoptim early-stop settings, in full
+#'
+#' Resolves the settings that decide when [DEoptimIterative()] stops a fit that has stopped improving:
+#' an element of `convergence` wins, else the matching `clusters.*` option, else the default.
+#' A caller that caches a whole fit can put the result in its cache key.
+#'
+#' @param convergence `NULL`, or a list with any of `window`, `minGenerations`, `se`, `sdChange`
+#'   (see [DEoptimIterative()]).
+#' @return A list with `window`, `minGenerations`, `se` and `sdChange`.
+#' @export
+deoptimConvergence <- function(convergence = NULL) {
+  map <- c(window = "deoptimConvergenceWindow", minGenerations = "deoptimMinGenerations",
+           se = "deoptimConvergenceSE", sdChange = "deoptimConvergenceSDChange")
+  unknown <- setdiff(names(convergence), names(map))
+  if (length(unknown))
+    stop("convergence has unknown element(s): ", paste(unknown, collapse = ", "),
+         "; use any of ", paste(names(map), collapse = ", "))
+  lapply(stats::setNames(names(map), names(map)), function(nm)
+    if (is.null(convergence[[nm]])) .clustersOption(map[[nm]]) else convergence[[nm]])
+}
+
 #' Run DEoptim in cached chunks of generations
 #'
 #' Runs [DEoptim::DEoptim()] a few generations at a time (`iterStep` in `...`, default 1),
@@ -218,6 +239,14 @@
 #'   returns. `NULL` (the default) writes `DEoptimProgress_<runName>.csv` in `figurePath`, or in the working
 #'   directory when `figurePath` is `FALSE`; `FALSE` writes none; a character path is that file. The file is
 #'   emptied when the call starts, so a fit resumed from the cache rewrites its history.
+#' @param convergence The early-stop settings: a list with any of `window` (generations over which the
+#'   population median must have stopped improving), `minGenerations` (never stop before this many),
+#'   `se` (the improvement allowed, in standard errors of the median) and `sdChange` (the change in spread
+#'   allowed, as a fraction of the earlier spread). What is missing comes from
+#'   `options(clusters.deoptimConvergenceWindow, clusters.deoptimMinGenerations, clusters.deoptimConvergenceSE,
+#'   clusters.deoptimConvergenceSDChange)`, then the defaults (300, 350, 1, 0.1); see [deoptimConvergence].
+#'   These are not in the cache key of any chunk, so a fit that stopped early resumes from its cached
+#'   generations and continues when rerun with a stricter rule.
 #' @param plotEvery Generations between progress figures: a chunk's figures are drawn when its
 #'   generations include a multiple of `plotEvery`. The final chunk's figures are always drawn, even
 #'   when that chunk is replayed from the cache. `1` draws them after every chunk.
@@ -228,8 +257,9 @@ DEoptimIterative <- function(fn, lower, upper, control, ...,
                               # formulaToFit, covMinMax, tests, maxFireSpread, mutuallyExclusive,
                               # doObjFunAssertions, Nreps, objFunCoresInternal, thresh, rep,
                               .plots, figurePath, cachePath, runName = 1, .verbose = TRUE,
-                              plotEvery = 25L, progressFile = NULL) {
+                              plotEvery = 25L, progressFile = NULL, convergence = NULL) {
   DE <- list()
+  convergence <- deoptimConvergence(convergence)
   progressFile <- .progressStart(progressFile, figurePath, runName)
   ranEvaluations <- list()   # evaluations computed in this call, not replayed from the cache
   ## Progress figures are drawn by the master while every worker waits: 8.3 s of each 53 s generation
@@ -447,7 +477,9 @@ DEoptimIterative <- function(fn, lower, upper, control, ...,
     ## the slope of a line through `bestvalit` (a step function: it could never fire) nor "no new best
     ## for 200 generations" (a lucky record restarts it) answers that.
     popvalsAll <- lapply(DE, function(x) x$member$popval)
-    converged <- .deoptimPopulationConverged(popvalsAll, chunkEnds[seq_along(DE)])
+    converged <- .deoptimPopulationConverged(popvalsAll, chunkEnds[seq_along(DE)], window = convergence$window,
+                                             minGenerations = convergence$minGenerations,
+                                             seMultiplier = convergence$se, sdChange = convergence$sdChange)
     ## Plot chunks computed in this session, not ones replayed from the cache, when each chunk (`iterStep`
     ## generations) finishes. Plotting used to require reproducible::isUpdated(), which is
     ## FALSE whenever nested Cache() is skipped (spades.useCache = "eventsOnly"), so no progress plots
@@ -470,7 +502,8 @@ DEoptimIterative <- function(fn, lower, upper, control, ...,
       texts <- c("objFun/", "lines_mean_AllPoints/", "lines_mean/", "lines_dif/", "lines_variance/", "hists/")
       withCallingHandlers({
         SpaDES.core::Plots(ggPlotFnPopulation(.populationByGeneration(popvalsAll, chunkEnds[seq_along(DE)]),
-                                              .populationConvergenceStats(popvalsAll, chunkEnds[seq_along(DE)])),
+                                              .populationConvergenceStats(popvalsAll, chunkEnds[seq_along(DE)], convergence$window),
+                                              convergence),
               types = .plots,
               filename = ggDEoptimFilename(figurePath, dots$rep, subfolder = "", text = texts[1]))
         SpaDES.core::Plots(dfForGGplotAllPoints, ggPlotFnMeansAllPoints, types = .plots,
@@ -502,10 +535,10 @@ DEoptimIterative <- function(fn, lower, upper, control, ...,
     # indistinguishable from a crash in the log
     if (converged) {
       message(cli::col_green(
-        "Converged: over the last ", getOption("clusters.deoptimConvergenceWindow", 300L),
+        "Converged: over the last ", convergence$window,
         " generations the population median improved by less than ",
-        getOption("clusters.deoptimConvergenceSE", 1), " standard error(s) and its spread changed by less than ",
-        100 * getOption("clusters.deoptimConvergenceSDChange", 0.1), "% (", nGenerations,
+        convergence$se, " standard error(s) and its spread changed by less than ",
+        100 * convergence$sdChange, "% (", nGenerations,
         " run); stopping before itermax"))
       break
     }
@@ -555,10 +588,10 @@ DEoptimIterative <- function(fn, lower, upper, control, ...,
 #' @keywords internal
 #' @noRd
 .deoptimPopulationConverged <- function(popvals, gens,
-                                        window = getOption("clusters.deoptimConvergenceWindow", 300L),
-                                        minGenerations = getOption("clusters.deoptimMinGenerations", 350L),
-                                        seMultiplier = getOption("clusters.deoptimConvergenceSE", 1),
-                                        sdChange = getOption("clusters.deoptimConvergenceSDChange", 0.1)) {
+                                        window = .clustersOption("deoptimConvergenceWindow"),
+                                        minGenerations = .clustersOption("deoptimMinGenerations"),
+                                        seMultiplier = .clustersOption("deoptimConvergenceSE"),
+                                        sdChange = .clustersOption("deoptimConvergenceSDChange")) {
   if (!length(popvals)) return(FALSE)
   if (gens[length(popvals)] <= minGenerations) return(FALSE)
   st <- .populationConvergenceStats(popvals, gens, window)
@@ -571,7 +604,7 @@ DEoptimIterative <- function(fn, lower, upper, control, ...,
 ## member with a lucky record moves the SD by itself, and would hold open a population that has otherwise
 ## stopped). NULL with fewer than four usable values in either population, or none `window` back.
 .populationConvergenceStats <- function(popvals, gens,
-                                        window = getOption("clusters.deoptimConvergenceWindow", 300L)) {
+                                        window = .clustersOption("deoptimConvergenceWindow")) {
   if (!length(popvals)) return(NULL)
   now <- length(popvals)
   ref <- which(gens <= gens[now] - window)
@@ -731,7 +764,7 @@ termsInDEoptim <- function(fireSense_spreadFormula, thresh, numParams) {
 ## The objective-function figure: the population's best, 10th percentile and median by generation, scaled
 ## to the generations after the first tenth (the first ones are far above the rest), with what the early
 ## stop sees in the subtitle (2026-10-02, replacing bestvalit with a smoother and 200-generation slopes)
-ggPlotFnPopulation <- function(pop, stats = NULL) {
+ggPlotFnPopulation <- function(pop, stats = NULL, convergence = deoptimConvergence()) {
   long <- rbind(data.frame(gen = pop$gen, value = pop$best, line = "best"),
                 data.frame(gen = pop$gen, value = pop$q10, line = "10th percentile"),
                 data.frame(gen = pop$gen, value = pop$median, line = "median"))
@@ -745,8 +778,8 @@ ggPlotFnPopulation <- function(pop, stats = NULL) {
   } else {
     sprintf(paste0("Over the last %d generations: median improved %.2f SE (stops below %s),\n",
                    "spread changed %.0f%% (stops below %.0f%%)"),
-            as.integer(stats$window), stats$medianDropSE, getOption("clusters.deoptimConvergenceSE", 1),
-            100 * stats$spreadChange, 100 * getOption("clusters.deoptimConvergenceSDChange", 0.1))
+            as.integer(stats$window), stats$medianDropSE, convergence$se,
+            100 * stats$spreadChange, 100 * convergence$sdChange)
   }
   ggplot(long, aes(.data$gen, .data$value, colour = .data$line, linetype = .data$line)) +
     geom_line(linewidth = 0.7) +

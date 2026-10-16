@@ -17,7 +17,8 @@ DEoptimIterative(
   runName = 1,
   .verbose = TRUE,
   plotEvery = 25L,
-  progressFile = NULL
+  progressFile = NULL,
+  convergence = NULL
 )
 
 DEoptimIterative2(...)
@@ -53,6 +54,14 @@ for the objective (\code{variable = "objective"}) and one per parameter, and a \
 returns. \code{NULL} (the default) writes \verb{DEoptimProgress_<runName>.csv} in \code{figurePath}, or in the working
 directory when \code{figurePath} is \code{FALSE}; \code{FALSE} writes none; a character path is that file. The file is
 emptied when the call starts, so a fit resumed from the cache rewrites its history.}
+
+\item{convergence}{The early-stop settings: a list with any of \code{window} (generations over which the
+population median must have stopped improving), \code{minGenerations} (never stop before this many),
+\code{se} (the improvement allowed, in standard errors of the median) and \code{sdChange} (the change in spread
+allowed, as a fraction of the earlier spread). What is missing comes from
+\code{options(clusters.deoptimConvergenceWindow, clusters.deoptimMinGenerations, clusters.deoptimConvergenceSE, clusters.deoptimConvergenceSDChange)}, then the defaults (300, 350, 1, 0.1); see \link{deoptimConvergence}.
+These are not in the cache key of any chunk, so a fit that stopped early resumes from its cached
+generations and continues when rerun with a stricter rule.}
 }
 \value{
 A list with one \code{\link[DEoptim:DEoptim]{DEoptim::DEoptim()}} result per chunk run, in order.

@@ -1,5 +1,7 @@
 # clusters (development version)
 
+* `DEoptimIterative()` gains `convergence`, a list with any of `window`, `minGenerations`, `se`, `sdChange`; what is missing comes from the `clusters.deoptim*` options, then the unchanged defaults (300, 350, 1, 0.1). `deoptimConvergence()` returns the full list. The settings are not in any chunk's cache key, so a fit that stopped early resumes from its cached generations and continues under a stricter rule. The defaults of those four options are now in `.optionDefaults`.
+
 * `DEoptimDashboard()` and `DEoptimDashboardApp()` gain `initialIteration` (default `5L`): the plots start at that generation, so very poor first generations do not flatten them.
 
 * `DEoptimProgress()`, `DEoptimDashboard()` and `DEoptimDashboardApp()` take `which`, any of `"running"`, `"stopped"`,

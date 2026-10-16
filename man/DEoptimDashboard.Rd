@@ -10,14 +10,18 @@ DEoptimDashboard(
   refreshMinutes = 2,
   title = "DEoptim fits",
   description = .dashboardDescription,
-  launch.browser = getOption("shiny.launch.browser", interactive())
+  launch.browser = getOption("shiny.launch.browser", interactive()),
+  which = .progressStatuses,
+  initialIteration = 5L
 )
 
 DEoptimDashboardApp(
   path = ".",
   refreshMinutes = 2,
   title = "DEoptim fits",
-  description = .dashboardDescription
+  description = .dashboardDescription,
+  which = .progressStatuses,
+  initialIteration = 5L
 )
 }
 \arguments{
@@ -30,6 +34,11 @@ DEoptimDashboardApp(
 \item{description}{Text under the title.}
 
 \item{launch.browser}{Passed to \code{\link[shiny:runApp]{shiny::runApp()}}.}
+
+\item{which}{Which fits to show, as in \code{\link[=DEoptimProgress]{DEoptimProgress()}}; the cards follow the table.}
+
+\item{initialIteration}{The first generation plotted. The first generations are often so poor that
+they flatten everything after them; a fit with fewer generations shows them all.}
 }
 \value{
 \code{DEoptimDashboard()} runs the app. \code{DEoptimDashboardApp()} returns it, as a \code{shiny::shinyApp}.
@@ -37,5 +46,6 @@ DEoptimDashboardApp(
 \description{
 A table of the fits whose progress files (\code{\link[=DEoptimProgress]{DEoptimProgress()}}) are under \code{path}, then a card per fit with
 its objective by generation and, in a collapsed section, its parameters by generation. It re-reads the
-files every \code{refreshMinutes}. Needs the shiny package.
+files every \code{refreshMinutes}. Click a column header of the table to sort by it; the sort order, page and
+search are kept when the table refreshes. Needs the shiny and DT packages.
 }

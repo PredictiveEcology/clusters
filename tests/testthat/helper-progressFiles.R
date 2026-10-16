@@ -11,3 +11,12 @@ writeProgress <- function(file, finished = FALSE, age = 0) {
   Sys.setFileTime(file, Sys.time() - age)
   file
 }
+
+## `errored`: the progress file of a fit that stopped with an R error, ended by an ERRORED row.
+writeProgressErrored <- function(file, age = 0) {
+  writeProgress(file)
+  data.table::fwrite(data.frame(time = "2026-10-08T10:05:00", generation = 2, variable = "ERRORED",
+                                best = NA, q10 = NA, median = NA, q90 = NA), file, append = TRUE)
+  Sys.setFileTime(file, Sys.time() - age)
+  file
+}

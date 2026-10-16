@@ -1,5 +1,14 @@
 # clusters (development version)
 
+* `DEoptimDashboard()` and `DEoptimDashboardApp()` gain `initialIteration` (default `5L`): the plots start at that generation, so very poor first generations do not flatten them.
+
+* `DEoptimProgress()`, `DEoptimDashboard()` and `DEoptimDashboardApp()` take `which`, any of `"running"`, `"stopped"`,
+  `"finished"`, `"errored"` (any case; default all), to show only those fits. A fit that stops with an R error now ends its
+  progress file with an `ERRORED` row, and is labelled `ERRORED` instead of `STOPPED`; a killed process is still `STOPPED`.
+  The dashboard's table is a DT table (DT is in Suggests) that sorts by any column and keeps its order, page and search
+  when it refreshes. The fit cards follow the table's sort and search, and fill the window, 6 across on a wide one and one on a narrow one. A folder of
+  symlinks to fits under `path` no longer lists each fit twice.
+
 * Three options now default to the values FireSense production has always set (defined once, in `.optionDefaults`);
   an explicit setting, including 0, still wins. `clusters.deoptimRescoreEvery` is 10: `DEoptimIterative()` re-scores the
   surviving population every 10 generations (was never), which converged in about half the generations and reached

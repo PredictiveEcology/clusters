@@ -309,6 +309,8 @@ DEoptimIterative <- function(fn, lower, upper, control, ...,
     cacheIds <- c(as.list(prevRunCacheIds), lapply(1:500, function(x) NULL))
   }
 
+  ## an R error ends the file with an ERRORED row; a killed process writes nothing and stays STOPPED
+  withCallingHandlers({
   for (iter in itersToDo) {
 
     control$itermax <- chunkLengths[iter]
@@ -508,7 +510,9 @@ DEoptimIterative <- function(fn, lower, upper, control, ...,
       break
     }
   }
-  .progressAppend(progressFile, NULL, chunkEnds[length(DE)], NULL, finished = TRUE)
+  }, error = function(e)
+    .progressAppend(progressFile, NULL, max(0L, chunkEnds[seq_along(DE)]), NULL, marker = .progressErrored))
+  .progressAppend(progressFile, NULL, chunkEnds[length(DE)], NULL, marker = .progressFinished)
   .showHostSpeed(ranEvaluations)
   DE
 }

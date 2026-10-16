@@ -8,7 +8,8 @@ DEoptimProgress(
   path = ".",
   pattern = "^DEoptimProgress_.*\\\\.csv$",
   runningWithin = 15 * 60,
-  state = new.env()
+  state = new.env(),
+  which = .progressStatuses
 )
 }
 \arguments{
@@ -16,10 +17,13 @@ DEoptimProgress(
 
 \item{pattern}{Regular expression the file names must match.}
 
-\item{runningWithin}{Seconds. A fit without a \code{FINISHED} row is \code{RUNNING} when its file changed within
-this time, and \code{STOPPED} otherwise.}
+\item{runningWithin}{Seconds. A fit without a \code{FINISHED} or \code{ERRORED} row is \code{RUNNING} when its file
+changed within this time, and \code{STOPPED} otherwise (a killed process leaves no marker).}
 
 \item{state}{An environment that keeps what has been read, so a refresh reads only changed files.}
+
+\item{which}{Which fits to return: any of \code{"running"}, \code{"stopped"}, \code{"finished"}, \code{"errored"}, in any case.
+The default is all of them. \code{gens} and \code{params} are cut to the same fits.}
 }
 \value{
 A list of three data.tables. \code{fits}: one row per file (\code{fit} the file, \code{label} its folder

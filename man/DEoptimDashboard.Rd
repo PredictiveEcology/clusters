@@ -11,7 +11,8 @@ DEoptimDashboard(
   title = "DEoptim fits",
   description = .dashboardDescription,
   launch.browser = getOption("shiny.launch.browser", interactive()),
-  which = .progressStatuses
+  which = .progressStatuses,
+  initialIteration = 5L
 )
 
 DEoptimDashboardApp(
@@ -19,7 +20,8 @@ DEoptimDashboardApp(
   refreshMinutes = 2,
   title = "DEoptim fits",
   description = .dashboardDescription,
-  which = .progressStatuses
+  which = .progressStatuses,
+  initialIteration = 5L
 )
 }
 \arguments{
@@ -34,6 +36,9 @@ DEoptimDashboardApp(
 \item{launch.browser}{Passed to \code{\link[shiny:runApp]{shiny::runApp()}}.}
 
 \item{which}{Which fits to show, as in \code{\link[=DEoptimProgress]{DEoptimProgress()}}; the cards follow the table.}
+
+\item{initialIteration}{The first generation plotted. The first generations are often so poor that
+they flatten everything after them; a fit with fewer generations shows them all.}
 }
 \value{
 \code{DEoptimDashboard()} runs the app. \code{DEoptimDashboardApp()} returns it, as a \code{shiny::shinyApp}.

@@ -1,5 +1,7 @@
 # clusters (development version)
 
+* `DEoptimDashboard()` and `DEoptimDashboardApp()` gain `initialIteration` (default `5L`): the plots start at that generation, so very poor first generations do not flatten them.
+
 * `DEoptimProgress()`, `DEoptimDashboard()` and `DEoptimDashboardApp()` take `which`, any of `"running"`, `"stopped"`,
   `"finished"`, `"errored"` (any case; default all), to show only those fits. A fit that stops with an R error now ends its
   progress file with an `ERRORED` row, and is labelled `ERRORED` instead of `STOPPED`; a killed process is still `STOPPED`.

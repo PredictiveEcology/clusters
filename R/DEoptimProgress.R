@@ -150,14 +150,17 @@ DEoptimProgress <- function(path = ".", pattern = "^DEoptimProgress_.*\\.csv$", 
 #' @param description Text under the title.
 #' @param launch.browser Passed to [shiny::runApp()].
 #' @param which Which fits to show, as in [DEoptimProgress()]; the cards follow the table.
+#' @param initialIteration The first generation plotted. The first generations are often so poor that
+#'   they flatten everything after them; a fit with fewer generations shows them all.
 #'
 #' @return `DEoptimDashboard()` runs the app. `DEoptimDashboardApp()` returns it, as a `shiny::shinyApp`.
 #' @export
 DEoptimDashboard <- function(path = ".", refreshMinutes = 2, title = "DEoptim fits",
                              description = .dashboardDescription,
                              launch.browser = getOption("shiny.launch.browser", interactive()),
-                             which = .progressStatuses) {
-  shiny::runApp(DEoptimDashboardApp(path, refreshMinutes, title, description, which), launch.browser = launch.browser)
+                             which = .progressStatuses, initialIteration = 5L) {
+  shiny::runApp(DEoptimDashboardApp(path, refreshMinutes, title, description, which, initialIteration),
+                launch.browser = launch.browser)
 }
 
 ## The disclosure arrow of "parameters by generation", drawn here (one in every browser: the native marker
@@ -180,15 +183,16 @@ DEoptimDashboard <- function(path = ".", refreshMinutes = 2, title = "DEoptim fi
 
 .dashboardDescription <- paste(
   "One card per fit (DEoptim): the objective of the best member, the 10th percentile and the median of the",
-  "population at each generation; lower is better. The y axis stops at the 90th percentile, so the first, very",
-  "poor generations do not flatten it. Open 'parameters by generation' for each parameter's 10th-90th",
+  "population at each generation; lower is better. The plots start at generation `initialIteration` and the",
+  "y axis stops at the 90th percentile, so the first, very poor generations do not flatten them. Open 'parameters by generation' for each parameter's 10th-90th",
   "percentile band (blue), median (black) and best member (orange). Running: the fit's file changed in the",
   "last 15 min. Finished: the fit is done.")
 
 #' @rdname DEoptimDashboard
 #' @export
 DEoptimDashboardApp <- function(path = ".", refreshMinutes = 2, title = "DEoptim fits",
-                                description = .dashboardDescription, which = .progressStatuses) {
+                                description = .dashboardDescription, which = .progressStatuses,
+                                initialIteration = 5L) {
   if (!requireNamespace("shiny", quietly = TRUE)) stop("DEoptimDashboard needs the shiny package")
   if (!requireNamespace("DT", quietly = TRUE)) stop("DEoptimDashboard needs the DT package")
   state <- new.env()
@@ -240,7 +244,10 @@ DEoptimDashboardApp <- function(path = ".", refreshMinutes = 2, title = "DEoptim
       cardOrder()                     # drawn again when the cards are
       for (i in seq_len(nrow(data()$fits))) local({
         i <- i
-        ofFit <- function(x) { x <- x[x$fit == data()$fits$fit[i], ]; x[order(x$generation), ] }
+        ofFit <- function(x) {
+          x <- .fromIteration(x[x$fit == data()$fits$fit[i], ], initialIteration)
+          x[order(x$generation), ]
+        }
         output[[paste0("obj_", i)]] <- shiny::renderPlot(.plotObjective(ofFit(data()$gens)))
         output[[paste0("par_", i)]] <- shiny::renderPlot(.plotParams(ofFit(data()$params)))
       })
@@ -261,6 +268,12 @@ DEoptimDashboardApp <- function(path = ".", refreshMinutes = 2, title = "DEoptim
                                options = list(pageLength = 50, language = list(
                                  emptyTable = "No DEoptim progress files found."))),
                  c("started", "updated"), method = "toLocaleString")
+}
+
+## generations from `initialIteration` on; all of them while a fit has none that late
+.fromIteration <- function(x, initialIteration) {
+  late <- x$generation >= initialIteration
+  if (any(late)) x[late, ] else x
 }
 
 .plotObjective <- function(g) {

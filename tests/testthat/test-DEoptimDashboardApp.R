@@ -81,3 +81,12 @@ test_that("the cards follow the table's displayed order, and the disclosure arro
   expect_identical(out$filtered, c("ELF2", "ELF3"))
   expect_identical(out$stale, c("ELF1", "ELF2", "ELF3"))
 })
+
+test_that("plots start at initialIteration, unless a fit has no generation that late", {
+  g <- data.frame(generation = 1:8, best = c(1e6, 50, 40, 30, 20, 15, 12, 10))
+  expect_identical(clusters:::.fromIteration(g, 5L)$generation, 5:8)
+  expect_identical(clusters:::.fromIteration(g, 1L)$generation, 1:8)
+  expect_identical(clusters:::.fromIteration(g[1:3, ], 5L)$generation, 1:3)
+  expect_identical(formals(DEoptimDashboard)$initialIteration, 5L)
+  expect_identical(formals(DEoptimDashboardApp)$initialIteration, 5L)
+})

@@ -33,6 +33,7 @@ Imports:
     utils
 Suggests:
     codetools,
+    DT,
     ggpubr,
     knitr,
     later,

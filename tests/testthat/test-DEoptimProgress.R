@@ -85,3 +85,74 @@ test_that("DEoptimProgress re-reads only files whose modification time changed",
   expect_identical(DEoptimProgress(root, state = state)$fits$status, "FINISHED")
   expect_identical(nrow(DEoptimProgress(withr::local_tempdir())$fits), 0L)
 })
+
+fourFits <- function() {
+  root <- withr::local_tempdir(.local_envir = parent.frame())
+  writeProgress(file.path(root, "run", "DEoptimProgress_1.csv"), age = 60)
+  writeProgress(file.path(root, "stop", "DEoptimProgress_1.csv"), age = 3600)
+  writeProgress(file.path(root, "done", "DEoptimProgress_1.csv"), finished = TRUE, age = 3600)
+  writeProgressErrored(file.path(root, "err", "DEoptimProgress_1.csv"), age = 60)   # recent, still ERRORED
+  root
+}
+
+test_that("an ERRORED row makes the status ERRORED, ahead of RUNNING and STOPPED, not a parameter", {
+  root <- fourFits()
+  p <- DEoptimProgress(root)
+  f <- p$fits[order(p$fits$label), ]
+  expect_identical(f$label, c("done", "err", "run", "stop"))
+  expect_identical(f$status, c("FINISHED", "ERRORED", "RUNNING", "STOPPED"))
+  expect_identical(unique(p$params$param), "a")
+})
+
+test_that("`which` keeps only those statuses, in any case, in fits, gens and params", {
+  root <- fourFits()
+  all <- DEoptimProgress(root)
+  expect_identical(DEoptimProgress(root, which = c("running", "stopped", "finished", "errored"))$fits$status,
+                   all$fits$status)
+  for (w in list("running", "STOPPED", "Finished", "errored", c("running", "ERRORED"))) {
+    p <- DEoptimProgress(root, which = w)
+    expect_true(all(p$fits$status %in% toupper(w)))
+    expect_setequal(p$fits$status, toupper(w))
+    expect_setequal(p$gens$fit, p$fits$fit)
+    expect_setequal(p$params$fit, p$fits$fit)
+  }
+  expect_identical(nrow(DEoptimProgress(root, which = "running", runningWithin = 1)$fits), 0L)
+  expect_identical(nrow(DEoptimProgress(root, which = "stopped", runningWithin = 7200)$fits), 0L)
+  expect_error(DEoptimProgress(root, which = "crashed"))
+})
+
+test_that("a fit whose objective errors ends its progress file with ERRORED; a finished one with FINISHED", {
+  skip_if_not_installed("DEoptim")
+  withr::local_dir(withr::local_tempdir())
+  cp <- withr::local_tempdir()
+  withr::local_options(reproducible.cachePath = cp, reproducible.useCache = FALSE,
+                       clusters.cacheDEoptimIterations = TRUE)
+  calls <- 0L
+  fn <- function(par) { calls <<- calls + 1L; if (calls > 20L) stop("objective failed"); sum((par - 0.3)^2) }
+  expect_error(suppressMessages(clusters:::DEoptimIterative(
+    fn, lower = c(a = 0, b = 0), upper = c(a = 1, b = 1),
+    control = list(NP = 8L, strategy = 2L, itermax = 5, trace = FALSE), iterStep = 1,
+    figurePath = FALSE, .plots = NULL, cachePath = cp, runName = "err", .verbose = -1)), "objective failed")
+  p <- data.table::fread("DEoptimProgress_err.csv")
+  expect_identical(p$variable[nrow(p)], "ERRORED")
+  expect_identical(sum(p$variable == "FINISHED"), 0L)
+  expect_identical(DEoptimProgress(".")$fits$status, "ERRORED")
+  expect_identical(nrow(DEoptimProgress(".", which = "running")$fits), 0L)
+  expect_identical(nrow(DEoptimProgress(".", which = "stopped")$gens), 0L)
+})
+
+test_that("a fit reached through a symlinked folder inside `path` is listed once", {
+  skip_on_os("windows")
+  root <- withr::local_tempdir()
+  writeProgress(file.path(root, "ELF1", "DEoptimProgress_1.csv"))
+  writeProgress(file.path(root, "ELF2", "DEoptimProgress_1.csv"))
+  dir.create(file.path(root, "links"))
+  file.symlink(file.path(root, "ELF1"), file.path(root, "links", "ELF1"))
+  state <- new.env()
+  for (i in 1:2) {                                    # and again on a refresh with the same state
+    p <- DEoptimProgress(root, state = state)
+    expect_identical(sort(p$fits$label), c("ELF1", "ELF2"))
+    expect_identical(nrow(p$gens), 4L)
+    expect_identical(nrow(clusters:::.fitsData(p$fits)), 2L)
+  }
+})

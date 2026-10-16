@@ -4,6 +4,9 @@
 
 .progressObjective <- "objective"    # the `variable` of the objective's rows
 .progressFinished <- "FINISHED"      # the `variable` of the row that ends a file, and a fit's status
+.progressErrored <- "ERRORED"        # the same, for a fit that stopped with an R error
+.progressMarkers <- c(.progressFinished, .progressErrored)
+.progressStatuses <- c("running", "stopped", "finished", "errored")   # the values of `which`
 .progressColumns <- c("time", "generation", "variable", "best", "q10", "median", "q90")
 
 ## The file a fit writes: `progressFile` (NULL: in `figurePath`, or "." without one; FALSE: none), emptied
@@ -19,14 +22,14 @@
 }
 
 ## Rows for the chunk ending at `generation`: the objective, then each parameter (best member's value and
-## the population's quantiles). `finished`: one FINISHED row instead.
-.progressRows <- function(member, generation, parNames, finished = FALSE) {
+## the population's quantiles). `marker` (.progressFinished or .progressErrored): one row of it instead.
+.progressRows <- function(member, generation, parNames, marker = NULL) {
   row <- function(variable, best, x) data.frame(
     time = format(Sys.time(), "%Y-%m-%dT%H:%M:%S"), generation = generation, variable = variable, best = best,
     q10 = if (is.null(x)) NA_real_ else stats::quantile(x, 0.1, names = FALSE),
     median = if (is.null(x)) NA_real_ else stats::median(x),
     q90 = if (is.null(x)) NA_real_ else stats::quantile(x, 0.9, names = FALSE))
-  if (finished) return(row(.progressFinished, NA_real_, NULL))
+  if (!is.null(marker)) return(row(marker, NA_real_, NULL))
   pop <- member$pop
   bestRow <- which.min(member$popval)
   if (length(parNames) != NCOL(pop)) parNames <- paste0("V", seq_len(NCOL(pop)))
@@ -42,10 +45,10 @@
                                  call. = FALSE))
 }
 
-## Append the rows of a chunk (or the FINISHED row) to a fit's file; a no-op when `file` is FALSE.
-.progressAppend <- function(file, member, generation, parNames, finished = FALSE) {
+## Append the rows of a chunk (or an end marker row) to a fit's file; a no-op when `file` is FALSE.
+.progressAppend <- function(file, member, generation, parNames, marker = NULL) {
   if (isFALSE(file)) return(invisible())
-  tryCatch(.progressWrite(file, .progressRows(member, generation, parNames, finished), append = TRUE),
+  tryCatch(.progressWrite(file, .progressRows(member, generation, parNames, marker), append = TRUE),
            error = function(e) warning("could not make the DEoptim progress rows: ", conditionMessage(e),
                                        call. = FALSE))
   invisible()
@@ -58,8 +61,10 @@
 #'
 #' @param path Folder searched recursively.
 #' @param pattern Regular expression the file names must match.
-#' @param runningWithin Seconds. A fit without a `FINISHED` row is `RUNNING` when its file changed within
-#'   this time, and `STOPPED` otherwise.
+#' @param runningWithin Seconds. A fit without a `FINISHED` or `ERRORED` row is `RUNNING` when its file
+#'   changed within this time, and `STOPPED` otherwise (a killed process leaves no marker).
+#' @param which Which fits to return: any of `"running"`, `"stopped"`, `"finished"`, `"errored"`, in any case.
+#'   The default is all of them. `gens` and `params` are cut to the same fits.
 #' @param state An environment that keeps what has been read, so a refresh reads only changed files.
 #'
 #' @return A list of three data.tables. `fits`: one row per file (`fit` the file, `label` its folder
@@ -68,8 +73,11 @@
 #'   `params`: `fit`, `generation`, `param`, `best`, `q10`, `median`, `q90`.
 #' @export
 DEoptimProgress <- function(path = ".", pattern = "^DEoptimProgress_.*\\.csv$", runningWithin = 15 * 60,
-                            state = new.env()) {
+                            state = new.env(), which = .progressStatuses) {
+  which <- toupper(match.arg(tolower(which), .progressStatuses, several.ok = TRUE))
   files <- list.files(path, pattern = pattern, recursive = TRUE, full.names = TRUE)
+  ## a folder of symlinks to fits under `path` lists each file twice; the label is the real location's
+  files <- files[!duplicated(normalizePath(files, mustWork = FALSE))]
   if (is.null(state$files)) state$files <- list()
   mtime <- file.mtime(files)
   for (i in seq_along(files)) {
@@ -90,6 +98,7 @@ DEoptimProgress <- function(path = ".", pattern = "^DEoptimProgress_.*\\.csv$", 
       fit = f,
       label = paste(c(if (nzchar(folder)) folder, if (runName != "1") runName), collapse = " "),
       status = if (any(d$variable == .progressFinished)) .progressFinished
+               else if (any(d$variable == .progressErrored)) .progressErrored
                else if (difftime(Sys.time(), state$files[[f]]$mtime, units = "secs") <= runningWithin) "RUNNING"
                else "STOPPED",
       generation = if (nrow(obj)) max(obj$generation) else NA_integer_,
@@ -97,10 +106,13 @@ DEoptimProgress <- function(path = ".", pattern = "^DEoptimProgress_.*\\.csv$", 
       started = d$time[1], updated = state$files[[f]]$mtime)
   }))
   fits[fits$label == "", "label" := "."]
+  fits <- fits[fits$status %in% which, ]
+  files <- fits$fit
+  if (!length(files)) return(empty)
   parts <- lapply(files, function(f) cbind(fit = f, state$files[[f]]$data))
   rows <- data.table::rbindlist(parts)
   obj <- rows[rows$variable == .progressObjective, ]
-  par <- rows[!rows$variable %in% c(.progressObjective, .progressFinished), ]
+  par <- rows[!rows$variable %in% c(.progressObjective, .progressMarkers), ]
   list(fits = fits,
        gens = obj[, c("fit", "generation", "best", "q10", "median")],
        params = data.table::setnames(par[, c("fit", "generation", "variable", "best", "q10", "median", "q90")],
@@ -129,21 +141,42 @@ DEoptimProgress <- function(path = ".", pattern = "^DEoptimProgress_.*\\.csv$", 
 #'
 #' A table of the fits whose progress files ([DEoptimProgress()]) are under `path`, then a card per fit with
 #' its objective by generation and, in a collapsed section, its parameters by generation. It re-reads the
-#' files every `refreshMinutes`. Needs the shiny package.
+#' files every `refreshMinutes`. Click a column header of the table to sort by it; the sort order, page and
+#' search are kept when the table refreshes. Needs the shiny and DT packages.
 #'
 #' @inheritParams DEoptimProgress
 #' @param refreshMinutes Minutes between reads.
 #' @param title Title of the page.
 #' @param description Text under the title.
 #' @param launch.browser Passed to [shiny::runApp()].
+#' @param which Which fits to show, as in [DEoptimProgress()]; the cards follow the table.
 #'
 #' @return `DEoptimDashboard()` runs the app. `DEoptimDashboardApp()` returns it, as a `shiny::shinyApp`.
 #' @export
 DEoptimDashboard <- function(path = ".", refreshMinutes = 2, title = "DEoptim fits",
                              description = .dashboardDescription,
-                             launch.browser = getOption("shiny.launch.browser", interactive())) {
-  shiny::runApp(DEoptimDashboardApp(path, refreshMinutes, title, description), launch.browser = launch.browser)
+                             launch.browser = getOption("shiny.launch.browser", interactive()),
+                             which = .progressStatuses) {
+  shiny::runApp(DEoptimDashboardApp(path, refreshMinutes, title, description, which), launch.browser = launch.browser)
 }
+
+## The disclosure arrow of "parameters by generation", drawn here (one in every browser: the native marker
+## is hidden, since Bootstrap hides it in some).
+.summaryCss <- paste(
+  "details > summary { list-style: none; cursor: pointer; color: #5d655f; }",
+  "details > summary::-webkit-details-marker { display: none; }",
+  "details > summary::before { content: '\\25B8\\00a0'; }",
+  "details[open] > summary::before { content: '\\25BE\\00a0'; }")
+
+.appStyle <- function() shiny::tags$style(shiny::HTML(paste(.summaryCss, .cardsCss)))
+
+## The cards fill the window: as many across as fit, none narrower than `.cardMinPx`, at most `.cardsMax`.
+.cardMinPx <- 300L
+.cardsMax <- 6L
+.cardGapPx <- 12L
+.cardsCss <- sprintf(
+  ".fit-cards { display: grid; gap: %dpx; grid-template-columns: repeat(auto-fill, minmax(max(%dpx, calc((100%% - %d * %dpx) / %d)), 1fr)); } .fit-cards > div { min-width: 0; }",
+  .cardGapPx, .cardMinPx, .cardsMax - 1L, .cardGapPx, .cardsMax)
 
 .dashboardDescription <- paste(
   "One card per fit (DEoptim): the objective of the best member, the 10th percentile and the median of the",
@@ -155,39 +188,48 @@ DEoptimDashboard <- function(path = ".", refreshMinutes = 2, title = "DEoptim fi
 #' @rdname DEoptimDashboard
 #' @export
 DEoptimDashboardApp <- function(path = ".", refreshMinutes = 2, title = "DEoptim fits",
-                                description = .dashboardDescription) {
+                                description = .dashboardDescription, which = .progressStatuses) {
   if (!requireNamespace("shiny", quietly = TRUE)) stop("DEoptimDashboard needs the shiny package")
+  if (!requireNamespace("DT", quietly = TRUE)) stop("DEoptimDashboard needs the DT package")
   state <- new.env()
   ui <- shiny::fluidPage(
     ## Bootstrap hides the disclosure triangle of <summary>
-    shiny::tags$style("details > summary { display: list-item; cursor: pointer; color: #5d655f; }"),
+    .appStyle(),
     shiny::titlePanel(title),
     shiny::p(description),
     shiny::textOutput("checked"),
-    shiny::tableOutput("fits"),
+    DT::DTOutput("fits"),
     shiny::uiOutput("cards"))
   server <- function(input, output, session) {
     data <- shiny::reactive({
       shiny::invalidateLater(refreshMinutes * 60 * 1000)
-      d <- DEoptimProgress(path, state = state)
+      d <- DEoptimProgress(path, state = state, which = which)
       d$fits <- d$fits[order(d$fits$label), ]
       d
     })
     output$checked <- shiny::renderText(paste("read", format(Sys.time(), "%H:%M:%S"), "- refreshes every",
                                               refreshMinutes, "min"))
-    output$fits <- shiny::renderTable({
-      f <- data()$fits
-      if (!nrow(f)) return(data.frame(note = "No DEoptim progress files found."))
-      data.frame(fit = f$label, status = f$status, generation = f$generation,
-                 `best objective` = round(f$best, 1), started = format(f$started, "%m-%d %H:%M"),
-                 updated = format(f$updated, "%m-%d %H:%M"), check.names = FALSE)
+    ## The table is drawn once; a refresh replaces its data in place, which keeps the sort order, the page
+    ## and the search (a re-render would reset them). Numbers and times stay numbers and times, so they
+    ## sort as such.
+    output$fits <- DT::renderDT(.fitsTable(shiny::isolate(data())$fits))
+    proxy <- DT::dataTableProxy("fits")
+    shiny::observeEvent(data(), DT::replaceData(proxy, .fitsData(data()$fits), resetPaging = FALSE,
+                                                rownames = FALSE), ignoreInit = TRUE)
+    ## The cards follow the table: its rows in the order shown (sorted and searched), as positions in
+    ## the current data. Until the table reports them, or when they do not fit the data (a refresh changed
+    ## the fits), the default order. A click on a header redraws the cards and their plots.
+    cardOrder <- shiny::reactive({
+      n <- nrow(data()$fits)
+      shown <- input$fits_rows_all
+      if (is.null(shown) || !all(shown %in% seq_len(n))) seq_len(n) else shown
     })
     ## one card per fit; the parameter plot is drawn when its section is first opened (Shiny does not
     ## draw hidden outputs; "shown" makes it check again)
     output$cards <- shiny::renderUI({
       f <- data()$fits
-      shiny::fluidRow(lapply(seq_len(nrow(f)), function(i) shiny::column(
-        4, shiny::tags$h4(paste(f$label[i], "-", tolower(f$status[i]), "- generation", f$generation[i])),
+      shiny::div(class = "fit-cards", lapply(cardOrder(), function(i) shiny::div(
+        shiny::tags$h4(paste(f$label[i], "-", tolower(f$status[i]), "- generation", f$generation[i])),
         shiny::plotOutput(paste0("obj_", i), height = "260px"),
         shiny::tags$details(ontoggle = "$(this).trigger('shown')",
                             shiny::tags$summary("parameters by generation"),
@@ -195,6 +237,7 @@ DEoptimDashboardApp <- function(path = ".", refreshMinutes = 2, title = "DEoptim
     })
     ## output ids are the card's position; the fit is looked up when drawn, so a refresh keeps the plots
     shiny::observe({
+      cardOrder()                     # drawn again when the cards are
       for (i in seq_len(nrow(data()$fits))) local({
         i <- i
         ofFit <- function(x) { x <- x[x$fit == data()$fits$fit[i], ]; x[order(x$generation), ] }
@@ -204,6 +247,20 @@ DEoptimDashboardApp <- function(path = ".", refreshMinutes = 2, title = "DEoptim
     })
   }
   shiny::shinyApp(ui, server)
+}
+
+## The columns of the top table, with their types.
+.fitsData <- function(f) if (!nrow(f)) data.frame(
+  fit = character(), status = character(), generation = integer(), `best objective` = numeric(),
+  started = .POSIXct(numeric()), updated = .POSIXct(numeric()), check.names = FALSE) else data.frame(
+  fit = f$label, status = f$status, generation = f$generation, `best objective` = round(f$best, 1),
+  started = f$started, updated = f$updated, check.names = FALSE)
+
+.fitsTable <- function(f) {
+  DT::formatDate(DT::datatable(.fitsData(f), rownames = FALSE, selection = "none",
+                               options = list(pageLength = 50, language = list(
+                                 emptyTable = "No DEoptim progress files found."))),
+                 c("started", "updated"), method = "toLocaleString")
 }
 
 .plotObjective <- function(g) {
@@ -222,7 +279,7 @@ DEoptimDashboardApp <- function(path = ".", refreshMinutes = 2, title = "DEoptim
 .plotParams <- function(p) {
   if (!nrow(p)) return(invisible())
   nms <- unique(p$param)
-  graphics::par(mfrow = c(ceiling(length(nms) / 2), 2), mar = c(3, 3, 2, 1), mgp = c(1.8, 0.6, 0))
+  graphics::par(mfrow = c(ceiling(length(nms) / 2), 2), mar = c(2.2, 2.2, 1.4, 0.4), mgp = c(1.2, 0.4, 0), cex.axis = 0.7, cex.main = 0.8, tcl = -0.3)
   for (nm in nms) {
     q <- p[p$param == nm, ]
     graphics::plot(q$generation, q$median, type = "n", ylim = range(q$q10, q$q90, q$best), main = nm,

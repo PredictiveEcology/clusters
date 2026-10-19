@@ -68,6 +68,7 @@ test_that("DEoptimProgress reads status, labels and the per-generation tables", 
   expect_identical(f$status, c("RUNNING", "RUNNING", "FINISHED", "STOPPED"))
   expect_identical(f$generation, rep(2L, 4))
   expect_equal(f$best, rep(4, 4))
+  expect_equal(f$median, rep(7, 4))                 # the population median at the last generation, not the first
   expect_s3_class(f$started, "POSIXct")
   expect_s3_class(f$updated, "POSIXct")
   expect_identical(names(p$gens), c("fit", "generation", "best", "q10", "median"))

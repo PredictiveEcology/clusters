@@ -28,7 +28,7 @@ The default is all of them. \code{gens} and \code{params} are cut to the same fi
 \value{
 A list of three data.tables. \code{fits}: one row per file (\code{fit} the file, \code{label} its folder
 relative to \code{path} plus the run name when it is not \code{1}, \code{status}, \code{generation}, \code{best} objective,
-\code{started}, \code{updated}). \code{gens}: \code{fit}, \code{generation}, \code{best}, \code{q10}, \code{median} of the objective.
+the population's \code{median} objective at that generation, \code{started}, \code{updated}). \code{gens}: \code{fit}, \code{generation}, \code{best}, \code{q10}, \code{median} of the objective.
 \code{params}: \code{fit}, \code{generation}, \code{param}, \code{best}, \code{q10}, \code{median}, \code{q90}.
 }
 \description{

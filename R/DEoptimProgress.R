@@ -69,7 +69,7 @@
 #'
 #' @return A list of three data.tables. `fits`: one row per file (`fit` the file, `label` its folder
 #'   relative to `path` plus the run name when it is not `1`, `status`, `generation`, `best` objective,
-#'   `started`, `updated`). `gens`: `fit`, `generation`, `best`, `q10`, `median` of the objective.
+#'   the population's `median` objective at that generation, `started`, `updated`). `gens`: `fit`, `generation`, `best`, `q10`, `median` of the objective.
 #'   `params`: `fit`, `generation`, `param`, `best`, `q10`, `median`, `q90`.
 #' @export
 DEoptimProgress <- function(path = ".", pattern = "^DEoptimProgress_.*\\.csv$", runningWithin = 15 * 60,
@@ -103,6 +103,7 @@ DEoptimProgress <- function(path = ".", pattern = "^DEoptimProgress_.*\\.csv$", 
                else "STOPPED",
       generation = if (nrow(obj)) max(obj$generation) else NA_integer_,
       best = if (nrow(obj)) obj$best[which.max(obj$generation)] else NA_real_,
+      median = if (nrow(obj)) obj$median[which.max(obj$generation)] else NA_real_,
       started = d$time[1], updated = state$files[[f]]$mtime)
   }))
   fits[fits$label == "", "label" := "."]
@@ -259,9 +260,9 @@ DEoptimDashboardApp <- function(path = ".", refreshMinutes = 2, title = "DEoptim
 ## The columns of the top table, with their types.
 .fitsData <- function(f) if (!nrow(f)) data.frame(
   fit = character(), status = character(), generation = integer(), `best objective` = numeric(),
-  started = .POSIXct(numeric()), updated = .POSIXct(numeric()), check.names = FALSE) else data.frame(
+  `median objective` = numeric(), started = .POSIXct(numeric()), updated = .POSIXct(numeric()), check.names = FALSE) else data.frame(
   fit = f$label, status = f$status, generation = f$generation, `best objective` = round(f$best, 1),
-  started = f$started, updated = f$updated, check.names = FALSE)
+  `median objective` = round(f$median, 1), started = f$started, updated = f$updated, check.names = FALSE)
 
 .fitsTable <- function(f) {
   DT::formatDate(DT::datatable(.fitsData(f), rownames = FALSE, selection = "none",

@@ -74,93 +74,91 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
     # port_block <- seq(start, length.out = block_size)
     ## A host named more than once means that many workers wanted; the planner places them (a repeated
     ## vector used to skip it, and no cluster was built)
-    {
-      # Convert local machine from its ssh name to "localhost"
-      # This looks at .ssh/config, assumes that Host is used, with # comment character naming nodename
-      #  e.g., "Host coco # A159576 n18 # Eliot Degradation"
-      #  This should just skip and leave `cores` unchanged if that structure doesn't exist
-      cores <- changeNodenameToLocalhost(cores)
-      
-      if (FALSE) { # this is for NRCan network; extracts names of all nodes in the .ssh/config file
-        sshLines <- readLines("~/.ssh/config")
-        cores <-
-          gsub("^Host (.+) #.+", "\\1", grep("^Host", sshLines, value = TRUE)) |>
-          gsub(pattern = "(Host )|(f$)", replacement = "", x = _) |> unique() |>
-          grep(pattern = "(^(n|bc\\**|rbc)[[:digit:]])|(jump)|\\*|remote|pfc|[[:digit:]]+", invert = TRUE, value = T)
-      }
-      coresUnique <- unique(unlist(cores))
-      # Forward what the workers must load and which library is the master.
-      # Without `pkgsNeeded` the per-host verification checked only the
-      # planner's three defaults, and the real packages first failed to load on
-      # the final cluster with no host named. Without `libPath` the planner took
-      # `.libPaths()[1]` as the master library -- an overlay or user library, not
-      # the project library -- and mirrored that to the hosts instead.
-      plan <- plan_psock_min(
-        hosts = coresUnique,
-        total = if (anyDuplicated(cores)) length(cores) else nCoresNeeded,
-        pkgsNeeded = pkgsNeeded,
-        libPath = libPath,
-        logPath = logPath,
-        build_final_cluster = TRUE,
-        runName = runName
-      )
-      clThird <- plan$cluster
-      cores <- plan$workers
-      # These lines are equivalent:
-      # reproducible:::on.exit2(parallel::stopCluster(clThird))
-      # do.call(base::on.exit, list(stopCluster(cl), TRUE, TRUE), envir = envir)
+    # Convert local machine from its ssh name to "localhost"
+    # This looks at .ssh/config, assumes that Host is used, with # comment character naming nodename
+    #  e.g., "Host coco # A159576 n18 # Eliot Degradation"
+    #  This should just skip and leave `cores` unchanged if that structure doesn't exist
+    cores <- changeNodenameToLocalhost(cores)
     
-      
-      # clInitial <- parallelly::makeClusterPSOCK(coresUnique)
-      # clInitial <- makeClusterPSOCK(
-      #   coresUnique,
-      #   # port = port_block,
-      #   # revtunnel = TRUE,
-      #   # rshopts = c("-o", "ExitOnForwardFailure=yes"),
-      #   # tries = 5L,
-      #   # delay = 5,
-      #   # renice = 20, 
-      #   rscript_libs = libPath
-      # )
-      
-      
-      # on.exit(try(parallel::stopCluster(clInitial), silent = TRUE), add = TRUE)
-      # parallel::clusterExport(clInitial, varlist = "numActiveThreads")
-      # names(clInitial) <- coresUnique
-      # cores <- parallel::clusterEvalQ(clInitial, {
-      #   ncores = parallel::detectCores()
-      #   free = parallelly::freeCores()
-      #   active = ncores - free
-      #   canUse = ncores - active
-      #   data.frame(ncores = ncores, active = active, canUse = canUse)})
-      # coreState <- data.table::rbindlist(cores, idcol = "name")
-      # coreState[, prop := canUse/sum(canUse)]
-      # 
-      # rversion <- parallel::clusterEvalQ(clInitial, {
-      #   as.character(getRversion())
-      # })
-      # names(rversion) <- sapply(clInitial, function(x) x$host)
-      # 
-      # Rversions <- unique(unlist(rversion))
-      # haveDifferentRversions <- length(Rversions) > 1
-      # 
-      # if (haveDifferentRversions) {
-      #   dtForCores <- data.table(machine = names(rversion), Rversion = rversion)
-      #   messageDF(dtForCores)
-      #   stop("Please make all machines have the same R version")
-      # }
-      # 
-      # # nCoresNeeded <- 100
-      # if (sum(coreState$canUse) < nCoresNeeded) stop("There are too few cores to use in this cluster")
-      # vec <- floor(coreState$prop * nCoresNeeded)
-      # while(sum(vec) < nCoresNeeded) {
-      #   wm <- which.min(vec/coreState$canUse)
-      #   vec[wm] <- vec[wm] + 1
-      # }
-      # cores <- rep(coreState$name, vec)
-      # parallel::stopCluster(clInitial)
-      # Sys.sleep(2) 
+    if (FALSE) { # this is for NRCan network; extracts names of all nodes in the .ssh/config file
+      sshLines <- readLines("~/.ssh/config")
+      cores <-
+        gsub("^Host (.+) #.+", "\\1", grep("^Host", sshLines, value = TRUE)) |>
+        gsub(pattern = "(Host )|(f$)", replacement = "", x = _) |> unique() |>
+        grep(pattern = "(^(n|bc\\**|rbc)[[:digit:]])|(jump)|\\*|remote|pfc|[[:digit:]]+", invert = TRUE, value = T)
     }
+    coresUnique <- unique(unlist(cores))
+    # Forward what the workers must load and which library is the master.
+    # Without `pkgsNeeded` the per-host verification checked only the
+    # planner's three defaults, and the real packages first failed to load on
+    # the final cluster with no host named. Without `libPath` the planner took
+    # `.libPaths()[1]` as the master library -- an overlay or user library, not
+    # the project library -- and mirrored that to the hosts instead.
+    plan <- plan_psock_min(
+      hosts = coresUnique,
+      total = if (anyDuplicated(cores)) length(cores) else nCoresNeeded,
+      pkgsNeeded = pkgsNeeded,
+      libPath = libPath,
+      logPath = logPath,
+      build_final_cluster = TRUE,
+      runName = runName
+    )
+    clThird <- plan$cluster
+    cores <- plan$workers
+    # These lines are equivalent:
+    # reproducible:::on.exit2(parallel::stopCluster(clThird))
+    # do.call(base::on.exit, list(stopCluster(cl), TRUE, TRUE), envir = envir)
+  
+    
+    # clInitial <- parallelly::makeClusterPSOCK(coresUnique)
+    # clInitial <- makeClusterPSOCK(
+    #   coresUnique,
+    #   # port = port_block,
+    #   # revtunnel = TRUE,
+    #   # rshopts = c("-o", "ExitOnForwardFailure=yes"),
+    #   # tries = 5L,
+    #   # delay = 5,
+    #   # renice = 20, 
+    #   rscript_libs = libPath
+    # )
+    
+    
+    # on.exit(try(parallel::stopCluster(clInitial), silent = TRUE), add = TRUE)
+    # parallel::clusterExport(clInitial, varlist = "numActiveThreads")
+    # names(clInitial) <- coresUnique
+    # cores <- parallel::clusterEvalQ(clInitial, {
+    #   ncores = parallel::detectCores()
+    #   free = parallelly::freeCores()
+    #   active = ncores - free
+    #   canUse = ncores - active
+    #   data.frame(ncores = ncores, active = active, canUse = canUse)})
+    # coreState <- data.table::rbindlist(cores, idcol = "name")
+    # coreState[, prop := canUse/sum(canUse)]
+    # 
+    # rversion <- parallel::clusterEvalQ(clInitial, {
+    #   as.character(getRversion())
+    # })
+    # names(rversion) <- sapply(clInitial, function(x) x$host)
+    # 
+    # Rversions <- unique(unlist(rversion))
+    # haveDifferentRversions <- length(Rversions) > 1
+    # 
+    # if (haveDifferentRversions) {
+    #   dtForCores <- data.table(machine = names(rversion), Rversion = rversion)
+    #   messageDF(dtForCores)
+    #   stop("Please make all machines have the same R version")
+    # }
+    # 
+    # # nCoresNeeded <- 100
+    # if (sum(coreState$canUse) < nCoresNeeded) stop("There are too few cores to use in this cluster")
+    # vec <- floor(coreState$prop * nCoresNeeded)
+    # while(sum(vec) < nCoresNeeded) {
+    #   wm <- which.min(vec/coreState$canUse)
+    #   vec[wm] <- vec[wm] + 1
+    # }
+    # cores <- rep(coreState$name, vec)
+    # parallel::stopCluster(clInitial)
+    # Sys.sleep(2) 
   }
   control <- list(itermax = itermax, trace = trace, strategy = strategy)
 

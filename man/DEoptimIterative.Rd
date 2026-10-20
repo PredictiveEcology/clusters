@@ -74,6 +74,13 @@ Between chunks it can re-score the surviving population (\code{options(clusters.
 draws progress figures with \code{SpaDES.core::Plots()} when \code{figurePath} is a path, and stops early
 once the population has stopped improving (see \code{.deoptimPopulationConverged()}).
 }
+\details{
+A first chunk after which every member holds the objective's fail value (\code{1e6}: the objective
+refused every parameter set) cannot be fitted from, so the call stops with an error of class
+\code{deoptimNoFeasibleMember} (elements \code{generations} and \code{failVal}); a caller can catch it and start
+again from a population the objective accepts (\code{control$initialpop}). Such members are never
+re-scored.
+}
 \section{Functions}{
 \itemize{
 \item \code{DEoptimIterative2()}: Deprecated: the former name of \code{DEoptimIterative()}, kept for one

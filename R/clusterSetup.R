@@ -7,7 +7,9 @@
 #' @param itermax Integer; maximum DEoptim iterations. See [DEoptim::DEoptim.control()].
 #' @param trace Logical or integer passed to `DEoptim.control()`; how often to report progress.
 #' @param strategy Integer in `[1, 10]`; the DEoptim strategy variant.
-#' @param initialpop Optional matrix of starting parameter sets, one row per population member.
+#' @param initialpop Optional matrix of starting parameter sets, one row per population member. With more
+#'   rows than the cluster has workers (`NP`), the first `NP` rows are used; fewer is an error. With no
+#'   cluster and no `NP`, `NP` is its number of rows.
 #' @param NP Integer; number of population members. Defaults to DEoptim's own rule when `NULL`.
 #' @param cores Character vector of host names, repeated once per worker wanted on that host, or a number for localhost only.
 #' @param logPath Path for worker output (`outfile` of the PSOCK cluster). Each host writes its own copy.
@@ -161,6 +163,9 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
 
   ## NP is exactly the number of workers: DEoptim evaluates one population member per worker.
   control$NP <- .clusterNP(NP, nWorkers = if (is.null(cores)) 0L else length(cores))
+  ## A starting population must have exactly NP rows for DEoptim; the caller cannot know NP before the
+  ## cluster is built, so it may give more rows than workers and the first NP are used.
+  control <- .fitInitialpopToNP(control)
 
   ## The objects shipped to the workers are what the objective runs on, but they are not among its
   ## arguments, so a cache key built from the arguments misses them: two fits that differ only in

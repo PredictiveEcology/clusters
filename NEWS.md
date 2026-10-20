@@ -1,5 +1,17 @@
 # clusters (development version)
 
+* `DEoptimIterative()` no longer runs the objective in the master when there is nothing to re-score. When every
+  member of the population held the fail value (1e6), the periodic re-score had a 0-row population, and `apply()`
+  / `parApply()` on a 0-row matrix call the function once, in the calling process, on a vector of zeros: a
+  FireSense fit (ELF 6.6.2, 2026-10-20) died in the master with "object 'annualDTx1000' not found", the data being
+  on the workers. `.rescorePopulation()` returns nothing for no rows, and the re-score is skipped with a message.
+  Such a fit now stops after its first chunk with an error of class `deoptimNoFeasibleMember` (nothing is ever an
+  improvement on a population of fail values, so the fit would have run to `itermax` at 1e6); a caller can catch
+  it and start from a population the objective accepts.
+
+* `clusterSetup()` fits a supplied `initialpop` to the population size: the caller cannot know how many workers
+  the cluster will get (that is `NP`), so an `initialpop` with more rows uses the first `NP`; fewer is an error.
+
 * The `DEoptimDashboard()` top table shows each fit's `median objective` at its latest generation beside the best member's, and `DEoptimProgress()$fits` gains `median`. The median is steadier than the best member for comparing fits.
 
 * `DEoptimIterative()` gains `convergence`, a list with any of `window`, `minGenerations`, `se`, `sdChange`; what is missing comes from the `clusters.deoptim*` options, then the unchanged defaults (300, 350, 1, 0.1). `deoptimConvergence()` returns the full list. The settings are not in any chunk's cache key, so a fit that stopped early resumes from its cached generations and continues under a stricter rule. The defaults of those four options are now in `.optionDefaults`.

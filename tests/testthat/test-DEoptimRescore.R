@@ -97,3 +97,56 @@ test_that("clusters.deoptimRescoreEvery = 0 turns re-scoring off", {
   expect_length(grep("Re-scored", out$messages), 0L)
   expect_null(out$DE[[10]]$member$popvalN)
 })
+
+## A population with nothing to re-score (every member holds the fail value) must not reach the
+## objective: apply() and parApply() on a 0-row matrix call FUN once, in the master, on a vector of
+## zeros. FireSense ELF 6.6.2 (2026-10-20): the master evaluated par = c(0, 0, ...) without the data
+## the workers hold and died in the objective's fallback, "object 'annualDTx1000' not found".
+
+mustNotRun <- function(par, ...) stop("the objective must not be called with ", paste(par, collapse = ","))
+noRows <- matrix(numeric(0), nrow = 0, ncol = 3)
+
+test_that(".rescorePopulation() with no rows calls nothing and returns no values", {
+  expect_identical(.rescorePopulation(mustNotRun, pop = noRows, args = list(), parNames = c("a", "b", "c"), cl = NULL),
+                   numeric(0))
+  cl <- localTestCluster(1)
+  expect_identical(.rescorePopulation(mustNotRun, pop = noRows, args = list(), parNames = c("a", "b", "c"), cl = cl),
+                   numeric(0))
+})
+
+test_that("a population every member of which failed is not re-scored, and the fit stops", {
+  seen <- new.env(); seen$pars <- list()
+  allFail <- function(par, thresh = 1) { seen$pars <- c(seen$pars, list(par)); 1e6 }
+  withr::local_options(reproducible.cachePath = withr::local_tempdir(), reproducible.useCache = FALSE,
+                       clusters.cacheDEoptimIterations = TRUE, clusters.deoptimRescoreEvery = 1)
+  withr::local_seed(1)
+  msgs <- character()
+  err <- withCallingHandlers(
+    tryCatch(suppressWarnings(clusters:::DEoptimIterative(allFail, lower = lower, upper = upper,
+                                         control = list(NP = 8L, strategy = 2L, itermax = 3, trace = FALSE),
+                                         figurePath = FALSE, progressFile = FALSE, .plots = NULL,
+                                         cachePath = getOption("reproducible.cachePath"), runName = "allfail", .verbose = -1)),
+             error = function(e) e),
+    message = function(m) { msgs <<- c(msgs, conditionMessage(m)); invokeRestart("muffleMessage") })
+  expect_s3_class(err, "deoptimNoFeasibleMember")
+  expect_match(conditionMessage(err), "every member of the population holds the fail value")
+  expect_identical(err$generations, 1L)
+  expect_length(grep("Nothing to re-score at generation 1", msgs), 1L)
+  expect_length(grep("Re-scored", msgs), 0L)
+  ## the 8 initial members and generation 1's 8 trials were evaluated, none a zero vector from a 0-row re-score
+  expect_length(seen$pars, 16L)
+  expect_false(any(vapply(seen$pars, function(p) all(p == 0), logical(1))))
+})
+
+test_that("a first generation with one scored member goes on as before", {
+  oneGood <- function(par, thresh = 1) if (par[1] < 0.5) sum((par - 0.3)^2) else 1e6 # DEoptim passes par unnamed
+  withr::local_options(reproducible.cachePath = withr::local_tempdir(), reproducible.useCache = FALSE,
+                       clusters.cacheDEoptimIterations = TRUE, clusters.deoptimRescoreEvery = 0)
+  withr::local_seed(1)
+  DE <- suppressWarnings(suppressMessages(clusters:::DEoptimIterative(oneGood, lower = lower, upper = upper,
+                                   control = list(NP = 8L, strategy = 2L, itermax = 2, trace = FALSE),
+                                   figurePath = FALSE, progressFile = FALSE, .plots = NULL,
+                                   cachePath = getOption("reproducible.cachePath"), runName = "onegood", .verbose = -1)))
+  expect_length(DE, 2L)
+  expect_true(any(DE[[2]]$member$popval < 1e6))
+})

@@ -188,8 +188,22 @@
   function(par) do.call(fn, c(list(stats::setNames(par, parNames)), args))
 }
 .rescorePopulation <- function(fn, pop, args, parNames, cl) {
+  ## apply() and parApply() on a matrix with no rows call `f` ONCE, in this process, on a vector of
+  ## zeros to learn the result type. For an objective that runs on data the workers hold, that is an
+  ## evaluation in the master without the data (FireSense ELF 6.6.2, 2026-10-20: every member held the
+  ## fail value, nothing was to be re-scored, and the master died in the objective's fallback).
+  if (!NROW(pop)) return(numeric(0))
   f <- .rescoreFn(fn, args, parNames)
   if (is.null(cl)) apply(pop, 1, f) else parallel::parApply(cl, pop, 1, f)
+}
+
+## The objective's fail value: a member at or above it was refused, not scored (see .prunePopulationBound).
+.deoptimFailVal <- 1e6
+
+## Does the population hold no member the objective scored?
+.allFailed <- function(popval, failVal = .deoptimFailVal) {
+  v <- suppressWarnings(as.numeric(popval))
+  length(v) > 0L && all(!is.finite(v) | v >= failVal)
 }
 
 #' The DEoptim early-stop settings, in full
@@ -221,6 +235,12 @@ deoptimConvergence <- function(convergence = NULL) {
 #' Between chunks it can re-score the surviving population (`options(clusters.deoptimRescoreEvery)`, default 10 generations; 0 never),
 #' draws progress figures with `SpaDES.core::Plots()` when `figurePath` is a path, and stops early
 #' once the population has stopped improving (see `.deoptimPopulationConverged()`).
+#'
+#' A first chunk after which every member holds the objective's fail value (`1e6`: the objective
+#' refused every parameter set) cannot be fitted from, so the call stops with an error of class
+#' `deoptimNoFeasibleMember` (elements `generations` and `failVal`); a caller can catch it and start
+#' again from a population the objective accepts (`control$initialpop`). Such members are never
+#' re-scored.
 #'
 #' @param fn The objective function, as for [DEoptim::DEoptim()].
 #' @param lower,upper Parameter bounds, as for [DEoptim::DEoptim()]. The names of `lower` label the
@@ -435,30 +455,50 @@ DEoptimIterative <- function(fn, lower, upper, control, ...,
       rescoreStats <- .rescoreUpdate(rescoreStats, popKeys, popval)
       if (chunkEnds[iter] %% rescoreEvery == 0L) {
         ## members that already failed (the 1e6 sentinel, see .prunePopulationBound) are not re-scored
-        toScore <- which(!duplicated(popKeys) & is.finite(popval) & popval < 1e6)
+        toScore <- which(!duplicated(popKeys) & is.finite(popval) & popval < .deoptimFailVal)
         args <- utils::modifyList(objFunArgs, c(if (sendPruneAbove) list(pruneAbove = Inf), rescoreArgs))
-        vals <- reproducible::Cache(
-          .rescorePopulation, fn = fn, pop = control$initialpop[toScore, , drop = FALSE], args = args,
-          parNames = names(lower), cl = control$cluster,
-          omitArgs = c("fn", "cl"),
-          ## the same population can be re-scored at two points; its evaluations so far tell them apart
-          .cacheExtra = list(fixedDigest, chunkEnds[iter], .rescoreMeans(rescoreStats, popKeys[toScore]),
-                             rescoreStats$n[match(popKeys[toScore], rescoreStats$keys)]),
-          .functionName = paste0("DEoptimRescore_", runName, "_", iter),
-          useCache = getOption("clusters.cacheDEoptimIterations", TRUE),
-          verbose = .verbose)
-        before <- .rescoreMeans(rescoreStats, popKeys)
-        rescoreStats <- .rescoreAdd(rescoreStats, popKeys[toScore], as.numeric(vals))
-        popval <- .rescoreMeans(rescoreStats, popKeys)
-        message(cli::col_green("Re-scored ", length(toScore), " members at generation ", chunkEnds[iter],
-                               "; median change in their values ",
-                               signif(stats::median(popval[toScore] - before[toScore]), 3)))
-        DE[[iter]]$member$popval <- popval
-        DE[[iter]]$member$popvalN <- rescoreStats$n[match(popKeys, rescoreStats$keys)]
-        DE[[iter]]$member$popvalSum <- rescoreStats$sum[match(popKeys, rescoreStats$keys)]
+        ## nothing to re-score: say so and move on (a 0-row re-score must not reach the objective)
+        if (!length(toScore)) {
+          message(cli::col_green("Nothing to re-score at generation ", chunkEnds[iter],
+                                 ": every member holds the fail value"))
+        } else {
+          vals <- reproducible::Cache(
+            .rescorePopulation, fn = fn, pop = control$initialpop[toScore, , drop = FALSE], args = args,
+            parNames = names(lower), cl = control$cluster,
+            omitArgs = c("fn", "cl"),
+            ## the same population can be re-scored at two points; its evaluations so far tell them apart
+            .cacheExtra = list(fixedDigest, chunkEnds[iter], .rescoreMeans(rescoreStats, popKeys[toScore]),
+                               rescoreStats$n[match(popKeys[toScore], rescoreStats$keys)]),
+            .functionName = paste0("DEoptimRescore_", runName, "_", iter),
+            useCache = getOption("clusters.cacheDEoptimIterations", TRUE),
+            verbose = .verbose)
+          before <- .rescoreMeans(rescoreStats, popKeys)
+          rescoreStats <- .rescoreAdd(rescoreStats, popKeys[toScore], as.numeric(vals))
+          popval <- .rescoreMeans(rescoreStats, popKeys)
+          message(cli::col_green("Re-scored ", length(toScore), " members at generation ", chunkEnds[iter],
+                                 "; median change in their values ",
+                                 signif(stats::median(popval[toScore] - before[toScore]), 3)))
+          DE[[iter]]$member$popval <- popval
+          DE[[iter]]$member$popvalN <- rescoreStats$n[match(popKeys, rescoreStats$keys)]
+          DE[[iter]]$member$popvalSum <- rescoreStats$sum[match(popKeys, rescoreStats$keys)]
+        }
       }
     }
     .progressAppend(progressFile, DE[[iter]]$member, chunkEnds[iter], names(lower))
+    ## A first chunk in which every member was refused cannot be fitted from: DE compares a trial
+    ## with its parent, and with every value the fail value nothing is ever an improvement, so the
+    ## fit would run to itermax at the fail value (FireSense ELF 6.6.2, 2026-10-20: 0 of ~400 uniform
+    ## draws passed the objective's gates). Stop now, with a condition the caller can act on (e.g.
+    ## start again from a feasible initial population). Also for a replayed first chunk: a fit cached
+    ## in that state resumes into the same dead end.
+    if (iter == 1L && length(popval) == NROW(control$initialpop) && .allFailed(popval))
+      stop(structure(class = c("deoptimNoFeasibleMember", "error", "condition"),
+                     list(message = paste0(
+                       "DEoptimIterative: every member of the population holds the fail value (",
+                       .deoptimFailVal, ") after the first ", chunkEnds[iter], " generation(s) of ", runName,
+                       ": the objective refused every parameter set, so there is nothing to fit from. ",
+                       "Start from an initial population the objective accepts (control$initialpop)."),
+                       call = NULL, generations = chunkEnds[iter], failVal = .deoptimFailVal)))
     known <- if (length(popval) == NROW(control$initialpop)) {
       ok <- !is.na(popval)
       list(keys = apply(control$initialpop, 1, .parKey)[ok], vals = popval[ok])
@@ -957,4 +997,26 @@ workerSpeed <- function(evaluations, by = c("host", "worker")) {
   out <- out[order(-out$ratio), , drop = FALSE]
   rownames(out) <- NULL
   out
+}
+
+## DEoptim needs `control$initialpop` to have exactly `control$NP` rows. A caller cannot know NP before
+## the cluster is built (NP is the number of workers it gets), so more rows than NP are allowed and the
+## first NP are used; fewer is an error. With no NP (no cluster), NP is the number of rows.
+.fitInitialpopToNP <- function(control) {
+  pop <- control$initialpop
+  if (is.null(pop)) return(control)
+  if (!is.matrix(pop)) stop("initialpop must be a matrix, one row per population member", call. = FALSE)
+  NP <- control$NP
+  if (is.null(NP) || is.na(NP)) {
+    control$NP <- NROW(pop)
+    return(control)
+  }
+  if (NROW(pop) < NP)
+    stop("initialpop has ", NROW(pop), " rows but the population (the number of workers) is ", NP,
+         "; give at least NP rows", call. = FALSE)
+  if (NROW(pop) > NP) {
+    message("initialpop has ", NROW(pop), " rows; using the first ", NP, " (the number of workers)")
+    control$initialpop <- pop[seq_len(NP), , drop = FALSE]
+  }
+  control
 }

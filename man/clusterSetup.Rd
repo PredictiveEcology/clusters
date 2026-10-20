@@ -31,7 +31,9 @@ clusterSetup(
 
 \item{strategy}{Integer in \verb{[1, 10]}; the DEoptim strategy variant.}
 
-\item{initialpop}{Optional matrix of starting parameter sets, one row per population member.}
+\item{initialpop}{Optional matrix of starting parameter sets, one row per population member. With more
+rows than the cluster has workers (\code{NP}), the first \code{NP} rows are used; fewer is an error. With no
+cluster and no \code{NP}, \code{NP} is its number of rows.}
 
 \item{NP}{Integer; number of population members. Defaults to DEoptim's own rule when \code{NULL}.}
 

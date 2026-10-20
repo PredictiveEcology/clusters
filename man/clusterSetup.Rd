@@ -37,7 +37,7 @@ cluster and no \code{NP}, \code{NP} is its number of rows.}
 
 \item{NP}{Integer; number of population members. Defaults to DEoptim's own rule when \code{NULL}.}
 
-\item{cores}{Character vector of host names, repeated once per worker wanted on that host, or a number for localhost only.}
+\item{cores}{Character vector of host names, a host named more than once asks for that many workers in all (the planner places them, see \code{\link[=plan_psock_min]{plan_psock_min()}}), or a number for that many on localhost.}
 
 \item{logPath}{Path for worker output (\code{outfile} of the PSOCK cluster). Each host writes its own copy.}
 

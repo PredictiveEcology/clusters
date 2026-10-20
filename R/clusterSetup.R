@@ -19,7 +19,7 @@
 #'   rows than the cluster has workers (`NP`), the first `NP` rows are used; fewer is an error. With no
 #'   cluster and no `NP`, `NP` is its number of rows.
 #' @param NP Integer; number of population members. Defaults to DEoptim's own rule when `NULL`.
-#' @param cores Character vector of host names, repeated once per worker wanted on that host, or a number for localhost only.
+#' @param cores Character vector of host names, a host named more than once asks for that many workers in all (the planner places them, see [plan_psock_min()]), or a number for that many on localhost.
 #' @param logPath Path for worker output (`outfile` of the PSOCK cluster). Each host writes its own copy.
 #' @param libPath The project library. This is the master copy: it is mirrored to every host, and workers load from it.
 #' @param objsNeeded Character vector naming objects in `envir` to send to the workers.
@@ -72,7 +72,9 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
     # # Random block for this master
     # start <- sample(global_range, 1)
     # port_block <- seq(start, length.out = block_size)
-    if (identical(sort(unique(cores)), sort(cores))) {
+    ## A host named more than once means that many workers wanted; the planner places them (a repeated
+    ## vector used to skip it, and no cluster was built)
+    {
       # Convert local machine from its ssh name to "localhost"
       # This looks at .ssh/config, assumes that Host is used, with # comment character naming nodename
       #  e.g., "Host coco # A159576 n18 # Eliot Degradation"
@@ -95,7 +97,7 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
       # the project library -- and mirrored that to the hosts instead.
       plan <- plan_psock_min(
         hosts = coresUnique,
-        total = nCoresNeeded,
+        total = if (anyDuplicated(cores)) length(cores) else nCoresNeeded,
         pkgsNeeded = pkgsNeeded,
         libPath = libPath,
         logPath = logPath,

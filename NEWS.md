@@ -6,6 +6,13 @@
   (trimmed, with a message); a cap named for the master's own ssh alias applies to it as `"localhost"`. Unset
   is no cap, as before.
 
+* `clusterSetup()` builds the cluster when `cores` repeats a host or is a number: that path never called the planner and
+  stopped with "object 'clThird' not found". The repeats now give the number of workers wanted, placed by the planner.
+
+* Tests: under `devtools::test()` the PSOCK workers now load the source under test (installed to a temporary library by
+  `setup-devLibrary.R`) instead of an older installed `clusters`, and the local-cluster tests no longer depend on the
+  host's free cores.
+
 * `DEoptimIterative()` no longer runs the objective in the master when there is nothing to re-score. When every
   member of the population held the fail value (1e6), the periodic re-score had a 0-row population, and `apply()`
   / `parApply()` on a 0-row matrix call the function once, in the calling process, on a vector of zeros: a

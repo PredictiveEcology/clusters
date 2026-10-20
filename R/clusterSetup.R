@@ -3,6 +3,14 @@
 #' This includes copying files over to unique(cores) machines, then loading all objects from disk in
 #' each of the parallel cores.
 #'
+#' @details `options(clusters.maxWorkersPerHost)` caps the workers any one host gets: a numeric vector whose
+#'   named elements cap those hosts (names as in `cores`, e.g. `c(mega = 20)`), an unnamed single value caps
+#'   every host, and both may be combined (`c(20, mega = 10)`: every host 20, `mega` 10). Unset (the default)
+#'   is no cap. The cap is hard: it holds when the cluster is built, when a running cluster is rebalanced
+#'   (`options(clusters.rebalanceEvery)`), and for a `cores` vector that repeats hosts, which is trimmed with a
+#'   message. A cap named for the machine the master runs on applies to it as `"localhost"`. A cluster that
+#'   asks for more workers than the caps leave stops at once instead of waiting.
+#'
 #' @param messagePrefix Character prefix for this cluster's messages, so concurrent builds can be told apart in a shared log.
 #' @param itermax Integer; maximum DEoptim iterations. See [DEoptim::DEoptim.control()].
 #' @param trace Logical or integer passed to `DEoptim.control()`; how often to report progress.
@@ -11,7 +19,7 @@
 #'   rows than the cluster has workers (`NP`), the first `NP` rows are used; fewer is an error. With no
 #'   cluster and no `NP`, `NP` is its number of rows.
 #' @param NP Integer; number of population members. Defaults to DEoptim's own rule when `NULL`.
-#' @param cores Character vector of host names, repeated once per worker wanted on that host, or a number for localhost only.
+#' @param cores Character vector of host names, a host named more than once asks for that many workers in all (the planner places them, see [plan_psock_min()]), or a number for that many on localhost.
 #' @param logPath Path for worker output (`outfile` of the PSOCK cluster). Each host writes its own copy.
 #' @param libPath The project library. This is the master copy: it is mirrored to every host, and workers load from it.
 #' @param objsNeeded Character vector naming objects in `envir` to send to the workers.
@@ -55,6 +63,7 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
     
     
     if (is.numeric(cores)) cores <- rep("localhost", cores)
+    cores <- .trimToHostCap(cores)
     
     # Global range for ssh ports so there are not errors 
     #  e.g., Warning: remote port forwarding failed for listen port 11173
@@ -63,7 +72,9 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
     # # Random block for this master
     # start <- sample(global_range, 1)
     # port_block <- seq(start, length.out = block_size)
-    if (identical(sort(unique(cores)), sort(cores))) {
+    ## A host named more than once means that many workers wanted; the planner places them (a repeated
+    ## vector used to skip it, and no cluster was built)
+    {
       # Convert local machine from its ssh name to "localhost"
       # This looks at .ssh/config, assumes that Host is used, with # comment character naming nodename
       #  e.g., "Host coco # A159576 n18 # Eliot Degradation"
@@ -86,7 +97,7 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
       # the project library -- and mirrored that to the hosts instead.
       plan <- plan_psock_min(
         hosts = coresUnique,
-        total = nCoresNeeded,
+        total = if (anyDuplicated(cores)) length(cores) else nCoresNeeded,
         pkgsNeeded = pkgsNeeded,
         libPath = libPath,
         logPath = logPath,
@@ -447,10 +458,7 @@ summaryOutputFolder <- function(path, pattern = "^.+hists/(.+)\\_iter.+\\_[[:dig
 changeNodenameToLocalhost <- function(cores, sshConfig = "~/.ssh/config") {
   ## no ssh config (a laptop, a CI runner): nothing to rename
   if (!file.exists(sshConfig)) return(cores)
-  sshLines <- readLines(sshConfig)
-  hasSelf <- grep(Sys.info()["nodename"], sshLines, value = T)
-  onlyHost <- grep("^Host ", hasSelf, value = TRUE)
-  whLocalhost <- gsub("^Host (\\w+).*", "\\1", onlyHost)
+  whLocalhost <- .localAliases(sshConfig)
   if (length(whLocalhost))
     cores <- gsub(paste(whLocalhost, collapse = "|"), "localhost", cores)
   cores

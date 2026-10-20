@@ -63,10 +63,13 @@
     freeByHost <- paste0(nodes$host, "=", nodes$free_est, "/", nodes$cores_total, collapse = ", ")
     ## when memory, not cores, is what is short, say so
     byRam <- .ramLimitNote(nodes, what)
-    if (sum(nodes$cores_total) < needed)
+    ## the cores on its hosts, less what options(clusters.maxWorkersPerHost) never lets this cluster use
+    canHold <- sum(pmin(nodes$cores_total, if (is.null(nodes$maxWorkers)) Inf else nodes$maxWorkers))
+    if (canHold < needed)
       stop("This ", if (partial) "cluster" else "job", " needs ", needed, " ", what, ", more ", what,
-           " than the ", sum(nodes$cores_total), " cores on its hosts (free/total: ", freeByHost,
-           "), so it could never start. Ask for fewer ", what, " or add hosts.", call. = FALSE)
+           " than the ", canHold, " its hosts can hold (free/total: ", freeByHost,
+           "; options(clusters.maxWorkersPerHost) caps hosts), so it could never start. Ask for fewer ", what,
+           " or add hosts.", call. = FALSE)
 
     waited <- round(as.numeric(difftime(now(), started, units = "mins")), 1)
     if (now() >= deadline)

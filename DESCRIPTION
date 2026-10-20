@@ -37,6 +37,7 @@ Suggests:
     ggpubr,
     knitr,
     later,
+    pkgload,
     roxygen2,
     rmarkdown,
     sf,

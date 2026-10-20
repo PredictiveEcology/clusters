@@ -37,7 +37,7 @@ cluster and no \code{NP}, \code{NP} is its number of rows.}
 
 \item{NP}{Integer; number of population members. Defaults to DEoptim's own rule when \code{NULL}.}
 
-\item{cores}{Character vector of host names, repeated once per worker wanted on that host, or a number for localhost only.}
+\item{cores}{Character vector of host names, a host named more than once asks for that many workers in all (the planner places them, see \code{\link[=plan_psock_min]{plan_psock_min()}}), or a number for that many on localhost.}
 
 \item{logPath}{Path for worker output (\code{outfile} of the PSOCK cluster). Each host writes its own copy.}
 
@@ -71,4 +71,13 @@ it carries a digest of those objects as its \code{"objsDigest"} attribute (see
 \description{
 This includes copying files over to unique(cores) machines, then loading all objects from disk in
 each of the parallel cores.
+}
+\details{
+\code{options(clusters.maxWorkersPerHost)} caps the workers any one host gets: a numeric vector whose
+named elements cap those hosts (names as in \code{cores}, e.g. \code{c(mega = 20)}), an unnamed single value caps
+every host, and both may be combined (\code{c(20, mega = 10)}: every host 20, \code{mega} 10). Unset (the default)
+is no cap. The cap is hard: it holds when the cluster is built, when a running cluster is rebalanced
+(\code{options(clusters.rebalanceEvery)}), and for a \code{cores} vector that repeats hosts, which is trimmed with a
+message. A cap named for the machine the master runs on applies to it as \code{"localhost"}. A cluster that
+asks for more workers than the caps leave stops at once instead of waiting.
 }

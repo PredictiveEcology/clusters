@@ -7,10 +7,10 @@
 ## Builds a 2-worker local cluster and returns what each worker has for `x1`. The cluster lives as
 ## long as this function's frame (plan_psock_min stops it when a frame above clusterSetup() exits),
 ## so messages are captured by the caller, outside this function.
-objectsOnWorkers <- function() {
+objectsOnWorkers <- function(cores = "localhost") {
   x1 <- c(a = 1, b = 2)
   control <- clusters::clusterSetup(
-    messagePrefix = "objects", itermax = 1, trace = FALSE, cores = "localhost",
+    messagePrefix = "objects", itermax = 1, trace = FALSE, cores = cores,
     ## every library: under R CMD check .libPaths()[1] holds only this package, and the workers also
     ## need parallelly, qs2 and reproducible ("there is no package called 'parallelly'")
     logPath = withr::local_tempdir(), libPath = .libPaths(),
@@ -27,11 +27,12 @@ localClusterOptions <- function(env = parent.frame()) {
   ## clusterSetup() refuses fewer than 4 workers (DEoptim's minimum population), but R CMD check
   ## allows 2 processes; these tests are about moving objects, not the population size.
   ## And placement keeps every worker and all other load within those 2 cores, so the machine's real load
-  ## (49 on a shared host, 2026-10-13) would leave no room: the probe reports the host idle.
+  ## (49 on a shared host, 2026-10-13) would leave no room: the probe reports the host idle: its load averages are 0 and all its cores free (freeCores() otherwise
+  ## said 1 of 80 free on that host: "could only get 1 of 2 workers").
   probeNodes <- clusters:::.probeNodes
   testthat::local_mocked_bindings(
     .clusterNP = function(NP, nWorkers) nWorkers,
-    .probeNodes = function(...) { n <- probeNodes(...); n$loadavg_1 <- n$loadavg_5 <- n$loadavg_15 <- 0; n },
+    .probeNodes = function(...) { n <- probeNodes(...); n$loadavg_1 <- n$loadavg_5 <- n$loadavg_15 <- 0; n$free_est <- n$cores_total; n },
     .package = "clusters", .env = env)
   ## clusterSetup() also puts the objects in the master's global environment for local workers
   withr::defer(if (exists("x1", envir = .GlobalEnv, inherits = FALSE)) rm("x1", envir = .GlobalEnv), envir = env)
@@ -131,4 +132,27 @@ test_that("the cluster's reservation is released when the exit handler stops it"
                                   withr::local_tempdir()))
   expect_gt(booked, 0L)
   expect_equal(NROW(clusters::liveReservations()), 0L)
+})
+
+## A `cores` that repeats a host (or a number, meaning that many on localhost) skipped the planner, so no
+## cluster was ever built: clusterSetup() stopped with "object 'clThird' not found".
+test_that("clusterSetup() builds the cluster for a cores vector that repeats a host, and for a number", {
+  skip_on_cran()
+  skip_on_os(c("windows", "mac"))
+  localClusterOptions()
+  for (cores in list(c("localhost", "localhost"), 2L)) {
+    out <- collectMessages(objectsOnWorkers(cores))
+    expect_length(out$value, 2L)
+    for (w in out$value) expect_identical(w, c(a = 1, b = 2))
+  }
+})
+
+test_that("a repeated-host cores vector is built at its cap", {
+  skip_on_cran()
+  skip_on_os(c("windows", "mac"))
+  localClusterOptions()
+  withr::local_options(clusters.maxWorkersPerHost = c(localhost = 2))
+  out <- collectMessages(objectsOnWorkers(rep("localhost", 3)))
+  expect_length(out$value, 2L)
+  expect_true(any(grepl("maxWorkersPerHost", out$messages)))
 })

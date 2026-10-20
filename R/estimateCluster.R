@@ -552,8 +552,11 @@ plan_psock_min <- function(
 ##
 ## Speed: `speedFactor`, how much faster or slower each host measured than .workerSpeed() predicts, from the
 ## speeds the fits recorded (.hostSpeedFactor(); 1 without records), which .speedAllocate() multiplies in.
+##
+## `capWorkers`: also cap each host at `options(clusters.maxWorkersPerHost)` (see .maxWorkersPerHost()); a job
+## that is not a cluster of workers (reserveCapacity()) does not.
 .fitCapacity <- function(nodes, total, load_memory, own = NULL, ownId = NULL, memPerWorkerGB = NA_real_,
-                         beta = 0.75, speeds = .readHostSpeeds()) {
+                         beta = 0.75, speeds = .readHostSpeeds(), capWorkers = TRUE) {
   memPerWorkerGB <- if (is.null(memPerWorkerGB)) NA_real_ else as.numeric(memPerWorkerGB)[1]
   useMemory <- !is.na(memPerWorkerGB) && all(c("mem_available_gb", "mem_total_gb") %in% names(nodes))
   mine <- if (length(own)) as.numeric(own[nodes$host]) else rep(NA_real_, NROW(nodes))
@@ -581,6 +584,10 @@ plan_psock_min <- function(
     cap[is.na(cap)] <- Inf
     nodes$free_est <- pmin(nodes$free_est, cap)
   }
+  ## the user's cap on this cluster's workers on a host, `maxWorkers` (see .maxWorkersPerHost()); `own` is
+  ## already added back above, so a rebalance is held to it as a build is
+  nodes$maxWorkers <- if (capWorkers) .maxWorkersPerHost(nodes$host) else Inf
+  nodes$free_est <- pmin(nodes$free_est, nodes$maxWorkers)
   nodes$speedFactor <- .hostSpeedFactor(nodes, speeds, beta = beta)
   nodes$ram_lost <- 0
   if (useMemory) {

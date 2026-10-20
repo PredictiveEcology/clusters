@@ -68,7 +68,7 @@ reserveCapacity <- function(cores, memGB, hosts = "localhost", probe = NULL,
   ## the whole of `memGB` fits
   memPerCore <- memGB / cores
   capacity <- function()
-    .fitCapacity(probe(), total = cores, load_memory, memPerWorkerGB = memPerCore)
+    .fitCapacity(probe(), total = cores, load_memory, memPerWorkerGB = memPerCore, capWorkers = FALSE)
   id <- basename(tempfile("job"))
   alloc <- .allocateWhenAvailable(capacity, total = cores, waitSeconds = waitSeconds, interval = interval,
                                   sleep = sleep, now = now, what = "cores",

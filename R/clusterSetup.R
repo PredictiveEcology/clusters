@@ -3,6 +3,14 @@
 #' This includes copying files over to unique(cores) machines, then loading all objects from disk in
 #' each of the parallel cores.
 #'
+#' @details `options(clusters.maxWorkersPerHost)` caps the workers any one host gets: a numeric vector whose
+#'   named elements cap those hosts (names as in `cores`, e.g. `c(mega = 20)`), an unnamed single value caps
+#'   every host, and both may be combined (`c(20, mega = 10)`: every host 20, `mega` 10). Unset (the default)
+#'   is no cap. The cap is hard: it holds when the cluster is built, when a running cluster is rebalanced
+#'   (`options(clusters.rebalanceEvery)`), and for a `cores` vector that repeats hosts, which is trimmed with a
+#'   message. A cap named for the machine the master runs on applies to it as `"localhost"`. A cluster that
+#'   asks for more workers than the caps leave stops at once instead of waiting.
+#'
 #' @param messagePrefix Character prefix for this cluster's messages, so concurrent builds can be told apart in a shared log.
 #' @param itermax Integer; maximum DEoptim iterations. See [DEoptim::DEoptim.control()].
 #' @param trace Logical or integer passed to `DEoptim.control()`; how often to report progress.
@@ -55,6 +63,7 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
     
     
     if (is.numeric(cores)) cores <- rep("localhost", cores)
+    cores <- .trimToHostCap(cores)
     
     # Global range for ssh ports so there are not errors 
     #  e.g., Warning: remote port forwarding failed for listen port 11173
@@ -447,10 +456,7 @@ summaryOutputFolder <- function(path, pattern = "^.+hists/(.+)\\_iter.+\\_[[:dig
 changeNodenameToLocalhost <- function(cores, sshConfig = "~/.ssh/config") {
   ## no ssh config (a laptop, a CI runner): nothing to rename
   if (!file.exists(sshConfig)) return(cores)
-  sshLines <- readLines(sshConfig)
-  hasSelf <- grep(Sys.info()["nodename"], sshLines, value = T)
-  onlyHost <- grep("^Host ", hasSelf, value = TRUE)
-  whLocalhost <- gsub("^Host (\\w+).*", "\\1", onlyHost)
+  whLocalhost <- .localAliases(sshConfig)
   if (length(whLocalhost))
     cores <- gsub(paste(whLocalhost, collapse = "|"), "localhost", cores)
   cores

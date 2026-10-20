@@ -72,3 +72,12 @@ it carries a digest of those objects as its \code{"objsDigest"} attribute (see
 This includes copying files over to unique(cores) machines, then loading all objects from disk in
 each of the parallel cores.
 }
+\details{
+\code{options(clusters.maxWorkersPerHost)} caps the workers any one host gets: a numeric vector whose
+named elements cap those hosts (names as in \code{cores}, e.g. \code{c(mega = 20)}), an unnamed single value caps
+every host, and both may be combined (\code{c(20, mega = 10)}: every host 20, \code{mega} 10). Unset (the default)
+is no cap. The cap is hard: it holds when the cluster is built, when a running cluster is rebalanced
+(\code{options(clusters.rebalanceEvery)}), and for a \code{cores} vector that repeats hosts, which is trimmed with a
+message. A cap named for the machine the master runs on applies to it as \code{"localhost"}. A cluster that
+asks for more workers than the caps leave stops at once instead of waiting.
+}

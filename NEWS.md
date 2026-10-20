@@ -1,5 +1,11 @@
 # clusters (development version)
 
+* New `options(clusters.maxWorkersPerHost)`, a hard cap on how many workers one cluster gets on any host: named
+  elements cap those hosts (`c(mega = 20)`), an unnamed single value caps every host, and the two combine
+  (`c(20, mega = 10)`). It holds at a build, in a rebalance, and for a `cores` vector that repeats a host
+  (trimmed, with a message); a cap named for the master's own ssh alias applies to it as `"localhost"`. Unset
+  is no cap, as before.
+
 * `DEoptimIterative()` no longer runs the objective in the master when there is nothing to re-score. When every
   member of the population held the fail value (1e6), the periodic re-score had a 0-row population, and `apply()`
   / `parApply()` on a 0-row matrix call the function once, in the calling process, on a vector of zeros: a

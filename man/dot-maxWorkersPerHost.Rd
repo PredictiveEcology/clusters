@@ -18,6 +18,7 @@ Numeric, one per host: its cap, \code{Inf} when it has none.
 Reads \code{options(clusters.maxWorkersPerHost)}: named elements cap those hosts, an unnamed value caps every
 host, and a named element overrides the unnamed one for its host. A cap named for this machine (its ssh
 alias, such as \code{mega}) also applies to it as \code{"localhost"}, the name it has in \code{cores} after
-\code{changeNodenameToLocalhost()}.
+\code{changeNodenameToLocalhost()}. The cap is the host's, for every cluster together: \code{.fitCapacity()} takes
+off it what other clusters have booked there.
 }
 \keyword{internal}

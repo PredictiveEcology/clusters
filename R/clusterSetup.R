@@ -3,13 +3,16 @@
 #' This includes copying files over to unique(cores) machines, then loading all objects from disk in
 #' each of the parallel cores.
 #'
-#' @details `options(clusters.maxWorkersPerHost)` caps the workers any one host gets: a numeric vector whose
-#'   named elements cap those hosts (names as in `cores`, e.g. `c(mega = 20)`), an unnamed single value caps
-#'   every host, and both may be combined (`c(20, mega = 10)`: every host 20, `mega` 10). Unset (the default)
-#'   is no cap. The cap is hard: it holds when the cluster is built, when a running cluster is rebalanced
-#'   (`options(clusters.rebalanceEvery)`), and for a `cores` vector that repeats hosts, which is trimmed with a
-#'   message. A cap named for the machine the master runs on applies to it as `"localhost"`. A cluster that
-#'   asks for more workers than the caps leave stops at once instead of waiting.
+#' @details `options(clusters.maxWorkersPerHost)` caps the workers any one host carries, every cluster together:
+#'   a numeric vector whose named elements cap those hosts (names as in `cores`, e.g. `c(mega = 20)`), an
+#'   unnamed single value caps every host, and both may be combined (`c(20, mega = 10)`: every host 20, `mega`
+#'   10). Unset (the default) is no cap. The cap is hard: it holds when the cluster is built, when a running
+#'   cluster is rebalanced (`options(clusters.rebalanceEvery)`), and for a `cores` vector that repeats hosts,
+#'   which is trimmed with a message. The workers other clusters have booked on a host (the reservations
+#'   ledger, see [freeCoresLessReserved()]) come off its cap, so a cluster built while another holds 12 of `mega`'s 20
+#'   gets at most 8 there, and waits if it needs more. A cap named for the machine the master runs on
+#'   applies to it as `"localhost"`. A cluster that asks for more workers than the caps could ever hold stops
+#'   at once instead of waiting.
 #'
 #' @param messagePrefix Character prefix for this cluster's messages, so concurrent builds can be told apart in a shared log.
 #' @param itermax Integer; maximum DEoptim iterations. See [DEoptim::DEoptim.control()].

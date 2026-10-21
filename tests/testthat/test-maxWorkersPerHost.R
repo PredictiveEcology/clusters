@@ -76,3 +76,49 @@ test_that("a repeated-host cores vector is trimmed to the cap, with a message na
   withr::local_options(clusters.maxWorkersPerHost = NULL)
   expect_identical(clusters:::.trimToHostCap(cores), cores)
 })
+
+## The cap is for the host, every cluster together (2026-10-20, mega capped at 20: three fits each took up
+## to 20 there, 43 workers in all). What other clusters booked on the host (the reservations ledger, see
+## freeCoresLessReserved()) comes off the cap; a cluster's own booking does not (`ownId`).
+
+test_that("two clusters on a capped host get at most the cap between them", {
+  withLedger()
+  withr::local_options(clusters.maxWorkersPerHost = c(mega = 20))
+  first <- allocate(capacity(bigHosts()))
+  clusters::reserveCores(first, pid = Sys.getpid())
+  second <- assigned(allocate(capacity(bigHosts())))
+  expect_lte(assigned(first)[["mega"]] + second[["mega"]], 20)
+})
+
+test_that("a rebalance with another cluster on the capped host stays within what it leaves", {
+  withLedger()
+  withr::local_options(clusters.maxWorkersPerHost = c(mega = 20))
+  clusters::reserveCores(data.frame(host = "mega", assign = 12L), id = "other")
+  hosts <- c(rep("birds", 40), rep("pinus", 20))
+  clusters::reserveCores(clusters:::.hostCounts(hosts), id = "own")
+  n <- capacity(bigHosts(), total = 60, own = table(hosts), ownId = "own")
+  target <- allocate(n, total = 60)
+  expect_lte(assigned(target)[["mega"]], 8)
+  m <- clusters:::.rebalanceMoves(hosts, assigned(target))
+  expect_lte(sum(m$add == "mega"), 8)
+})
+
+test_that("another cluster's booking on an uncapped host does not cap it, and the cap itself is unchanged", {
+  withLedger()
+  withr::local_options(clusters.maxWorkersPerHost = c(mega = 20))
+  clusters::reserveCores(data.frame(host = c("mega", "birds"), assign = c(5L, 30L)), id = "other")
+  n <- capacity(bigHosts())
+  expect_equal(n$maxWorkers[n$host == "mega"], 20)   # .allocateWhenAvailable() waits by this, not by the remainder
+  expect_true(all(is.infinite(n$maxWorkers[n$host != "mega"])))
+  expect_lte(n$free_est[n$host == "mega"], 15)
+  expect_gt(n$free_est[n$host == "birds"], 20)
+})
+
+test_that("another cluster's booking on this machine, as localhost, counts against its alias's cap", {
+  withLedger()
+  testthat::local_mocked_bindings(.localAliases = function(...) "mega", .package = "clusters")
+  withr::local_options(clusters.maxWorkersPerHost = c(mega = 20))
+  clusters::reserveCores(data.frame(host = "localhost", assign = 15L), id = "other")
+  a <- assigned(allocate(capacity(rbind(node("localhost", threads = 80L), node("birds", threads = 80L)))))
+  expect_lte(a[["localhost"]], 5)
+})

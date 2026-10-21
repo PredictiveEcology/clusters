@@ -1,4 +1,4 @@
-## options(clusters.maxWorkersPerHost): the most workers one cluster gets on any host, set by the user (a
+## options(clusters.maxWorkersPerHost): the most workers a host carries, every cluster together, set by the user (a
 ## shared machine keeps its cores free). Every decision of workers per host reads it here: a build and a
 ## rebalance through .fitCapacity() (and so .allocateWhenAvailable()), and a repeated-host `cores` vector
 ## through .trimToHostCap().
@@ -17,7 +17,8 @@
 #' Reads `options(clusters.maxWorkersPerHost)`: named elements cap those hosts, an unnamed value caps every
 #' host, and a named element overrides the unnamed one for its host. A cap named for this machine (its ssh
 #' alias, such as `mega`) also applies to it as `"localhost"`, the name it has in `cores` after
-#' `changeNodenameToLocalhost()`.
+#' `changeNodenameToLocalhost()`. The cap is the host's, for every cluster together: `.fitCapacity()` takes
+#' off it what other clusters have booked there.
 #'
 #' @param hosts Host names, as in `cores`.
 #' @param caps The option value.

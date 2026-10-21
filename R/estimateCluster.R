@@ -584,10 +584,15 @@ plan_psock_min <- function(
     cap[is.na(cap)] <- Inf
     nodes$free_est <- pmin(nodes$free_est, cap)
   }
-  ## the user's cap on this cluster's workers on a host, `maxWorkers` (see .maxWorkersPerHost()); `own` is
-  ## already added back above, so a rebalance is held to it as a build is
+  ## the user's cap on the workers a host carries, `maxWorkers` (see .maxWorkersPerHost()). It is for the host,
+  ## every cluster together, so what other clusters booked there (`reserved`, not this cluster's `ownId`)
+  ## comes off it (2026-10-20: applied to each cluster alone, three fits put 43 workers on a host capped at
+  ## 20). `maxWorkers` itself stays the whole cap: .allocateWhenAvailable() waits when other clusters fill
+  ## the host, and stops only when the caps could never hold the cluster. `own` is already added back
+  ## above, so a rebalance is held to the remainder as a build is.
   nodes$maxWorkers <- if (capWorkers) .maxWorkersPerHost(nodes$host) else Inf
-  nodes$free_est <- pmin(nodes$free_est, nodes$maxWorkers)
+  others <- if (is.null(nodes$reserved)) 0 else nodes$reserved
+  nodes$free_est <- pmin(nodes$free_est, pmax(nodes$maxWorkers - others, 0))
   nodes$speedFactor <- .hostSpeedFactor(nodes, speeds, beta = beta)
   nodes$ram_lost <- 0
   if (useMemory) {

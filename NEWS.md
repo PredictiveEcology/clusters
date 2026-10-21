@@ -1,5 +1,11 @@
 # clusters (development version)
 
+* `options(clusters.maxWorkersPerHost)` is now a cap on the host, every cluster together, not on each cluster
+  alone: with `c(mega = 20)` three concurrent fits each took up to 20 workers on `mega`, 43 in all (2026-10-20).
+  `.fitCapacity()` takes the workers other clusters have booked on a host (the reservations ledger) off its
+  cap, at a build and at a rebalance, under the lock every allocation runs under; a cluster that needs more
+  than the remainder waits, as it waits for cores.
+
 * New `options(clusters.maxWorkersPerHost)`, a hard cap on how many workers one cluster gets on any host: named
   elements cap those hosts (`c(mega = 20)`), an unnamed single value caps every host, and the two combine
   (`c(20, mega = 10)`). It holds at a build, in a rebalance, and for a `cores` vector that repeats a host

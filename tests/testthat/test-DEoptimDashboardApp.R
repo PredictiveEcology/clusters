@@ -90,4 +90,29 @@ test_that("plots start at initialIteration, unless a fit has no generation that 
   expect_identical(clusters:::.fromIteration(g[1:3, ], 5L)$generation, 1:3)
   expect_identical(formals(DEoptimDashboard)$initialIteration, 5L)
   expect_identical(formals(DEoptimDashboardApp)$initialIteration, 5L)
+  expect_identical(clusters:::.orDefault(10L, 5L), 10L)
+  expect_identical(clusters:::.orDefault(NA, 5L), 5L)            # the box emptied
+  expect_identical(clusters:::.orDefault(NULL, 5L), 5L)          # before the browser sends it
+})
+
+test_that("the box on the page changes the first generation plotted", {
+  root <- withr::local_tempdir()
+  writeProgress(file.path(root, "ELF1", "DEoptimProgress_1.csv"))
+  cl <- localTestCluster(1L)
+  serve <- function(root) {
+    res <- new.env()
+    shiny::testServer(clusters::DEoptimDashboardApp(root, initialIteration = 2L), {
+      session$flushReact()
+      first <- output$obj_1$src                          # the box not yet sent: the argument
+      session$setInputs(initialIteration = 2L)
+      same <- output$obj_1$src
+      session$setInputs(initialIteration = 1L)
+      assign("out", envir = res, list(first = first, same = same, later = output$obj_1$src))
+    })
+    res$out
+  }
+  environment(serve) <- globalenv()
+  out <- parallel::clusterCall(cl, serve, root)[[1]]
+  expect_identical(out$same, out$first)
+  expect_false(identical(out$later, out$first))
 })

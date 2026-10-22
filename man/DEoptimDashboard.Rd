@@ -37,8 +37,9 @@ DEoptimDashboardApp(
 
 \item{which}{Which fits to show, as in \code{\link[=DEoptimProgress]{DEoptimProgress()}}; the cards follow the table.}
 
-\item{initialIteration}{The first generation plotted. The first generations are often so poor that
-they flatten everything after them; a fit with fewer generations shows them all.}
+\item{initialIteration}{The first generation plotted, at start; a box on the page changes it. The first
+generations are often so poor that they flatten everything after them; a fit with fewer generations
+shows them all.}
 }
 \value{
 \code{DEoptimDashboard()} runs the app. \code{DEoptimDashboardApp()} returns it, as a \code{shiny::shinyApp}.

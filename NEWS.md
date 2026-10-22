@@ -1,5 +1,7 @@
 # clusters (development version)
 
+* The `DEoptimDashboard()` page has a box for the first generation plotted; `initialIteration` is now only its starting value. Changing it redraws the plots without restarting the app.
+
 * `options(clusters.maxWorkersPerHost)` is now a cap on the host, every cluster together, not on each cluster
   alone: with `c(mega = 20)` three concurrent fits each took up to 20 workers on `mega`, 43 in all (2026-10-20).
   `.fitCapacity()` takes the workers other clusters have booked on a host (the reservations ledger) off its

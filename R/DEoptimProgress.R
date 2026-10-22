@@ -151,8 +151,9 @@ DEoptimProgress <- function(path = ".", pattern = "^DEoptimProgress_.*\\.csv$", 
 #' @param description Text under the title.
 #' @param launch.browser Passed to [shiny::runApp()].
 #' @param which Which fits to show, as in [DEoptimProgress()]; the cards follow the table.
-#' @param initialIteration The first generation plotted. The first generations are often so poor that
-#'   they flatten everything after them; a fit with fewer generations shows them all.
+#' @param initialIteration The first generation plotted, at start; a box on the page changes it. The first
+#'   generations are often so poor that they flatten everything after them; a fit with fewer generations
+#'   shows them all.
 #'
 #' @return `DEoptimDashboard()` runs the app. `DEoptimDashboardApp()` returns it, as a `shiny::shinyApp`.
 #' @export
@@ -184,7 +185,7 @@ DEoptimDashboard <- function(path = ".", refreshMinutes = 2, title = "DEoptim fi
 
 .dashboardDescription <- paste(
   "One card per fit (DEoptim): the objective of the best member, the 10th percentile and the median of the",
-  "population at each generation; lower is better. The plots start at generation `initialIteration` and the",
+  "population at each generation; lower is better. The plots start at the generation in the box below and the",
   "y axis stops at the 90th percentile, so the first, very poor generations do not flatten them. Open 'parameters by generation' for each parameter's 10th-90th",
   "percentile band (blue), median (black) and best member (orange). Running: the fit's file changed in the",
   "last 15 min. Finished: the fit is done.")
@@ -203,6 +204,8 @@ DEoptimDashboardApp <- function(path = ".", refreshMinutes = 2, title = "DEoptim
     shiny::titlePanel(title),
     shiny::p(description),
     shiny::textOutput("checked"),
+    shiny::numericInput("initialIteration", "first generation plotted", value = initialIteration, min = 1L,
+                        step = 1L, width = "200px"),
     DT::DTOutput("fits"),
     shiny::uiOutput("cards"))
   server <- function(input, output, session) {
@@ -246,7 +249,7 @@ DEoptimDashboardApp <- function(path = ".", refreshMinutes = 2, title = "DEoptim
       for (i in seq_len(nrow(data()$fits))) local({
         i <- i
         ofFit <- function(x) {
-          x <- .fromIteration(x[x$fit == data()$fits$fit[i], ], initialIteration)
+          x <- .fromIteration(x[x$fit == data()$fits$fit[i], ], .orDefault(input$initialIteration, initialIteration))
           x[order(x$generation), ]
         }
         output[[paste0("obj_", i)]] <- shiny::renderPlot(.plotObjective(ofFit(data()$gens)))
@@ -270,6 +273,9 @@ DEoptimDashboardApp <- function(path = ".", refreshMinutes = 2, title = "DEoptim
                                  emptyTable = "No DEoptim progress files found."))),
                  c("started", "updated"), method = "toLocaleString")
 }
+
+## the value of a numeric box, or `default` while it is empty
+.orDefault <- function(x, default) if (is.numeric(x) && length(x) == 1L && !is.na(x)) x else default
 
 ## generations from `initialIteration` on; all of them while a fit has none that late
 .fromIteration <- function(x, initialIteration) {

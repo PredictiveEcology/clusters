@@ -1,5 +1,7 @@
 # clusters (development version)
 
+* Fixed: the dead-worker ping in `.nodeAnswers()` (`clusterSetup()` -> `plan_psock_min()` -> `.replaceDeadNodes()`) was a closure over the cluster, so serialising it sent every node's stored call stack. A cluster made under `do.call()` with the data as arguments (fireSense_spreadFit #98) put tens of GB into each ping: workers grew to 28-53 GB and the master stayed blocked in the ping. The ping is now `.bare()`, as `mirrorTerraOptions()` already does.
+
 * The `DEoptimDashboard()` page has a box for the first generation plotted; `initialIteration` is now only its starting value. Changing it redraws the plots without restarting the app.
 
 * `options(clusters.maxWorkersPerHost)` is now a cap on the host, every cluster together, not on each cluster

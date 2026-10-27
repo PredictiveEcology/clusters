@@ -54,10 +54,13 @@
 .nodeAnswers <- function(cl, i, seconds) {
   node <- cl[[i]]
   if (!inherits(node$con, "sockconn"))
-    return(isTRUE(tryCatch(parallel::clusterCall(cl[i], function() TRUE)[[1]], error = function(e) FALSE)))
+    return(isTRUE(tryCatch(parallel::clusterCall(cl[i], .bare(function() TRUE))[[1]], error = function(e) FALSE)))
   sendCall <- utils::getFromNamespace("sendCall", "parallel")
   recvResult <- utils::getFromNamespace("recvResult", "parallel")
-  ok <- tryCatch({ sendCall(node, function() TRUE, list()); TRUE }, error = function(e) FALSE)
+  ## .bare(): a function defined here carries this frame (cl, node) in its environment, and serialising it sends
+  ## every node's stored call stack, which holds the data when the cluster was made under do.call() (2026-10-26:
+  ## 28-53 GB per worker, the master blocked in this ping for hours).
+  ok <- tryCatch({ sendCall(node, .bare(function() TRUE), list()); TRUE }, error = function(e) FALSE)
   if (!ok || !.replyArrives(node$con, seconds)) return(FALSE)
   isTRUE(tryCatch(recvResult(node), error = function(e) FALSE))
 }

@@ -322,3 +322,21 @@ test_that("DEoptimIterative() finishes with the result of a run with no dead wor
   expect_equal(withDeath[[3]]$optim$bestmem, clean[[3]]$optim$bestmem)
   expect_equal(withDeath[[3]]$member$pop, clean[[3]]$member$pop)
 })
+
+## 2026-10-26: the dead-worker ping was a closure over .nodeAnswers()'s frame, so it serialised `cl`, and with it
+## each node's stored call stack; a cluster made under do.call(runDEoptim, args) put tens of GB into every ping.
+test_that(".nodeAnswers() sends a ping that does not carry the cluster", {
+  sent <- NULL
+  nodeAnswers <- utils::getFromNamespace(".nodeAnswers", "clusters")
+  big <- structure(list(con = structure(1L, class = c("sockconn", "connection"))), class = "SOCKnode")
+  attr(big, "calls") <- list(as.list(rnorm(1e6)))   # what a node made under do.call() holds
+  cl <- structure(list(big), class = c("SOCKcluster", "cluster"))
+  testthat::local_mocked_bindings(.replyArrives = function(con, seconds) FALSE, .package = "clusters")
+  sendCall <- function(node, fun, args, ...) { sent <<- fun; invisible(NULL) }
+  testthat::local_mocked_bindings(getFromNamespace = function(x, ns, ...) if (x == "sendCall") sendCall else
+    function(...) TRUE, .package = "utils")
+  expect_false(nodeAnswers(cl, 1L, seconds = 0.1))
+  expect_true(is.function(sent))
+  expect_identical(environment(sent), globalenv())
+  expect_lt(length(serialize(sent, NULL)), 1e6)   # the stored call stack alone is 8 MB; srcrefs under load_all() ~0.2 MB
+})

@@ -1,5 +1,9 @@
 # clusters (development version)
 
+## Dependency changes
+
+* clusters now needs R >= 4.4 (was 4.2), the oldest R version its checks run on (#61).
+
 * The `DEoptimDashboard()` page has a box for the first generation plotted; `initialIteration` is now only its starting value. Changing it redraws the plots without restarting the app.
 
 * `options(clusters.maxWorkersPerHost)` is now a cap on the host, every cluster together, not on each cluster

@@ -27,7 +27,7 @@ nodeCap <- function(cores = 64L, avail = 300, total = 490, load = 50)
        mem_available_gb = avail, mem_total_gb = total)
 
 test_that("outside Slurm there is no job allocation and the probe is unchanged", {
-  withr::local_envvar(SLURM_JOB_ID = NA, SLURM_CPUS_ON_NODE = NA, SLURM_MEM_PER_NODE = NA)
+  withr::local_envvar(SLURM_JOB_ID = NA, SLURM_MEM_PER_NODE = NA)
   expect_null(clusters:::.slurmAllocation())
   cap <- nodeCap()
   expect_identical(clusters:::.limitToJob(cap, NULL, systemCores = 64L), cap)
@@ -35,9 +35,8 @@ test_that("outside Slurm there is no job allocation and the probe is unchanged",
 
 test_that("the allocation is read from Slurm's variables and the job's cgroup", {
   cg <- mockCgroup()
-  withr::local_envvar(SLURM_JOB_ID = "77", SLURM_CPUS_ON_NODE = "41", SLURM_MEM_PER_NODE = NA)
+  withr::local_envvar(SLURM_JOB_ID = "77", SLURM_MEM_PER_NODE = NA)
   job <- clusters:::.slurmAllocation(procCgroup = cg$proc, cgroupRoot = cg$root)
-  expect_equal(job$cores, 41)
   ## memory.max (200 GiB) is on the job's cgroup, the step below it says "max"; 20 GiB used
   expect_equal(job$memLimitGB, 200)
   expect_equal(job$memAvailableGB, 180)
@@ -49,13 +48,14 @@ test_that("the allocation is read from Slurm's variables and the job's cgroup", 
 
 test_that("without a cgroup limit the job's memory is SLURM_MEM_PER_NODE (MB)", {
   none <- file.path(withr::local_tempdir(), "absent")
-  withr::local_envvar(SLURM_JOB_ID = "77", SLURM_CPUS_ON_NODE = "41", SLURM_MEM_PER_NODE = "204800")
+  withr::local_envvar(SLURM_JOB_ID = "77", SLURM_MEM_PER_NODE = "204800")
   job <- clusters:::.slurmAllocation(procCgroup = none, cgroupRoot = none)
   expect_equal(job$memLimitGB, 200)
   expect_equal(job$memAvailableGB, 200)
   ## per CPU, when the job asked that way
   withr::local_envvar(SLURM_MEM_PER_NODE = NA, SLURM_MEM_PER_CPU = "5120")
-  expect_equal(clusters:::.slurmAllocation(procCgroup = none, cgroupRoot = none)$memLimitGB, 41 * 5)
+  expect_equal(clusters:::.slurmAllocation(procCgroup = none, cgroupRoot = none)$memLimitGB,
+               as.integer(parallelly::availableCores()) * 5)
   ## nothing known: no memory cap
   withr::local_envvar(SLURM_MEM_PER_CPU = NA)
   job <- clusters:::.slurmAllocation(procCgroup = none, cgroupRoot = none)
@@ -65,9 +65,9 @@ test_that("without a cgroup limit the job's memory is SLURM_MEM_PER_NODE (MB)", 
 test_that("41 CPUs and 200 GB of a 64-CPU node give at most 41 - keepFreeCores workers and 200 GB", {
   withLedger()
   cg <- mockCgroup()
-  withr::local_envvar(SLURM_JOB_ID = "77", SLURM_CPUS_ON_NODE = "41", SLURM_MEM_PER_NODE = NA)
+  withr::local_envvar(SLURM_JOB_ID = "77", SLURM_MEM_PER_NODE = NA)
   job <- clusters:::.slurmAllocation(procCgroup = cg$proc, cgroupRoot = cg$root)
-  limited <- clusters:::.limitToJob(nodeCap(), job, systemCores = 64L)
+  limited <- clusters:::.limitToJob(nodeCap(cores = 41L), job, systemCores = 64L)
   expect_equal(limited$cores_total, 41L)
   expect_lte(limited$cores_physical, 41)
   expect_lte(limited$mem_total_gb, 200)
@@ -89,8 +89,8 @@ test_that("41 CPUs and 200 GB of a 64-CPU node give at most 41 - keepFreeCores w
 test_that("the job's own workers, in the ledger, still come off its allocation", {
   withLedger()
   withr::local_envvar(SLURM_JOB_ID = "77")
-  job <- list(cores = 41, memLimitGB = 200, memAvailableGB = 200)
-  nodes <- clusters:::.nodeTable("localhost", list(clusters:::.limitToJob(nodeCap(), job, systemCores = 64L)))
+  job <- list(memLimitGB = 200, memAvailableGB = 200)
+  nodes <- clusters:::.nodeTable("localhost", list(clusters:::.limitToJob(nodeCap(cores = 41L), job, systemCores = 64L)))
   reserveCores(data.frame(host = "localhost", assign = 20L), id = clusters:::.newReservationId())
   got <- suppressMessages(clusters:::.fitCapacity(nodes, total = 100, load_memory = "5min"))
   expect_equal(got$reserved, 20L)
@@ -99,8 +99,8 @@ test_that("the job's own workers, in the ledger, still come off its allocation",
 
 test_that("another job's booking on the same node is not this job's", {
   withLedger()
-  job <- list(cores = 41, memLimitGB = 200, memAvailableGB = 200)
-  nodes <- clusters:::.nodeTable("localhost", list(clusters:::.limitToJob(nodeCap(), job, systemCores = 64L)))
+  job <- list(memLimitGB = 200, memAvailableGB = 200)
+  nodes <- clusters:::.nodeTable("localhost", list(clusters:::.limitToJob(nodeCap(cores = 41L), job, systemCores = 64L)))
   withr::with_envvar(c(SLURM_JOB_ID = "88"),
                      reserveCores(data.frame(host = "localhost", assign = 20L), id = clusters:::.newReservationId()))
   ## a booking with no job (another version's, or outside Slurm) cannot be told apart and counts
@@ -120,7 +120,7 @@ test_that("another job's booking on the same node is not this job's", {
 test_that("a job given the whole node, and a probe outside Slurm, are as before", {
   withLedger()
   cg <- mockCgroup(max = as.character(490 * 1024^3), current = as.character(5 * 1024^3))
-  withr::local_envvar(SLURM_JOB_ID = "77", SLURM_CPUS_ON_NODE = "64", SLURM_MEM_PER_NODE = NA)
+  withr::local_envvar(SLURM_JOB_ID = "77", SLURM_MEM_PER_NODE = NA)
   job <- clusters:::.slurmAllocation(procCgroup = cg$proc, cgroupRoot = cg$root)
   cap <- nodeCap(avail = 480, load = 10)
   expect_identical(clusters:::.limitToJob(cap, job, systemCores = 64L), cap)

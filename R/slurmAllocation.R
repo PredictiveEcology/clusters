@@ -27,18 +27,18 @@
   NULL
 }
 
-## What the Slurm job this process is in was given: `cores` (SLURM_CPUS_ON_NODE), `memLimitGB` (the job
-## cgroup's memory.max, else SLURM_MEM_PER_NODE, else SLURM_MEM_PER_CPU x cores) and `memAvailableGB` (that,
+## What the Slurm job this process is in was given for memory: `memLimitGB` (the job
+## cgroup's memory.max, else SLURM_MEM_PER_NODE, else SLURM_MEM_PER_CPU x its CPUs) and `memAvailableGB` (that,
 ## less what the job already uses, when its cgroup says). NA where unknown. NULL outside a job.
 .slurmAllocation <- function(procCgroup = "/proc/self/cgroup", cgroupRoot = "/sys/fs/cgroup") {
   if (!nzchar(Sys.getenv("SLURM_JOB_ID"))) return(NULL)
   num <- function(x) suppressWarnings(as.numeric(Sys.getenv(x, NA_character_)))
-  cores <- num("SLURM_CPUS_ON_NODE")
+  cpus <- parallelly::availableCores()   # reads SLURM_CPUS_*, the cgroup's cpuset and quota
   cg <- .cgroupMemory(procCgroup, cgroupRoot)
-  slurmMem <- c(num("SLURM_MEM_PER_NODE"), num("SLURM_MEM_PER_CPU") * cores) / 1024   # MB; 0 asks for all
+  slurmMem <- c(num("SLURM_MEM_PER_NODE"), num("SLURM_MEM_PER_CPU") * cpus) / 1024   # MB; 0 asks for all
   slurmMem <- slurmMem[!is.na(slurmMem) & slurmMem > 0]
   limit <- if (!is.null(cg)) cg$limitGB else if (length(slurmMem)) slurmMem[1] else NA_real_
-  list(cores = cores, memLimitGB = limit,
+  list(memLimitGB = limit,
        memAvailableGB = if (is.null(cg)) limit else max(limit - cg$usedGB, 0))
 }
 
@@ -49,16 +49,15 @@
 }
 
 ## A host's probe (`cap`, as .probeHost() builds it) limited to the job it runs in (`job`, from
-## .slurmAllocation()). Memory is the lower of the node's and the job's. Cores: a job given fewer CPUs than
-## the node has (`systemCores`) shares it, so its threads are its CPUs, all free (the cgroup keeps others off
+## .slurmAllocation()). Memory is the lower of the node's and the job's. Cores: a job given fewer CPUs
+## (`cores_total`) than the node has (`systemCores`) shares it, so its CPUs are all free (the cgroup keeps others off
 ## them; the node's load average is other jobs' and says nothing of them), and the node's load is not
 ## carried into `busy` (see .fitCapacity()). What the job's own clusters have booked is in the reservations
 ## ledger, which counts it (see freeCoresLessReserved()). A job given every CPU is the node's: probed as before.
 .limitToJob <- function(cap, job, systemCores) {
   if (is.null(job)) return(cap)
-  if (isTRUE(job$cores < systemCores)) {
-    cap$cores_total <- min(cap$cores_total, as.integer(job$cores))
-    cap$cores_physical <- tryCatch(.availablePhysicalCores(cap$cores_total), error = function(e) NA_integer_)
+  ## cores_total is parallelly::availableCores(): the job's CPUs, read from Slurm and its cgroup
+  if (isTRUE(cap$cores_total < systemCores)) {
     cap$free_est <- cap$cores_total
     cap$loadavg[] <- 0
   }

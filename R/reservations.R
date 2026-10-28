@@ -116,8 +116,12 @@ reservationsPath <- function(path = getOption("clusters.reservationsPath")) {
 
 ## A new reservation id. It carries the nodename of the machine that makes it, `<nodename>:<random>`, because
 ## the ledger's columns cannot change (every version of this package reading the file must be able to append
-## to it) and the id is a free string to them.
-.newReservationId <- function(prefix = "resv") paste0(Sys.info()[["nodename"]], ":", basename(tempfile(prefix)))
+## to it) and the id is a free string to them. Made in a Slurm job, it also names the job (`@job<id>@`), so
+## that another job's bookings on the same node can be told from this job's (see freeCoresLessReserved()).
+.newReservationId <- function(prefix = "resv") {
+  job <- Sys.getenv("SLURM_JOB_ID")
+  paste0(Sys.info()[["nodename"]], ":", basename(tempfile(prefix)), if (nzchar(job)) paste0("@job", job, "@"))
+}
 
 ## The machine that owns each reservation `id`: the nodename it starts with; NA for an id without one (an
 ## older version's, or one the caller named), which is read as before, as this machine's.
@@ -256,6 +260,15 @@ freeCoresLessReserved <- function(nodes,
                                   loadWindowMinutes = 5, graceMinutes = 2, exclude = NULL) {
   res <- liveReservations(path)
   res <- res[!res$id %in% exclude, , drop = FALSE]
+  ## Inside a Slurm job the cores of this machine are the job's: another job's workers on it (the share the
+  ## ledger can tell by its id) run under that job's allocation, not this one's. Bookings of a job-less
+  ## version or process cannot be told apart and count.
+  thisJob <- Sys.getenv("SLURM_JOB_ID")
+  if (nzchar(thisJob) && NROW(res)) {
+    rowJob <- .reservationJob(res$id)
+    elsewhere <- !is.na(rowJob) & rowJob != thisJob & .hostMachine(res$host, .reservationOwner(res$id)) %in% Sys.info()[["nodename"]]
+    res <- res[!elsewhere, , drop = FALSE]
+  }
   if (NROW(res)) {
     ageMinutes <- pmax(as.numeric(difftime(Sys.time(), res$created, units = "mins")) - graceMinutes, 0)
     share <- exp(-ageMinutes / loadWindowMinutes)

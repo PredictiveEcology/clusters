@@ -493,10 +493,10 @@ plan_psock_min <- function(
 
 ## What one host says of itself, measured in the process that calls this: on every host by .probeNodes()
 ## (through its probe cluster), and by reserveCapacity() for the host a job runs on
-.probeHost <- function(load_memory, fraction) {
+.probeHost <- function(load_memory, fraction, job = .slurmAllocation()) {
   maxC  <- parallelly::availableCores()
   freeC <- parallelly::freeCores(memory = load_memory, fraction = fraction)
-  list(
+  .limitToJob(list(
     nodename = Sys.info()[["nodename"]],
     cores_total = as.integer(maxC),
     # NA if the host cannot say (or runs an older clusters): the allocator then assumes 2 threads/core
@@ -507,7 +507,7 @@ plan_psock_min <- function(
     loadavg     = attr(freeC, "loadavg"),
     mem_available_gb = tryCatch(.procMemoryGB("MemAvailable", "/proc/meminfo"), error = function(e) NA_real_),
     mem_total_gb     = tryCatch(.procMemoryGB("MemTotal", "/proc/meminfo"), error = function(e) NA_real_)
-  )
+  ), job, systemCores = attr(freeC, "maxCores"))
 }
 
 ## The node table: one row per host from what each said of itself (`caps`, .probeHost()'s lists)

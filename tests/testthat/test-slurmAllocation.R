@@ -55,7 +55,7 @@ test_that("without a cgroup limit the job's memory is SLURM_MEM_PER_NODE (MB)", 
   ## per CPU, when the job asked that way
   withr::local_envvar(SLURM_MEM_PER_NODE = NA, SLURM_MEM_PER_CPU = "5120")
   expect_equal(clusters:::.slurmAllocation(procCgroup = none, cgroupRoot = none)$memLimitGB,
-               as.integer(parallelly::availableCores()) * 5)
+               unname(parallelly::availableCores()) * 5)
   ## nothing known: no memory cap
   withr::local_envvar(SLURM_MEM_PER_CPU = NA)
   job <- clusters:::.slurmAllocation(procCgroup = none, cgroupRoot = none)

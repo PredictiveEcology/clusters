@@ -32,8 +32,8 @@
 ## less what the job already uses, when its cgroup says). NA where unknown. NULL outside a job.
 .slurmAllocation <- function(procCgroup = "/proc/self/cgroup", cgroupRoot = "/sys/fs/cgroup") {
   if (!nzchar(Sys.getenv("SLURM_JOB_ID"))) return(NULL)
-  num <- function(x) suppressWarnings(as.numeric(Sys.getenv(x, NA_character_)))
-  cpus <- parallelly::availableCores()   # reads SLURM_CPUS_*, the cgroup's cpuset and quota
+  num <- function(x) unname(suppressWarnings(as.numeric(Sys.getenv(x, NA_character_))))
+  cpus <- unname(parallelly::availableCores())  # reads SLURM_CPUS_*, the cgroup's cpuset and quota
   cg <- .cgroupMemory(procCgroup, cgroupRoot)
   slurmMem <- c(num("SLURM_MEM_PER_NODE"), num("SLURM_MEM_PER_CPU") * cpus) / 1024   # MB; 0 asks for all
   slurmMem <- slurmMem[!is.na(slurmMem) & slurmMem > 0]

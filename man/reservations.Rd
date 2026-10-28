@@ -13,7 +13,7 @@ liveReservations(path = getOption("clusters.reservationsPath"))
 
 reserveCores(
   alloc,
-  id = basename(tempfile("resv")),
+  id = .newReservationId(),
   pid = Sys.getpid(),
   memPerWorkerGB = NULL,
   path = getOption("clusters.reservationsPath")
@@ -33,7 +33,8 @@ releaseCores(
 \code{allocation} element of \code{\link[=plan_psock_min]{plan_psock_min()}}.}
 
 \item{id}{Reservation id. One process may hold several clusters at once, so
-releases are keyed by reservation rather than by process.}
+releases are keyed by reservation rather than by process. The default is
+\verb{<nodename>:<random>}, the nodename being this machine's.}
 
 \item{pid}{Owning process id; defaults to this process.}
 
@@ -64,7 +65,11 @@ several clusters at once.
 
 The ledger is self-healing: every read drops entries whose owning process is
 no longer alive, so a master that is killed without releasing cannot leak a
-reservation forever.
+reservation forever. A process id means something only on the machine it ran on, so each reservation id
+starts with that machine's nodename (\verb{<nodename>:<random>}; the columns of the ledger are unchanged, as
+older versions of this package share the file) and only rows owned by the reading machine, or by none
+(an id without a nodename), are checked; a row owned by another machine is left to that machine.
+A host named \code{"localhost"} or \code{"127.0.0.1"} in a row is the owner's machine, not the reader's.
 }
 \section{Scope}{
 
@@ -72,6 +77,7 @@ The ledger is a file, so it is shared by every process that can see that file
 -- which is what is needed when several worker panes on one machine each build
 their own cluster over a shared fleet. If \emph{different} machines build clusters
 over the same fleet, point them all at one path on shared storage via
-\code{options(clusters.reservationsPath = )}.
+\code{options(clusters.reservationsPath = )}. Machines that share a home folder (a Slurm cluster) share the
+default path, and so the ledger, without doing anything.
 }
 

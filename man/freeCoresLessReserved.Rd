@@ -14,7 +14,7 @@ freeCoresLessReserved(
 }
 \arguments{
 \item{nodes}{A data.frame with \code{host} and \code{free_est}, as built by
-\code{\link[=plan_psock_min]{plan_psock_min()}} from its probe.}
+\code{\link[=plan_psock_min]{plan_psock_min()}} from its probe, and \code{nodename} (the machine's own name for itself) when known.}
 
 \item{path}{Path to the reservations ledger; defaults to \code{getOption("clusters.reservationsPath")}.}
 

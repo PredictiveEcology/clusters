@@ -198,3 +198,110 @@ test_that("every host keeps clusters.keepFreeCores cores for its other users", {
     expect_equal(freeCoresLessReserved(nodes)$free_est, c(4, 12))
   })
 })
+
+## Machines that share a home folder share the default ledger (a Slurm cluster, 2026-10-28): a build on one
+## node booked "localhost" = 40 workers and a build on another node waited for it to finish.
+
+## Write ledger rows as another machine's process would: its nodename leads the id (`owner`), `pid` is a
+## process there. The ledger's columns are those of every version of the package (0.0.85 appends rows of
+## exactly these), and `owner = NULL` writes an id without a machine, as an older version does.
+writeRows <- function(host, workers, owner, pid, id = basename(tempfile("resv"))) {
+  if (!is.null(owner)) id <- paste0(owner, ":", id)
+  rows <- data.frame(id = id, pid = as.integer(pid), host = host, workers = as.integer(workers),
+                     created = Sys.time(), memGB = NA_real_, stringsAsFactors = FALSE)
+  file <- reservationsPath()
+  saveRDS(if (file.exists(file)) rbind(readRDS(file), rows) else rows, file)
+  invisible(id)
+}
+otherMachine <- paste0(Sys.info()[["nodename"]], "-other")
+
+test_that("another machine's \"localhost\" booking is not subtracted from this machine's \"localhost\"", {
+  withLedger({
+    writeRows("localhost", 40, owner = otherMachine, pid = Sys.getpid())
+    nodes <- data.frame(host = "localhost", nodename = Sys.info()[["nodename"]], free_est = 50)
+    out <- freeCoresLessReserved(nodes)
+    expect_equal(out$reserved, 0L)
+    expect_equal(out$free_est, 50)
+    ## without the node's own name in the table, "localhost" is still this machine
+    out <- freeCoresLessReserved(nodes[c("host", "free_est")])
+    expect_equal(out$reserved, 0L)
+  })
+})
+
+test_that("a booking is still counted against the machine that made it", {
+  withLedger({
+    writeRows("localhost", 40, owner = otherMachine, pid = Sys.getpid())
+    writeRows("localhost", 4, owner = Sys.info()[["nodename"]], pid = Sys.getpid())
+    ## here, "localhost" is the 4 booked by this machine
+    out <- freeCoresLessReserved(data.frame(host = "localhost", free_est = 50))
+    expect_equal(out$reserved, 4L)
+    ## an ssh name that resolves to the other machine gets its 40 (and not this machine's 4)
+    out <- freeCoresLessReserved(data.frame(host = "sshAlias", nodename = otherMachine, free_est = 50))
+    expect_equal(out$reserved, 40L)
+  })
+})
+
+test_that("a row owned by another machine is not pruned for a pid that is not alive here", {
+  withLedger({
+    writeRows("sshAlias", 8, owner = otherMachine, pid = 999999L)
+    expect_equal(liveReservations()$workers, 8L)
+    expect_equal(freeCoresLessReserved(data.frame(host = "sshAlias", free_est = 10))$reserved, 8L)
+    ## and booking another does not prune it either
+    reserveCores(data.frame(host = "x", assign = 1L))
+    expect_equal(sort(liveReservations()$workers), c(1L, 8L))
+  })
+})
+
+test_that("a row owned by this machine with a dead pid is still pruned", {
+  withLedger({
+    writeRows("a", 8, owner = Sys.info()[["nodename"]], pid = 999999L)
+    expect_equal(NROW(liveReservations()), 0L)
+  })
+})
+
+test_that("rows with an id that names no machine still work, as before", {
+  withLedger({
+    writeRows("a", 8, owner = NULL, pid = Sys.getpid())
+    writeRows("a", 5, owner = NULL, pid = 999999L)
+    old <- readRDS(reservationsPath())
+    old$memGB <- NULL                       # older still: before memGB
+    saveRDS(old, reservationsPath())
+    live <- liveReservations()
+    expect_equal(live$workers, 8L)          # the dead one is pruned as before
+    expect_equal(freeCoresLessReserved(data.frame(host = "a", free_est = 10))$reserved, 8L)
+    reserveCores(data.frame(host = "a", assign = 2L))
+    expect_equal(sort(liveReservations()$workers), c(2L, 8L))
+  })
+})
+
+test_that("the ledger keeps the columns every version writes, and old and new code append to each other's", {
+  withLedger({
+    cols <- c("id", "pid", "host", "workers", "created", "memGB")
+    ## this version writes no new column ...
+    id <- reserveCores(data.frame(host = "a", assign = 3L))
+    expect_equal(names(readRDS(reservationsPath())), cols)
+    expect_match(id, paste0("^", Sys.info()[["nodename"]], ":"))
+    ## ... so 0.0.85's reserveCores() (an rbind of a row of those columns, a bare id) appends to it ...
+    old <- readRDS(reservationsPath())
+    saveRDS(rbind(old, data.frame(id = "resv1234", pid = Sys.getpid(), host = "b", workers = 4L,
+                                  created = Sys.time(), memGB = 8, stringsAsFactors = FALSE)),
+            reservationsPath())
+    expect_equal(sort(liveReservations()$workers), c(3L, 4L))
+    ## ... and this version appends to, re-books and releases a ledger that version wrote
+    id2 <- reserveCores(data.frame(host = "c", assign = 2L))
+    clusters:::.rebookCores("resv1234", data.frame(host = "b", assign = 5L))
+    expect_equal(names(readRDS(reservationsPath())), cols)
+    expect_equal(sort(liveReservations()$workers), c(2L, 3L, 5L))
+    releaseCores(id = c(id, id2, "resv1234"))
+    expect_equal(NROW(liveReservations()), 0L)
+  })
+})
+
+test_that("re-booking keeps the reservation's id, and so its owner", {
+  withLedger({
+    id <- writeRows("a", 8, owner = otherMachine, pid = 999999L)
+    clusters:::.rebookCores(id, data.frame(host = "a", assign = 6L))
+    expect_equal(liveReservations()$id, id)
+    expect_equal(liveReservations()$workers, 6L)
+  })
+})

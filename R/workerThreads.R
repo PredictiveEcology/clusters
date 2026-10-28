@@ -31,7 +31,7 @@
 ## can be a different R from the master's. A cluster with remote hosts keeps `Rscript`, found on each host's
 ## PATH, because R is not installed in the same place everywhere (kodama runs the system R).
 .localRscript <- function(rscript, hosts) {
-  thisMachine <- c("localhost", "127.0.0.1", Sys.info()[["nodename"]])
+  thisMachine <- .thisMachine()
   if (identical(rscript, "Rscript") && length(hosts) && all(hosts %in% thisMachine))
     file.path(R.home("bin"), "Rscript")
   else

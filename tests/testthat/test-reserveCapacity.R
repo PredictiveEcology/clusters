@@ -118,12 +118,13 @@ test_that("without a probe the job is booked on this host, measured in this proc
   expect_equal(here$nodename, Sys.info()[["nodename"]])
   expect_gte(here$cores_total, 1L)
   ## the default host is "localhost": what every build running on this machine calls it in the ledger
-  ## (plan_psock_min() renames the machine's own SSH alias), not its nodename, which no build books
+  ## (plan_psock_min() renames the machine's own SSH alias); it is this machine's, so it counts against the
+  ## machine under its nodename too
   token <- reserve(1, 0, probe = function() node("localhost"))
   expect_equal(token$host, "localhost")
   expect_equal(liveReservations()$host, "localhost")
   expect_equal(capacity(node("localhost"))$reserved, 1L)
-  expect_equal(capacity(node(Sys.info()[["nodename"]]))$reserved, 0L)
+  expect_equal(capacity(node(Sys.info()[["nodename"]]))$reserved, 1L)
   releaseCapacity(token)
   ## a job on another host needs a probe that can see it
   expect_error(reserve(1, 0, hosts = "elsewhere"), "probe")

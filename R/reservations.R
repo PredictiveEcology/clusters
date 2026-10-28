@@ -18,14 +18,19 @@
 #'
 #' The ledger is self-healing: every read drops entries whose owning process is
 #' no longer alive, so a master that is killed without releasing cannot leak a
-#' reservation forever.
+#' reservation forever. A process id means something only on the machine it ran on, so each reservation id
+#' starts with that machine's nodename (`<nodename>:<random>`; the columns of the ledger are unchanged, as
+#' older versions of this package share the file) and only rows owned by the reading machine, or by none
+#' (an id without a nodename), are checked; a row owned by another machine is left to that machine.
+#' A host named `"localhost"` or `"127.0.0.1"` in a row is the owner's machine, not the reader's.
 #'
 #' @section Scope:
 #' The ledger is a file, so it is shared by every process that can see that file
 #' -- which is what is needed when several worker panes on one machine each build
 #' their own cluster over a shared fleet. If *different* machines build clusters
 #' over the same fleet, point them all at one path on shared storage via
-#' `options(clusters.reservationsPath = )`.
+#' `options(clusters.reservationsPath = )`. Machines that share a home folder (a Slurm cluster) share the
+#' default path, and so the ledger, without doing anything.
 #'
 #' @param path Directory holding the ledger. Defaults to
 #'   `getOption("clusters.reservationsPath")`, else a per-user data directory.
@@ -109,6 +114,36 @@ reservationsPath <- function(path = getOption("clusters.reservationsPath")) {
   res
 }
 
+## A new reservation id. It carries the nodename of the machine that makes it, `<nodename>:<random>`, because
+## the ledger's columns cannot change (every version of this package reading the file must be able to append
+## to it) and the id is a free string to them.
+.newReservationId <- function(prefix = "resv") paste0(Sys.info()[["nodename"]], ":", basename(tempfile(prefix)))
+
+## The machine that owns each reservation `id`: the nodename it starts with; NA for an id without one (an
+## older version's, or one the caller named), which is read as before, as this machine's.
+.reservationOwner <- function(id) ifelse(grepl(":", id, fixed = TRUE), sub(":.*$", "", id), NA_character_)
+
+## The names a machine goes by to its own processes; the one place they are listed.
+.loopbackNames <- c("localhost", "127.0.0.1")
+.thisMachine <- function() c(.loopbackNames[1], Sys.info()[["nodename"]], .loopbackNames[2])
+
+## Which machine each of `host` names, for a writer on `owner`: its loopback names are `owner` itself, any
+## other name is taken as it stands (an ssh name), and so is every name when the owner is not known (NA).
+.hostMachine <- function(host, owner) {
+  loopback <- host %in% .loopbackNames & !is.na(owner)
+  host[loopback] <- owner[loopback]
+  host
+}
+
+## `res` without the rows whose owning process has ended. A pid is only meaningful on the machine that
+## ran the process, so only the rows this machine owns (or that name no owner) are checked; another
+## machine's rows are kept, as that machine's own reads drop them.
+.dropDeadOwners <- function(res) {
+  owner <- .reservationOwner(res$id)
+  mine <- is.na(owner) | owner %in% Sys.info()[["nodename"]]
+  res[!mine | .pidAlive(res$pid), , drop = FALSE]
+}
+
 ## GB booked for `assign` workers at `memPerWorkerGB` each; NA when the memory per worker is not known
 .bookedMemoryGB <- function(assign, memPerWorkerGB)
   as.numeric(assign) * (if (is.null(memPerWorkerGB)) NA_real_ else as.numeric(memPerWorkerGB)[1])
@@ -123,13 +158,10 @@ liveReservations <- function(path = getOption("clusters.reservationsPath")) {
     if (!NROW(res)) {
       .emptyReservations()
     } else {
-      keep <- .pidAlive(res$pid)
       # A dead owner cannot still be using cores; drop it so the ledger cannot leak.
-      if (!all(keep)) {
-        res <- res[keep, , drop = FALSE]
-        saveRDS(res, file)
-      }
-      res
+      alive <- .dropDeadOwners(res)
+      if (NROW(alive) < NROW(res)) saveRDS(alive, file)
+      alive
     }
   })
 }
@@ -137,13 +169,14 @@ liveReservations <- function(path = getOption("clusters.reservationsPath")) {
 #' @param alloc A data.frame with columns `host` and `assign`, as returned in the
 #'   `allocation` element of [plan_psock_min()].
 #' @param id Reservation id. One process may hold several clusters at once, so
-#'   releases are keyed by reservation rather than by process.
+#'   releases are keyed by reservation rather than by process. The default is
+#'   `<nodename>:<random>`, the nodename being this machine's.
 #' @param pid Owning process id; defaults to this process.
 #' @param memPerWorkerGB GB of memory each of the workers is expected to need, booked beside the cores
 #'   (`NULL`, the default, books none).
 #' @rdname reservations
 #' @export
-reserveCores <- function(alloc, id = basename(tempfile("resv")), pid = Sys.getpid(), memPerWorkerGB = NULL,
+reserveCores <- function(alloc, id = .newReservationId(), pid = Sys.getpid(), memPerWorkerGB = NULL,
                          path = getOption("clusters.reservationsPath")) {
   stopifnot(all(c("host", "assign") %in% names(alloc)))
   alloc <- alloc[alloc$assign > 0, , drop = FALSE]
@@ -152,7 +185,7 @@ reserveCores <- function(alloc, id = basename(tempfile("resv")), pid = Sys.getpi
   .withReservationLock(file, {
     res <- if (file.exists(file))
       .readReservations(file) else .emptyReservations()
-    res <- res[.pidAlive(res$pid), , drop = FALSE]
+    res <- .dropDeadOwners(res)
     res <- rbind(res, data.frame(id = id, pid = as.integer(pid), host = alloc$host,
                                  workers = as.integer(alloc$assign),
                                  created = Sys.time(), memGB = .bookedMemoryGB(alloc$assign, memPerWorkerGB),
@@ -181,7 +214,7 @@ releaseCores <- function(id = NULL, pid = Sys.getpid(),
 #' Subtract live reservations from measured free cores
 #'
 #' @param nodes A data.frame with `host` and `free_est`, as built by
-#'   [plan_psock_min()] from its probe.
+#'   [plan_psock_min()] from its probe, and `nodename` (the machine's own name for itself) when known.
 #' @param path Path to the reservations ledger; defaults to `getOption("clusters.reservationsPath")`.
 #' @param loadWindowMinutes The averaging window, in minutes, of the load average
 #'   `free_est` was measured from (5 for `parallelly::freeCores(memory = "5min")`).
@@ -226,7 +259,15 @@ freeCoresLessReserved <- function(nodes,
   if (NROW(res)) {
     ageMinutes <- pmax(as.numeric(difftime(Sys.time(), res$created, units = "mins")) - graceMinutes, 0)
     share <- exp(-ageMinutes / loadWindowMinutes)
-    byHost <- function(x) vapply(nodes$host, function(h) sum(x[res$host %in% h], na.rm = TRUE), numeric(1))
+    ## a reservation counts against a node when it names it by an ssh name, or names the same machine: its
+    ## "localhost" is its owner's machine (never matched as a name), and a node of this table is `nodename`
+    ## when it has one
+    rowMachine <- .hostMachine(res$host, .reservationOwner(res$id))
+    rowName <- ifelse(rowMachine == res$host, res$host, NA_character_)
+    nodeMachine <- if (is.null(nodes$nodename)) nodes$host else ifelse(is.na(nodes$nodename), nodes$host, nodes$nodename)
+    nodeMachine <- .hostMachine(nodeMachine, rep(Sys.info()[["nodename"]], NROW(nodes)))
+    byHost <- function(x) vapply(seq_len(NROW(nodes)), function(i)
+      sum(x[rowName %in% nodes$host[i] | rowMachine %in% nodeMachine[i]], na.rm = TRUE), numeric(1))
     reserved <- byHost(res$workers)
     subtract <- byHost(res$workers * share)
     reservedGB <- byHost(res$memGB)

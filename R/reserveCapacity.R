@@ -58,7 +58,7 @@ reserveCapacity <- function(cores, memGB, hosts = "localhost", probe = NULL,
             memGB >= 0, is.character(hosts), length(hosts) >= 1L)
   cores <- as.integer(ceiling(cores))
   if (is.null(probe)) {
-    thisHost <- c("localhost", Sys.info()[["nodename"]], "127.0.0.1")
+    thisHost <- .thisMachine()
     if (!all(hosts %in% thisHost))
       stop("reserveCapacity() can only measure this host (", thisHost[2], ") itself; a job choosing among ",
            paste(hosts, collapse = ", "), " needs a `probe` that can see them", call. = FALSE)
@@ -69,7 +69,7 @@ reserveCapacity <- function(cores, memGB, hosts = "localhost", probe = NULL,
   memPerCore <- memGB / cores
   capacity <- function()
     .fitCapacity(probe(), total = cores, load_memory, memPerWorkerGB = memPerCore, capWorkers = FALSE)
-  id <- basename(tempfile("job"))
+  id <- .newReservationId("job")
   alloc <- .allocateWhenAvailable(capacity, total = cores, waitSeconds = waitSeconds, interval = interval,
                                   sleep = sleep, now = now, what = "cores",
                                   allocate = function(nodes) .jobAllocate(nodes, cores),

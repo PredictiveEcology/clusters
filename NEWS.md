@@ -1,5 +1,7 @@
 # clusters (development version)
 
+* Fixed: machines that share a home folder (a Slurm cluster) share the default reservations ledger, and a build on one node waited for cores booked by a build on another: it read the other's `host = "localhost"` booking as its own node's, and every minute for 35 minutes (2026-10-28). Each reservation id now starts with its owner machine's nodename (`<nodename>:<random>`); the ledger's columns are unchanged, so older versions sharing the file still append to it. A row's `"localhost"`/`"127.0.0.1"` is its owner's machine, counted against an ssh name only through the node table's `nodename`; and only rows owned by the reading machine (or by none) are checked for a live pid, since a pid means nothing on another machine (`/proc/<id>` also exists for thread ids, so a foreign pid could look alive).
+
 * Fixed: the dead-worker ping in `.nodeAnswers()` (`clusterSetup()` -> `plan_psock_min()` -> `.replaceDeadNodes()`) was a closure over the cluster, so serialising it sent every node's stored call stack. A cluster made under `do.call()` with the data as arguments (fireSense_spreadFit #98) put tens of GB into each ping: workers grew to 28-53 GB and the master stayed blocked in the ping. The ping is now `.bare()`, as `mirrorTerraOptions()` already does.
 
 * The `DEoptimDashboard()` page has a box for the first generation plotted; `initialIteration` is now only its starting value. Changing it redraws the plots without restarting the app.

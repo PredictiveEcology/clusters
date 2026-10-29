@@ -1,9 +1,9 @@
 ## 2026-10-09: placement booked only cores. Host `core` (187 GB) was filled to 187.1 GB by DEoptim workers and
 ## hung for 1.5 h, killing every fit with a worker there. A host now gets only as many workers as its free
-## memory holds, from what the same fit used last time (fitMemory.rds), else the largest of any fit's, else clusters.workerMemoryGB.
+## memory holds, from what the same fit used last time (fitMemory.rds), else clusters.workerMemoryGB.
 
-memNodes <- function(avail, total = 100, free = 40, host = letters[seq_along(avail)])
-  data.frame(host = host, cores_total = 48L, free_est = free, loadavg_5 = 0,
+memNodes <- function(avail, total = 100, free = 40, host = letters[seq_along(avail)], cores = 48L)
+  data.frame(host = host, cores_total = cores, free_est = free, loadavg_5 = 0,
              mem_available_gb = avail, mem_total_gb = total, stringsAsFactors = FALSE)
 
 capacity <- function(nodes, ...)
@@ -28,20 +28,20 @@ test_that("memory per worker comes from the latest fitMemory record of the same 
   expect_true(is.na(clusters:::.memPerWorkerGB("elf1")))   # no file, no option: no memory cap
   clusters:::.recordFitMemory(list(mkMem("h", 1:3, c(1, 2, 5))), runName = "elf1", id = "elf1_1")
   clusters:::.recordFitMemory(list(mkMem("h", 1:3, c(1, 2, 9))), runName = "elf2", id = "elf2_1")
-  expect_equal(clusters:::.memPerWorkerGB("elf1"), 5)
+  expect_equal(clusters:::.memPerWorkerGB("elf1"), c(median = 2, max = 5))
   file <- clusters:::.fitMemoryFile()
   got <- readRDS(file)
   got$time[got$id == "elf1_1"] <- Sys.time() - 3600
   saveRDS(got, file)
   clusters:::.recordFitMemory(list(mkMem("h", 1:3, c(1, 2, 3))), runName = "elf1", id = "elf1_2")
-  expect_equal(clusters:::.memPerWorkerGB("elf1"), 3)   # the most recent, not the largest
-  expect_equal(clusters:::.memPerWorkerGB("elf2"), 9)
-  ## no record for this runName: the largest of any runName's
-  expect_equal(clusters:::.memPerWorkerGB("elf3"), 9)
-  expect_equal(clusters:::.memPerWorkerGB(), 9)
-  ## and it sets the cap
+  expect_equal(clusters:::.memPerWorkerGB("elf1"), c(median = 2, max = 3))   # the most recent, not the largest
+  expect_equal(clusters:::.memPerWorkerGB("elf2"), c(median = 2, max = 9))
+  ## no record for this runName: no other runName's figure (no option: no cap)
+  expect_true(is.na(clusters:::.memPerWorkerGB("elf3")))
+  expect_true(is.na(clusters:::.memPerWorkerGB()))
+  ## and it sets the cap: 1 + floor((20 - 9) / 2) = 6
   withr::local_options(clusters.keepFreeCores = 0)
-  expect_equal(capacity(memNodes(avail = 30), memPerWorkerGB = clusters:::.memPerWorkerGB("elf2"))$free_est, 2)
+  expect_equal(capacity(memNodes(avail = 30), memPerWorkerGB = clusters:::.memPerWorkerGB("elf2"))$free_est, 6)
 })
 
 test_that("with no records at all clusters.workerMemoryGB is used, and with no option nothing is capped", {
@@ -179,8 +179,57 @@ test_that("a fit without a run name still records its memory, and the record is 
   expect_equal(got$memMaxGB, 5)
   expect_true(is.na(got$runName))
   expect_equal(nrow(readRDS(clusters:::.fitMemoryFile())), 1L)
-  expect_equal(clusters:::.memPerWorkerGB(NULL), 5)   # the fleet-wide record, not the option
-  expect_equal(clusters:::.memPerWorkerGB("other"), 5)
+  expect_equal(clusters:::.memPerWorkerGB("other"), 14)   # another run's record is not used: the option
   expect_no_warning(clusters:::.recordFitMemory(list(mkMem("h", 1L, 2)), runName = "", id = "pid1_2"))
   expect_equal(nrow(readRDS(clusters:::.fitMemoryFile())), 2L)
+})
+
+## 2026-10-28: a run's workers were all budgeted at its largest (ELF 6.6.1: median 1.7 GB, one worker 7.9 GB),
+## and a run with no record took the largest of any other run's (ELF 9.2.2 at 8.5 GB, from ELF 12.1_2).
+test_that("a cluster is budgeted at (n - 1) * median + max, not n * max", {
+  withr::local_options(clusters.reservationsPath = withr::local_tempdir(), clusters.keepFreeCores = 0)
+  clusters:::.recordFitMemory(list(mkMem("h", 1:10, c(rep(1.7, 9), 7.9))), runName = "elf661", id = "elf661_1")
+  mem <- clusters:::.memPerWorkerGB("elf661")
+  expect_equal(unname(mem), c(1.7, 7.9))
+  ## ~100 GB usable (110 free less 10 headroom): 1 + floor((100 - 7.9) / 1.7) = 55 workers, not floor(100 / 7.9) = 12
+  nodes <- memNodes(avail = 110, free = 200, cores = 400L)
+  expect_equal(capacity(nodes, memPerWorkerGB = mem)$free_est, 55)
+  expect_equal(capacity(nodes, memPerWorkerGB = 7.9)$free_est, 12)
+  expect_message(clusters:::.fitCapacity(nodes, 80, "5min", memPerWorkerGB = mem), "median 1.7 GB, largest 7.9 GB per worker")
+  ## the largest n with (n - 1) * 1.7 + 7.9 <= 100
+  expect_lte((55 - 1) * 1.7 + 7.9, 100); expect_gt((56 - 1) * 1.7 + 7.9, 100)
+  ## not even the largest worker fits: none
+  expect_equal(capacity(memNodes(avail = 15, free = 200, cores = 400L), memPerWorkerGB = mem)$free_est, 0)
+})
+
+test_that("a booking uses the same rule, and a rebalancing cluster's own workers are added back by it", {
+  withr::local_options(clusters.reservationsPath = withr::local_tempdir(), clusters.keepFreeCores = 0)
+  id <- reserveCores(data.frame(host = c("a", "b"), assign = c(5L, 1L)), memPerWorkerGB = c(2, 9))
+  got <- liveReservations()
+  expect_equal(got$memGB, c(4 * 2 + 9, 9))
+  expect_equal(names(got), c("id", "pid", "host", "workers", "created", "memGB"))   # the ledger format is unchanged
+  clusters:::.rebookCores(id, data.frame(host = "a", assign = 3L), memPerWorkerGB = c(2, 9))
+  expect_equal(liveReservations()$memGB, 2 * 2 + 9)
+  releaseCores(id = id)
+  ## own workers on a host give back what they were budgeted at: 10 + (3 - 1) * 2 + 9 = 23 usable less 10 headroom
+  nodes <- memNodes(avail = 10, free = 200, host = "a", cores = 400L)
+  expect_equal(capacity(nodes, memPerWorkerGB = c(2, 9), own = c(a = 3))$free_est, 1 + floor((10 + 13 - 10 - 9) / 2))
+})
+
+test_that("a run with no record of its own uses the option, or no cap, never another run's figure", {
+  withr::local_options(clusters.reservationsPath = withr::local_tempdir(), clusters.keepFreeCores = 0)
+  clusters:::.recordFitMemory(list(mkMem("h", 1:3, c(1, 2, 8.5))), runName = "elf1212", id = "elf1212_1")
+  expect_true(is.na(clusters:::.memPerWorkerGB("elf922")))
+  nodes <- memNodes(avail = 110, free = 200, cores = 400L)
+  expect_equal(capacity(nodes, memPerWorkerGB = clusters:::.memPerWorkerGB("elf922"))$free_est, 200)
+  withr::local_options(clusters.workerMemoryGB = 5)
+  expect_equal(clusters:::.memPerWorkerGB("elf922"), 5)
+  expect_equal(capacity(nodes, memPerWorkerGB = clusters:::.memPerWorkerGB("elf922"))$free_est, 20)
+})
+
+test_that("a run with a record of its own uses it, whatever the option and the other runs say", {
+  withr::local_options(clusters.reservationsPath = withr::local_tempdir(), clusters.workerMemoryGB = 14)
+  clusters:::.recordFitMemory(list(mkMem("h", 1:3, c(1, 2, 8.5))), runName = "elf1212", id = "elf1212_1")
+  clusters:::.recordFitMemory(list(mkMem("h", 1:3, c(1, 1, 3))), runName = "elf922", id = "elf922_1")
+  expect_equal(clusters:::.memPerWorkerGB("elf922"), c(median = 1, max = 3))
 })

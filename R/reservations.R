@@ -148,9 +148,9 @@ reservationsPath <- function(path = getOption("clusters.reservationsPath")) {
   res[!mine | .pidAlive(res$pid), , drop = FALSE]
 }
 
-## GB booked for `assign` workers at `memPerWorkerGB` each; NA when the memory per worker is not known
+## GB booked for `assign` workers by host, budgeted as .memBudgetGB() does; NA when the memory per worker is not known
 .bookedMemoryGB <- function(assign, memPerWorkerGB)
-  as.numeric(assign) * (if (is.null(memPerWorkerGB)) NA_real_ else as.numeric(memPerWorkerGB)[1])
+  .memBudgetGB(as.numeric(assign), memPerWorkerGB)
 
 #' @rdname reservations
 #' @export
@@ -176,8 +176,9 @@ liveReservations <- function(path = getOption("clusters.reservationsPath")) {
 #'   releases are keyed by reservation rather than by process. The default is
 #'   `<nodename>:<random>`, the nodename being this machine's.
 #' @param pid Owning process id; defaults to this process.
-#' @param memPerWorkerGB GB of memory each of the workers is expected to need, booked beside the cores
-#'   (`NULL`, the default, books none).
+#' @param memPerWorkerGB GB of memory the workers are expected to need, booked beside the cores: one number
+#'   for each worker, or `c(median, max)` of the workers, so that `n` workers on a host book
+#'   `(n - 1) * median + max` (`NULL`, the default, books none).
 #' @rdname reservations
 #' @export
 reserveCores <- function(alloc, id = .newReservationId(), pid = Sys.getpid(), memPerWorkerGB = NULL,
@@ -304,7 +305,7 @@ freeCoresLessReserved <- function(nodes,
 ## Replace reservation `id`'s rows with `alloc` (`host`, `assign`), when a cluster's workers move. A host
 ## whose workers rose gets `created = now`, so builders count the new workers in full until the load
 ## average shows them (see freeCoresLessReserved()); the others keep their time. Memory is re-booked at
-## `memPerWorkerGB` a worker, or, when not given, at what each host was booked at before.
+## `memPerWorkerGB` (see reserveCores()), or, when not given, at what each host was booked at before.
 .rebookCores <- function(id, alloc, memPerWorkerGB = NULL, path = getOption("clusters.reservationsPath")) {
   alloc <- alloc[alloc$assign > 0, , drop = FALSE]
   file <- reservationsPath(path)

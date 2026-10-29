@@ -58,18 +58,41 @@
            error = function(e) none)
 }
 
-## GB each worker is expected to need, in this order:
-## 1. the largest worker memory (`memMaxGB`) of the most recent record for `runName`: the same fit, last time;
-## 2. the largest `memMaxGB` of any runName in the window: fits actually run on this cluster, so cautious;
-## 3. `getOption("clusters.workerMemoryGB")`, NA when unset: no memory cap, which is what a machine of any
+## Memory a worker is expected to need, in this order:
+## 1. `c(median = memMedianGB, max = memMaxGB)` of the most recent record for `runName`: the same fit, last
+##    time. A run's workers are far from equal (median 1.7 GB, one worker at 7.9 GB, ELF 6.6.1), so a cluster
+##    of n workers is budgeted at `(n - 1) * median + max` (see .memBudgetGB()), not n times the largest;
+## 2. `getOption("clusters.workerMemoryGB")`, NA when unset: no memory cap, which is what a machine of any
 ##    size gets until a fit has recorded something. (FireSense sets 14: measured 2026-10-09 on 15 hosts, 457
 ##    DEoptim workers' peak resident memory (VmHWM) had median 4.5 GB, 90th percentile about 6.5 GB, maximum
-##    14.1 GB.)
-## A fit's first recorded chunk replaces (3) with (1), and a running cluster re-reads it when it rebalances.
+##    14.1 GB.) A single number means every worker needs that much.
+## Another run's record is never used: 2026-10-28 a fit of ELF 9.2.2 was sized at 8.5 GB a worker from ELF 12.1_2's.
+## A fit's first recorded chunk replaces (2) with (1), and a running cluster re-reads it when it rebalances.
 .memPerWorkerGB <- function(runName = NULL, path = getOption("clusters.reservationsPath")) {
   rows <- .fitMemoryRecent(path)
   mine <- rows[rows$runName %in% as.character(runName), , drop = FALSE]
-  if (NROW(mine)) return(mine$memMaxGB[which.max(mine$time)])
-  if (NROW(rows)) return(max(rows$memMaxGB))
+  if (NROW(mine)) {
+    last <- mine[which.max(mine$time), ]
+    return(c(median = last$memMedianGB, max = last$memMaxGB))
+  }
   as.numeric(getOption("clusters.workerMemoryGB", NA_real_))[1]
+}
+
+## `mem` as from .memPerWorkerGB(): c(median, max), or one number for both
+.memMedianMax <- function(mem) {
+  mem <- if (is.null(mem)) NA_real_ else as.numeric(mem)
+  if (length(mem) < 2L) c(mem[1], mem[1]) else mem[1:2]
+}
+
+## GB that `n` workers (a vector, one per host) are budgeted at: `(n - 1) * median + max`, 0 for no workers
+.memBudgetGB <- function(n, mem) {
+  mm <- .memMedianMax(mem)
+  ifelse(n > 0, (n - 1) * mm[1] + mm[2], 0)
+}
+
+## The most workers that fit in `usableGB` (a vector, one per host): the largest n with `.memBudgetGB(n) <= usableGB`
+.memWorkersFitting <- function(usableGB, mem) {
+  mm <- .memMedianMax(mem)
+  if (mm[1] <= 0) return(ifelse(usableGB >= mm[2], Inf, 0))
+  ifelse(usableGB < mm[2], 0, 1 + floor((usableGB - mm[2]) / mm[1]))
 }

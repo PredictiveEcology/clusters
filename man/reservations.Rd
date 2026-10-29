@@ -38,8 +38,9 @@ releases are keyed by reservation rather than by process. The default is
 
 \item{pid}{Owning process id; defaults to this process.}
 
-\item{memPerWorkerGB}{GB of memory each of the workers is expected to need, booked beside the cores
-(\code{NULL}, the default, books none).}
+\item{memPerWorkerGB}{GB of memory the workers are expected to need, booked beside the cores: one number
+for each worker, or \code{c(median, max)} of the workers, so that \code{n} workers on a host book
+\code{(n - 1) * median + max} (\code{NULL}, the default, books none).}
 }
 \value{
 \code{reservationsPath()} a file path; \code{liveReservations()} a data.frame

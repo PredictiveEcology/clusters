@@ -38,11 +38,11 @@
 #' @param auto_stop Logical; auto-stop clusters on GC (default `TRUE`).
 #' @param build_final_cluster Logical; if `TRUE` launch the final cluster (default `TRUE`).
 #' @param runName Name of the fit the workers are for (the `runName` of [DEoptimIterative()]). A host gets at
-#'   most as many workers as its free memory holds, at the memory per worker this fit used the last time it
-#'   ran (`memMaxGB` of its latest record in `fitMemory.rds`, beside the reservations ledger). With no record
-#'   for it, the largest `memMaxGB` of any fit in the window (`options(clusters.hostSpeedDays)`), and with no
-#'   records at all `options(clusters.workerMemoryGB)`; when that is unset (the default) no host is capped by
-#'   memory. For FireSense DEoptim workers 14 fits: peak memory was median 4.5 GB, 90th percentile about
+#'   most as many workers as its free memory holds: `n` workers are budgeted at `(n - 1) * memMedianGB +
+#'   memMaxGB` of this fit's latest record in `fitMemory.rds` (beside the reservations ledger), its last run's
+#'   median and largest worker. With no record for it, each worker is budgeted at
+#'   `options(clusters.workerMemoryGB)` (another fit's record is never used); when that is unset (the
+#'   default) no host is capped by memory. For FireSense DEoptim workers 14 fits: peak memory was median 4.5 GB, 90th percentile about
 #'   6.5 GB, maximum 14.1 GB (457 workers on 15 hosts, 2026-10-09).
 #'   Every host keeps `options(clusters.memoryHeadroom)` (default 0.1) of its memory free.
 #'
@@ -544,9 +544,9 @@ plan_psock_min <- function(
 ## has neither.
 ##
 ## Memory limits the cores too, when the memory per worker is known (`memPerWorkerGB`, see
-## .memPerWorkerGB()): a host keeps `getOption("clusters.memoryHeadroom", 0.1)` of its memory free, and its
-## workers are at most floor((available memory - headroom) / memPerWorkerGB): what the host uses now plus the
-## new workers stays within 0.9 of its memory. Available memory is the probed MemAvailable, less what other
+## .memPerWorkerGB(); one number, or `c(median, max)`): a host keeps `getOption("clusters.memoryHeadroom", 0.1)`
+## of its memory free, and its workers are at most the largest n with `(n - 1) * median + max <= available
+## memory - headroom` (see .memBudgetGB()): what the host uses now plus the new workers stays within 0.9 of its memory. Available memory is the probed MemAvailable, less what other
 ## builds booked and their workers have not yet grown into (see freeCoresLessReserved()), plus what `own`
 ## workers use. `ram_lost` is the cores memory took away.
 ##
@@ -557,12 +557,12 @@ plan_psock_min <- function(
 ## that is not a cluster of workers (reserveCapacity()) does not.
 .fitCapacity <- function(nodes, total, load_memory, own = NULL, ownId = NULL, memPerWorkerGB = NA_real_,
                          beta = 0.75, speeds = .readHostSpeeds(), capWorkers = TRUE) {
-  memPerWorkerGB <- if (is.null(memPerWorkerGB)) NA_real_ else as.numeric(memPerWorkerGB)[1]
-  useMemory <- !is.na(memPerWorkerGB) && all(c("mem_available_gb", "mem_total_gb") %in% names(nodes))
+  mem <- .memMedianMax(memPerWorkerGB)
+  useMemory <- !anyNA(mem) && all(c("mem_available_gb", "mem_total_gb") %in% names(nodes))
   mine <- if (length(own)) as.numeric(own[nodes$host]) else rep(NA_real_, NROW(nodes))
   mine[is.na(mine)] <- 0
   nodes$free_est <- as.numeric(nodes$free_est) + mine
-  if (useMemory) nodes$mem_free_gb <- as.numeric(nodes$mem_available_gb) + mine * memPerWorkerGB
+  if (useMemory) nodes$mem_free_gb <- as.numeric(nodes$mem_available_gb) + .memBudgetGB(mine, mem)
   load <- nodes[[paste0("loadavg_", sub("min$", "", load_memory))]]
   nodes$busy <- round(pmax(if (is.null(load)) 0 else as.numeric(load) - mine, 0))
   # freeCores() reads a trailing load average, so a cluster built moments ago
@@ -597,12 +597,14 @@ plan_psock_min <- function(
   nodes$ram_lost <- 0
   if (useMemory) {
     headroom <- getOption("clusters.memoryHeadroom", 0.1) * as.numeric(nodes$mem_total_gb)
-    byMemory <- pmax(floor((nodes$mem_free_gb - headroom) / memPerWorkerGB), 0)
+    byMemory <- .memWorkersFitting(nodes$mem_free_gb - headroom, mem)
     capped <- !is.na(byMemory) & byMemory < floor(nodes$free_est)   # a host that cannot say is not capped
     nodes$ram_lost[capped] <- floor(nodes$free_est[capped]) - byMemory[capped]
     nodes$free_est[capped] <- byMemory[capped]
     if (any(capped))
-      message("Workers limited by free memory (", round(memPerWorkerGB, 1), " GB per worker): ",
+      message("Workers limited by free memory (",
+              if (mem[1] == mem[2]) paste(round(mem[2], 1), "GB per worker")
+              else paste0("median ", round(mem[1], 1), " GB, largest ", round(mem[2], 1), " GB per worker"), "): ",
               paste0(nodes$host[capped], "=", byMemory[capped], " (", round(nodes$mem_free_gb[capped]), " GB free)",
                      collapse = ", "))
   }

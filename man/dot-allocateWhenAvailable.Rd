@@ -15,9 +15,7 @@
   now = Sys.time,
   book = NULL,
   allocate = NULL,
-  what = "workers",
-  memoryCapSeconds = 1800,
-  memoryCapFraction = 0.9
+  what = "workers"
 )
 }
 \arguments{
@@ -50,12 +48,6 @@ allocation and booking runs under one lock shared with every other build and reb
 nothing, so \code{minFraction} does not apply and the error does not suggest it.}
 
 \item{what}{What is counted in the messages: \code{"workers"} (the default) or \code{"cores"}.}
-
-\item{memoryCapSeconds, memoryCapFraction}{Memory the host never frees is not waited for. When no other
-cluster holds workers on any host, memory is what keeps workers off, and the number that can start
-has not changed for \code{memoryCapSeconds}, the build starts with them if they are at least
-\code{memoryCapFraction} of \code{total}. FireSense fits on a Slurm node with 450 GB, at 10 GB per worker,
-could start 39 of 40 workers and waited 8 hours for the 40th (2026-10-30: ELFs 5.3.2 and 7.1 stopped).}
 }
 \value{
 The allocation data.frame from \code{\link[=.speedAllocate]{.speedAllocate()}} (or \code{allocate}).

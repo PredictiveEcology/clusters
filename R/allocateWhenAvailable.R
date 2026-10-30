@@ -26,11 +26,6 @@
 #'   [DEoptimIterative()] seven minutes later instead of waiting (FireSense fit 12.3, 2026-10-12).
 #' @param waitSeconds How long to keep waiting (`options(clusters.waitForCores)`).
 #' @param interval Seconds between probes.
-#' @param memoryCapSeconds,memoryCapFraction Memory the host never frees is not waited for. When no other
-#'   cluster holds workers on any host, memory is what keeps workers off, and the number that can start
-#'   has not changed for `memoryCapSeconds`, the build starts with them if they are at least
-#'   `memoryCapFraction` of `total`. FireSense fits on a Slurm node with 450 GB, at 10 GB per worker,
-#'   could start 39 of 40 workers and waited 8 hours for the 40th (2026-10-30: ELFs 5.3.2 and 7.1 stopped).
 #' @param sleep,now Clock functions, replaceable in tests.
 #' @param book `NULL`, or a function of the allocation that books it (see [reserveCores()]). Each probe,
 #'   allocation and booking runs under one lock shared with every other build and rebalance
@@ -45,8 +40,7 @@
                                    minFraction = getOption("clusters.minWorkersFraction", 1),
                                    waitSeconds = .clustersOption("waitForCores"),
                                    interval = 60, sleep = Sys.sleep, now = Sys.time, book = NULL,
-                                   allocate = NULL, what = "workers",
-                                   memoryCapSeconds = 1800, memoryCapFraction = 0.9) {
+                                   allocate = NULL, what = "workers") {
   stopifnot(is.function(probe), is.numeric(minFraction), length(minFraction) == 1L,
             minFraction > 0, minFraction <= 1)
   partial <- is.null(allocate)
@@ -61,26 +55,10 @@
     if (got >= needed && is.function(book)) book(alloc)
     list(nodes = nodes, alloc = alloc, got = got)
   }
-  steadyGot <- NA_integer_
-  steadySince <- started
   repeat {
     a <- if (is.function(book)) .withAllocationLock(attempt()) else attempt()
     nodes <- a$nodes; alloc <- a$alloc; got <- a$got
     if (got >= needed) return(alloc)
-
-    if (!identical(got, steadyGot)) {
-      steadyGot <- got
-      steadySince <- now()
-    }
-    othersHold <- !is.null(nodes$reserved) && any(nodes$reserved > 0)
-    memoryBound <- !is.null(nodes$ram_lost) && any(nodes$ram_lost > 0)
-    if (partial && memoryBound && !othersHold && got >= ceiling(memoryCapFraction * total) &&
-        as.numeric(difftime(now(), steadySince, units = "secs")) >= memoryCapSeconds) {
-      message("Starting with ", got, " of ", total, " ", what, ": free memory keeps the rest off, no other ",
-              "cluster holds any, and it has not changed for ", memoryCapSeconds %/% 60, " min")
-      needed <- got
-      next
-    }
 
     freeByHost <- paste0(nodes$host, "=", nodes$free_est, "/", nodes$cores_total, collapse = ", ")
     ## when memory, not cores, is what is short, say so

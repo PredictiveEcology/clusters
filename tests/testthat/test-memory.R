@@ -142,6 +142,30 @@ test_that("workers lost to memory are waited for like cores, and the messages na
                "could only get")
 })
 
+test_that("memory that stays short with nothing else running does not stop a build for good", {
+  withr::local_options(clusters.keepFreeCores = 0, clusters.reservationsPath = withr::local_tempdir())
+  ## 40 cores, but memory for 39 of 40 workers; no other cluster
+  nodes <- capacity(memNodes(avail = 39 * 4 + 10, free = 40), memPerWorkerGB = 4)
+  expect_equal(nodes$free_est, 39)
+  nodes$reserved <- 0
+  clock <- fakeClock()
+  a <- suppressMessages(clusters:::.allocateWhenAvailable(function() nodes, total = 40, waitSeconds = 8 * 3600,
+                                                          sleep = clock$sleep, now = clock$now))
+  expect_equal(sum(a$assign), 39L)
+  expect_gte(clock$sleeps(), 30L)   # it did wait first: 30 min at 60 s
+  ## another cluster holding workers is a reason to keep waiting
+  nodes$reserved <- 5
+  expect_error(suppressMessages(clusters:::.allocateWhenAvailable(function() nodes, total = 40, waitSeconds = 7200,
+                                                                  sleep = clock$sleep, now = clock$now)),
+               "could only get 39 of 40")
+  ## and so is a shortfall too large to call a cap (30 of 40)
+  low <- capacity(memNodes(avail = 30 * 4 + 10, free = 40), memPerWorkerGB = 4)
+  low$reserved <- 0
+  expect_error(suppressMessages(clusters:::.allocateWhenAvailable(function() low, total = 40, waitSeconds = 7200,
+                                                                  sleep = clock$sleep, now = clock$now)),
+               "could only get 30 of 40")
+})
+
 test_that("each evaluation records its worker's peak memory", {
   skip_if_not(file.exists("/proc/self/status"))
   expect_gt(clusters:::.peakRssGB(), 0.01)

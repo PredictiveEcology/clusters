@@ -10,7 +10,8 @@ skip_if(nzchar(tolower(Sys.getenv("_R_CHECK_LIMIT_CORES_"))) &&
         "R CMD check limits child processes to 2")
 
 for (f in c(".replaceDeadNodes", ".deadNodes", ".runWithRebuild", ".setWorkerTimeout", ".stopNodes",
-            ".stopCluster", ".workerTimeout", ".sshTunnelOpts", ".restartClusterFn", ".nodeHosts"))
+            ".stopCluster", ".workerTimeout", ".sshTunnelOpts", ".restartClusterFn", ".nodeHosts",
+            ".shipToWorkers"))
   assign(f, getFromNamespace(f, "clusters"))
 
 localCluster <- function(n) {
@@ -135,10 +136,19 @@ test_that("a worker stopped mid-evaluation: the call returns on a rebuilt cluste
 
 ## A rebuild whose hosts are named by `cores`; workers are local, labelled with the host they stand for.
 ## `startNodes(hosts, autoStop)` is what plan_psock_min() gives .restartClusterFn(); the real one needs ssh.
-fakeRebuild <- function(cores, reachable, failStart = character(0), env = parent.frame()) {
-  ## what is sent to the workers needs ssh and rsync for a host that is not this one
-  testthat::local_mocked_bindings(.shipToWorkers = function(cl, cores, ...) invisible(cl), .package = "clusters",
-                                  .env = env)
+## With `objsNeeded`, these objects of `env` are sent to the workers as clusterSetup() sends them; the rsync
+## to a labelled host does nothing, and the workers read the master's copy (see readTransferredObjects()).
+fakeRebuild <- function(cores, reachable, failStart = character(0), env = parent.frame(), objsNeeded = NULL) {
+  if (is.null(objsNeeded)) {
+    ## what is sent to the workers needs ssh and rsync for a host that is not this one
+    testthat::local_mocked_bindings(.shipToWorkers = function(cl, cores, ...) invisible(cl), .package = "clusters",
+                                    .env = env)
+  } else {
+    bin <- withr::local_tempdir(.local_envir = env)
+    writeLines(c("#!/bin/sh", "exit 0"), file.path(bin, "rsync"))
+    Sys.chmod(file.path(bin, "rsync"), "755")
+    withr::local_path(bin, action = "prefix", .local_envir = env)
+  }
   started <- character(0)
   startNodes <- function(hosts, autoStop = TRUE) {
     if (any(hosts %in% failStart)) stop("Failed to launch and connect to R worker on remote machine '",
@@ -148,10 +158,20 @@ fakeRebuild <- function(cores, reachable, failStart = character(0), env = parent
     for (i in seq_along(cl)) cl[[i]]$host <- hosts[i]
     cl
   }
-  restart <- .restartClusterFn(startNodes, cores, character(0), character(0), environment(), digest = NULL,
+  restart <- .restartClusterFn(startNodes, cores, character(0), as.list(objsNeeded), env, digest = NULL,
                                token = NULL, probe = function(host) host %in% reachable)
-  list(restart = restart, started = function() started)
+  list(restart = restart, started = function() started, startNodes = startNodes)
 }
+
+## FireSense, 2026-11-02: a rebuild kept every worker of its first host but only one of each other host, so
+## the 40 workers of a fit on 15 hosts came back as far fewer, and sending them the fit's objects reached
+## a NULL node (see the DEoptimIterative() test below).
+test_that("a rebuild starts every worker of every host", {
+  fake <- fakeRebuild(c("hostA", "hostB", "hostB"), reachable = c("hostA", "hostB"))
+  new <- suppressMessages(fake$restart(localTestCluster(3L, stop = .stopCluster)))
+  expect_identical(.nodeHosts(new), "hostA x1, hostB x2")
+  expect_equal(unlist(parallel::clusterCall(new, function() 1L)), c(1L, 1L, 1L))
+})
 
 test_that("a rebuild leaves out a host that does not answer, and says how many workers that cost", {
   cores <- c("hostA", "hostA", "hostB", "hostB", "hostB")
@@ -339,4 +359,49 @@ test_that(".nodeAnswers() sends a ping that does not carry the cluster", {
   expect_true(is.function(sent))
   expect_identical(environment(sent), globalenv())
   expect_lt(length(serialize(sent, NULL)), 1e6)   # the stored call stack alone is 8 MB; srcrefs under load_all() ~0.2 MB
+})
+
+## FireSense, 2026-11-02: the workers of two hosts were killed (SIGTERM) mid-generation; the rebuilt cluster
+## lacked workers (see "a rebuild starts every worker of every host"), sending it the fit's objects failed on
+## a NULL node ("no applicable method for 'sendData'"), the fallback left replies unread on the others, and
+## DEoptim then failed with "objective function result has different length than parameter matrix".
+test_that("DEoptimIterative() goes on when the workers of one host are killed, on a cluster of several hosts", {
+  skip_if_not_installed("DEoptim")
+  skip_if(isTRUE(parallel::detectCores() < 4L), "needs 4 cores")
+  lower <- c(a = 0, b = 0, c = 0); upper <- c(a = 1, b = 1, c = 1)
+  ## the two runs differ only in what is killed: the second must not replay the first's generations
+  withr::local_options(clusters.workerTimeout = 20, clusters.cacheDEoptimIterations = FALSE,
+                       reproducible.useCache = FALSE, reproducible.cachePath = withr::local_tempdir())
+  cores <- c("hostA", "hostB", "hostB", "hostC")
+  shipped <- 0.3
+  flag <- withr::local_tempfile()
+  pidFile <- withr::local_tempfile()
+  fake <- fakeRebuild(cores, reachable = cores, objsNeeded = "shipped")
+  fn <- function(par, flag, pidFile) {
+    if (!file.exists(flag) && file.exists(pidFile) && par[1] > 0.5) {
+      file.create(flag)
+      for (p in as.integer(readLines(pidFile))) tools::pskill(p, tools::SIGTERM)
+    }
+    sum((par - shipped)^2)
+  }
+  environment(fn) <- globalenv()   # `shipped` is the copy sent to each worker
+  testEnv <- environment()
+  run <- function(kill) {
+    cl <- fake$startNodes(cores)
+    suppressMessages(.shipToWorkers(cl, cores, character(0), list("shipped"), testEnv))
+    .setWorkerTimeout(cl)
+    attr(cl, "restartCluster") <- fake$restart
+    if (kill) writeLines(as.character(unlist(parallel::clusterCall(cl[2:3], Sys.getpid))), pidFile)
+    set.seed(42)
+    suppressWarnings(suppressMessages(clusters::DEoptimIterative(
+      fn, lower = lower, upper = upper,
+      control = list(NP = 4L, strategy = 2L, itermax = 3, trace = FALSE, cluster = cl),
+      flag = flag, pidFile = pidFile,
+      figurePath = FALSE, progressFile = FALSE, .plots = NULL, runName = "hosts", .verbose = -1)))
+  }
+  clean <- run(FALSE)
+  withKill <- run(TRUE)
+  expect_true(file.exists(flag))                          # the workers of hostB were killed
+  expect_equal(withKill[[3]]$optim$bestmem, clean[[3]]$optim$bestmem)
+  expect_equal(withKill[[3]]$member$pop, clean[[3]]$member$pop)
 })

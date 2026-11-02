@@ -661,13 +661,16 @@ makeClusterPSOCK <- function(
 ## started in one call: the block plus these ends below the ephemeral range (see .tunnelPortBlock()).
 .portsForNodes <- function(block, nNodes) union(block, max(block) + seq_len(nNodes - 1L))
 
-## Add the one node cluster `node` to `cl` (NULL for the first), keeping what autoStop needs: parallelly's
+## Add the nodes of the cluster `node` to `cl` (NULL for the first), keeping what autoStop needs: parallelly's
 ## garbage-collection stop (see .disarmAutoStop()) of the combined cluster, and not of the pieces.
+## Every node: .startReachable() adds a host's workers as one piece. Adding only the first lost the others of
+## every host after the first, and the fit's objects then reached a NULL node (FireSense, 2026-11-02: 11 of
+## 13 fits failed after a rebuild, with "objective function result has different length than parameter matrix").
 .addNode <- function(cl, node) {
   if (is.null(cl)) return(node)
   gcMe <- attr(cl, "gcMe")
   .disarmAutoStop(node)
-  cl[[length(cl) + 1L]] <- node[[1]]
+  for (k in seq_along(node)) cl[[length(cl) + 1L]] <- node[[k]]
   if (is.environment(gcMe)) gcMe$cluster <- cl
   cl
 }

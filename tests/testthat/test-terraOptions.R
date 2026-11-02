@@ -47,10 +47,11 @@ test_that("mirrorTerraOptions sends the settings, not the cluster", {
   ## Every worker received 9.6 GB, one worker at a time.
   skip_on_cran()
   skip_if_not_installed("terra")
-  cl <- try(do.call(function(big) parallelly::makeClusterPSOCK(1L, autoStop = TRUE),
-                    list(big = runif(2e6))), silent = TRUE)
+  cl <- try(parallelly::makeClusterPSOCK(1L, autoStop = TRUE), silent = TRUE)
   skip_if(inherits(cl, "try-error"), "cannot start a local cluster")
   on.exit(clusters:::.stopCluster(cl), add = TRUE)   # autoStop: see .disarmAutoStop()
+  ## made large here: parallelly >= 1.50.0 no longer keeps the call stack in each node (2026-11-02, CI)
+  attr(cl, "ballast") <- runif(2e6)
   ## the premise: this cluster object is large
   expect_gt(length(serialize(cl, NULL)), 10 * 2^20)
 

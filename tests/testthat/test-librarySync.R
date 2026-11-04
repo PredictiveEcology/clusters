@@ -71,3 +71,49 @@ test_that("probe-cluster teardown cannot mask the outcome, prefix needs one ship
   expect_false(grepl("length\\(existing\\) <= 1L", src))
   expect_match(src, "clustersOption\\(\"waitForCores\"\\)")
 })
+
+test_that("every user library is mirrored to a remote host, in order; R's own is not", {
+  dev <- withr::local_tempdir(); stable <- withr::local_tempdir()
+  calls <- list()
+  fake <- function(cmd, args, ...) { calls[[length(calls) + 1L]] <<- args; list(status = 0L, tries = 1L, log = "") }
+  libs <- clusters:::.shippableLibs(c(dev, stable, .Library))
+  expect_equal(libs, c(dev, stable))
+  clusters:::.syncLibraries(libs, "h1", "rsync", run = fake)
+  expect_length(calls, 2L)
+  expect_equal(calls[[1]], c("-a", "--delete", shQuote(paste0(dev, "/")), shQuote(paste0("h1:", dev, "/"))))
+  expect_equal(calls[[2]], c("-a", "--delete", shQuote(paste0(stable, "/")), shQuote(paste0("h1:", stable, "/"))))
+})
+
+test_that("a single libPath gives the one rsync call it always did", {
+  one <- withr::local_tempdir()
+  calls <- list()
+  fake <- function(cmd, args, ...) { calls[[length(calls) + 1L]] <<- args; list(status = 0L, tries = 1L, log = "") }
+  clusters:::.syncLibraries(clusters:::.shippableLibs(one), "h1", "rsync", run = fake)
+  expect_length(calls, 1L)
+  expect_equal(calls[[1]], c("-a", "--delete", shQuote(paste0(one, "/")), shQuote(paste0("h1:", one, "/"))))
+})
+
+test_that("a failed rsync of the second library stops with its name", {
+  a <- withr::local_tempdir(); b <- withr::local_tempdir()
+  fake <- function(cmd, args, ...) list(status = if (grepl(b, args[3], fixed = TRUE)) 23L else 0L, tries = 3L, log = "boom")
+  expect_error(clusters:::.syncLibraries(c(a, b), "h1", "rsync", run = fake), b, fixed = TRUE)
+})
+
+test_that("plan_psock_min() creates and mirrors every shippable library", {
+  src <- paste(deparse(clusters:::plan_psock_min), collapse = "\n")
+  expect_match(src, "shipLibs <- \\.shippableLibs\\(master_libs\\)")
+  expect_match(src, "\\.syncLibraries\\(shipLibs")
+  expect_false(grepl("dir.exists\\(master_libs\\[1\\]", src))
+})
+
+test_that("a worker's .libPaths() starts with the master libraries, in order, ahead of the per-user library", {
+  skip_on_os("windows")
+  dev <- withr::local_tempdir(); stable <- withr::local_tempdir()
+  userLib <- file.path(withr::local_tempdir(), "userlib")
+  script <- withr::local_tempfile(fileext = ".R")
+  writeLines(c(clusters:::.workerStartupLines(c(dev, stable)),
+               "cat(.libPaths()[1:3], sep = '\\n')"), script)
+  out <- system2(file.path(R.home("bin"), "Rscript"), script, stdout = TRUE,
+                 env = paste0("R_LIBS_USER=", userLib))
+  expect_equal(normalizePath(out), normalizePath(c(dev, stable, userLib)))
+})

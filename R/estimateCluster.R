@@ -102,20 +102,16 @@ plan_psock_min <- function(
   # Propagate master .libPaths() (assumes identical FS layout across hosts)
   master_libs <- if (is.null(libPath)) .libPaths() else libPath
   
+  ## the libraries mirrored to the other hosts: all of the master's, but R's own
+  shipLibs <- .shippableLibs(master_libs)
+
   rscript_envs <- c(R_LIBS_USER = user_lib_template)
   # This R's Rscript when every host is this machine (see .localRscript), and one OpenBLAS thread per
   # worker; the cap must prefix the command (see ?.workerRscript).
   rscript <- .workerRscript(.localRscript(rscript, hosts))
 
-  # Single-line startup: set master libs + create per-user library, prepend it
-  startup_lines <- c(
-    sprintf('master_libs <- c(%s)', paste(sprintf('"%s"', master_libs), collapse = ", ")),
-    'if (length(master_libs) > 0) .libPaths(c(master_libs, .libPaths()))',
-    'user_lib_raw <- Sys.getenv("R_LIBS_USER")',
-    'user_lib <- normalizePath(path.expand(gsub("%v", paste(R.version$major, R.version$minor, sep="."), user_lib_raw)), mustWork = FALSE)',
-    'dir.create(user_lib, recursive = TRUE, showWarnings = FALSE)',
-    '.libPaths(c(user_lib, .libPaths()))'
-  )
+  # Worker startup: master libs first, in order, then the per-user library
+  startup_lines <- .workerStartupLines(master_libs)
   
   ## GB per worker, looked up when asked: a fit's first chunk records it, and a running cluster
   ## deciding where its workers belong (.rebalanceFn()) should use what it has recorded since
@@ -182,7 +178,7 @@ plan_psock_min <- function(
     #   #                                    # , rscript = c("nice", RscriptPath)
     #   # )
     # })
-    parallel::clusterExport(cl_probe, list("master_libs", "pkgsNeeded"),
+    parallel::clusterExport(cl_probe, list("master_libs", "pkgsNeeded", "shipLibs"),
                             envir = environment())
     
     # The master library is mirrored to every host below and other jobs may be
@@ -201,30 +197,15 @@ plan_psock_min <- function(
     parallel::clusterEvalQ(cl_probe, {
       # If this is first time that packages need to be installed for this user on this machine
       #   there won't be a folder present that is writable
-      if (!dir.exists(master_libs[1])) {
-        dir.create(master_libs[1], recursive = TRUE)
-      }
+      for (lib in shipLibs) if (!dir.exists(lib)) dir.create(lib, recursive = TRUE)
     })
     
     message("Setting up packages on the cluster...")
-    out <- lapply(setdiff(coresUnique, "localhost"), function(ip) {
+    lapply(setdiff(coresUnique, "localhost"), function(ip) {
       rsync <- Sys.which("rsync")
       if (!nzchar(rsync))
         stop("rsync not found on PATH; it is required to sync the project library to ", ip)
-      # NOTE: deliberately NOT `--update`. That flag skips files that are newer on
-      # the receiver, so a downgrade on the master would never propagate and a
-      # stale-but-newer remote copy would win. The master is the single source of
-      # truth for what the workers run, so mirror the whole library exactly
-      # (`--delete` prunes what the master no longer has). Whole, not a computed
-      # subset: a subset cannot promise the invariant in the error below.
-      res <- .runWithRetry(rsync, c("-a", "--delete",
-                                    shQuote(paste0(master_libs[1], "/")),
-                                    shQuote(paste0(ip, ":", master_libs[1], "/"))))
-      if (!identical(res$status, 0L))
-        stop("rsync of the project library to '", ip, "' failed (exit ", res$status,
-             ") after ", res$tries, " attempt(s): ", res$log, ". ",
-             "Workers there would run a different library than the master.")
-      res$status
+      .syncLibraries(shipLibs, ip, rsync)
     })
     
     # Nothing is installed on the hosts either: the mirror above is complete, and

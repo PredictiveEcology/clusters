@@ -41,7 +41,7 @@ cluster and no \code{NP}, \code{NP} is its number of rows.}
 
 \item{logPath}{Path for worker output (\code{outfile} of the PSOCK cluster). Each host writes its own copy.}
 
-\item{libPath}{The project library. This is the master copy: it is mirrored to every host, and workers load from it.}
+\item{libPath}{The project library, or several (a dev library, then a stable one): the master copy. Each, except R's own, is mirrored to every host in order, and workers load from them.}
 
 \item{objsNeeded}{Character vector naming objects in \code{envir} to send to the workers.}
 

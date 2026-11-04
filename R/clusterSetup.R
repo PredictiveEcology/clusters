@@ -24,7 +24,7 @@
 #' @param NP Integer; number of population members. Defaults to DEoptim's own rule when `NULL`.
 #' @param cores Character vector of host names, a host named more than once asks for that many workers in all (the planner places them, see [plan_psock_min()]), or a number for that many on localhost.
 #' @param logPath Path for worker output (`outfile` of the PSOCK cluster). Each host writes its own copy.
-#' @param libPath The project library. This is the master copy: it is mirrored to every host, and workers load from it.
+#' @param libPath The project library, or several (a dev library, then a stable one): the master copy. Each, except R's own, is mirrored to every host in order, and workers load from them.
 #' @param objsNeeded Character vector naming objects in `envir` to send to the workers.
 #' @param pkgsNeeded Character vector of packages the workers must be able to load. Hosts that cannot are reported by [verifyClusterHosts()].
 #' @param nCoresNeeded Integer; how many workers to aim for across all hosts.

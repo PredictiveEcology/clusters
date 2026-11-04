@@ -22,3 +22,26 @@
   list(status = as.integer(status), tries = tries,
        log = paste(utils::tail(out, 5), collapse = " | "))
 }
+
+## The libraries of `libs` that belong to the user, in order: everything but R's
+## own (.Library, .Library.site), which every host has. A run may have a dev
+## library first and a frozen stable one behind it; all are mirrored.
+.shippableLibs <- function(libs) {
+  own <- normalizePath(c(.Library, .Library.site, R.home("library")), mustWork = FALSE)
+  libs[!normalizePath(libs, mustWork = FALSE) %in% own]
+}
+
+## Mirror each of `libs`, in order, to `host` at the same path. Not `--update`
+## and with `--delete`: the master is the truth for what the workers run.
+## Stops at the first library that fails.
+.syncLibraries <- function(libs, host, rsync, run = .runWithRetry) {
+  for (lib in libs) {
+    res <- run(rsync, c("-a", "--delete", shQuote(paste0(lib, "/")),
+                        shQuote(paste0(host, ":", lib, "/"))))
+    if (!identical(res$status, 0L))
+      stop("rsync of the project library '", lib, "' to '", host, "' failed (exit ", res$status,
+           ") after ", res$tries, " attempt(s): ", res$log, ". ",
+           "Workers there would run a different library than the master.")
+  }
+  invisible(libs)
+}

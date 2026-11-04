@@ -110,15 +110,8 @@ plan_psock_min <- function(
   # worker; the cap must prefix the command (see ?.workerRscript).
   rscript <- .workerRscript(.localRscript(rscript, hosts))
 
-  # Single-line startup: set master libs + create per-user library, prepend it
-  startup_lines <- c(
-    sprintf('master_libs <- c(%s)', paste(sprintf('"%s"', master_libs), collapse = ", ")),
-    'if (length(master_libs) > 0) .libPaths(c(master_libs, .libPaths()))',
-    'user_lib_raw <- Sys.getenv("R_LIBS_USER")',
-    'user_lib <- normalizePath(path.expand(gsub("%v", paste(R.version$major, R.version$minor, sep="."), user_lib_raw)), mustWork = FALSE)',
-    'dir.create(user_lib, recursive = TRUE, showWarnings = FALSE)',
-    '.libPaths(c(user_lib, .libPaths()))'
-  )
+  # Worker startup: master libs first, in order, then the per-user library
+  startup_lines <- .workerStartupLines(master_libs)
   
   ## GB per worker, looked up when asked: a fit's first chunk records it, and a running cluster
   ## deciding where its workers belong (.rebalanceFn()) should use what it has recorded since

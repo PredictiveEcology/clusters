@@ -105,3 +105,15 @@ test_that("plan_psock_min() creates and mirrors every shippable library", {
   expect_match(src, "\\.syncLibraries\\(shipLibs")
   expect_false(grepl("dir.exists\\(master_libs\\[1\\]", src))
 })
+
+test_that("a worker's .libPaths() starts with the master libraries, in order, ahead of the per-user library", {
+  skip_on_os("windows")
+  dev <- withr::local_tempdir(); stable <- withr::local_tempdir()
+  userLib <- file.path(withr::local_tempdir(), "userlib")
+  script <- withr::local_tempfile(fileext = ".R")
+  writeLines(c(clusters:::.workerStartupLines(c(dev, stable)),
+               "cat(.libPaths()[1:3], sep = '\\n')"), script)
+  out <- system2(file.path(R.home("bin"), "Rscript"), script, stdout = TRUE,
+                 env = paste0("R_LIBS_USER=", userLib))
+  expect_equal(normalizePath(out), normalizePath(c(dev, stable, userLib)))
+})

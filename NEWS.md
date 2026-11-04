@@ -1,6 +1,6 @@
 # clusters (development version)
 
-* `plan_psock_min()` mirrors every library of `libPath` (or `.libPaths()`) to the other hosts, in order, not only the first; R's own library is skipped. A single `libPath` behaves as before.
+* `plan_psock_min()` mirrors every library of `libPath` (or `.libPaths()`) to the other hosts, in order, not only the first; R's own library is skipped. A single `libPath` behaves as before. A worker's `.libPaths()` now starts with those libraries, in order; the per-user library (`R_LIBS_USER`) comes after them, not first, so what is installed there no longer shadows the run's libraries.
 
 * Fixed: a cluster rebuilt after a worker died mid-fit kept every worker of its first host but only one of each other host (`.addNode()` added only the first node of the piece `.startReachable()` gave it). Sending the fit's objects to the rebuilt cluster then reached a NULL node ("no applicable method for 'sendData'"), the `clusterExport()` fallback left replies unread on the other workers, and DEoptim failed with "objective function result has different length than parameter matrix" (FireSense, 2026-11-02: 11 of 13 fits failed after the workers of two hosts were killed). The rebuilt cluster now has every worker it started.
 

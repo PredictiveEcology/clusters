@@ -45,3 +45,14 @@
   }
   invisible(libs)
 }
+
+## The lines a worker runs at startup: create the per-user library if needed, then
+## put the master's libraries first, in order, and the per-user one after them, so
+## nothing installed there shadows the run's libraries (dev before stable).
+.workerStartupLines <- function(master_libs) c(
+  sprintf('master_libs <- c(%s)', paste(sprintf('"%s"', master_libs), collapse = ", ")),
+  'user_lib_raw <- Sys.getenv("R_LIBS_USER")',
+  'user_lib <- normalizePath(path.expand(gsub("%v", paste(R.version$major, R.version$minor, sep="."), user_lib_raw)), mustWork = FALSE)',
+  'dir.create(user_lib, recursive = TRUE, showWarnings = FALSE)',
+  '.libPaths(c(master_libs, user_lib, .libPaths()))'
+)

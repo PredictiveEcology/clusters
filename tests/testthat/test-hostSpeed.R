@@ -121,3 +121,55 @@ test_that("each row records the workers every cluster had booked on the host, by
   withr::local_options(clusters.useReservations = FALSE)
   expect_null(.bookedByNodename(cl))
 })
+
+## The shared ledgers were read and rewritten after every generation: 2.9 s with all workers idle at 367k rows.
+
+test_that("records kept in memory and flushed leave the ledger a write per record would", {
+  recs <- list(list(mkEv(c("a", "a", "b"), c(1, 1, 3)), "r1"), list(mkEv("a", 2), "r2"),
+               list(mkEv(c("a", "b"), c(1, 2)), "r1"))
+  run <- function(pending) {
+    d <- withr::local_tempdir()
+    withr::local_options(clusters.reservationsPath = d, clusters.hostSpeedDays = 30)
+    saveRDS(data.frame(host = "old", n = 3L, median = 1, p90 = 2, ratio = 1, time = Sys.time(), id = "r0",
+                       workers = 1L, booked = NA_integer_, stringsAsFactors = FALSE), .hostSpeedFile())
+    for (r in recs) {
+      .recordHostSpeed(r[[1]], id = r[[2]], pending = pending)
+      .recordFitMemory(list(transform(r[[1]], peakGB = 1)), runName = "x", id = r[[2]], pending = pending)
+    }
+    if (is.environment(pending)) {
+      expect_equal(nrow(readRDS(.hostSpeedFile())), 1L)   # nothing written yet
+      .flushRecords(pending)
+    }
+    lapply(list(.hostSpeedFile(), .fitMemoryFile()), function(f) { x <- readRDS(f); x$time <- NULL; x })
+  }
+  expect_equal(run(new.env()), run(NULL))
+})
+
+test_that("a fit writes the ledgers at each rebalance and at its end, not after each generation", {
+  skip_on_cran()
+  skip_if_not_installed("DEoptim")
+  d <- withr::local_tempdir()
+  withr::local_options(clusters.reservationsPath = d, reproducible.cachePath = withr::local_tempdir(),
+                       clusters.rebalanceEvery = 3L)
+  cl <- localTestCluster(2)
+  seen <- integer(0)
+  attr(cl, "rebalance") <- function(cl) { seen <<- c(seen, nrow(.readHostSpeeds())); cl }
+  writes <- character(0)
+  replaceRecords <- .replaceRecords
+  testthat::local_mocked_bindings(.replaceRecords = function(file, new, columns, pending = NULL) {
+    if (is.null(pending)) writes <<- c(writes, basename(file))   # a write to the shared file
+    replaceRecords(file, new, columns, pending)
+  })
+  N <- 8L
+  fn <- function(par) sum((par - 0.3)^2)
+  suppressWarnings(suppressMessages(
+    clusters:::DEoptimIterative(fn, lower = c(a = 0, b = 0), upper = c(a = 1, b = 1),
+                                control = list(NP = 8L, itermax = N, trace = FALSE, cluster = cl),
+                                figurePath = FALSE, progressFile = FALSE, .plots = NULL,
+                                cachePath = withr::local_tempdir(), runName = "hs", .verbose = -1)))
+  expect_lte(sum(writes == "hostSpeed.rds"), ceiling(N / 3) + 1L)
+  expect_lte(sum(writes == "fitMemory.rds"), ceiling(N / 3) + 1L)
+  expect_true(all(seen > 0L))              # a rebalance sees the generations before it
+  expect_equal(length(seen), 2L)
+  expect_equal(sort(unique(readRDS(file.path(d, "hostSpeed.rds"))$id)), paste0("hs_", 1:N))
+})

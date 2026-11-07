@@ -282,6 +282,10 @@ DEoptimIterative <- function(fn, lower, upper, control, ...,
   convergence <- deoptimConvergence(convergence)
   progressFile <- .progressStart(progressFile, figurePath, runName)
   ranEvaluations <- list()   # evaluations computed in this call, not replayed from the cache
+  ## The host-speed and memory records stay here and are written to the shared ledgers when the workers are
+  ## rebalanced (which reads them) and when the fit ends, not after every generation (see .replaceRecords()).
+  pendingRecords <- new.env()
+  on.exit(.flushRecords(pendingRecords), add = TRUE)
   ## Progress figures are drawn by the master while every worker waits: 8.3 s of each 53 s generation
   ## (16% of the wall time) in a FireSense fit (ELF 4.2.2, 2026-09-28). They are drawn only for a chunk
   ## whose generations include a multiple of `plotEvery`, and always for the final chunk.
@@ -418,8 +422,9 @@ DEoptimIterative <- function(fn, lower, upper, control, ...,
       if (computedNow && !is.null(DE[[iter]]$member$evaluations)) {
         ranEvaluations[[length(ranEvaluations) + 1L]] <- DE[[iter]]$member$evaluations
         .recordHostSpeed(list(DE[[iter]]$member$evaluations), id = .chunkId(runName, iter),
-                         booked = .bookedByNodename(control$cluster))
-        .recordFitMemory(list(DE[[iter]]$member$evaluations), runName = runName, id = .chunkId(runName, iter))
+                         booked = .bookedByNodename(control$cluster), pending = pendingRecords)
+        .recordFitMemory(list(DE[[iter]]$member$evaluations), runName = runName, id = .chunkId(runName, iter),
+                         pending = pendingRecords)
         message(.evaluationTimes(DE[[iter]]$member$evaluations, chunkLengths[iter],
                                  proc.time()[["elapsed"]] - chunkStarted))
       }
@@ -442,9 +447,10 @@ DEoptimIterative <- function(fn, lower, upper, control, ...,
     }
 
     rebalance <- attr(control$cluster, "rebalance", exact = TRUE)
-    if (computedNow && rebalanceEvery > 0L && is.function(rebalance) &&
-        chunkEnds[iter] %/% rebalanceEvery > (chunkEnds[iter] - chunkLengths[iter]) %/% rebalanceEvery &&
-        iter < length(itersToDo))
+    rebalanceDue <- computedNow && rebalanceEvery > 0L &&
+      chunkEnds[iter] %/% rebalanceEvery > (chunkEnds[iter] - chunkLengths[iter]) %/% rebalanceEvery
+    if (rebalanceDue) .flushRecords(pendingRecords)   # placement reads the ledgers
+    if (rebalanceDue && is.function(rebalance) && iter < length(itersToDo))
       control$cluster <- rebalance(control$cluster)
 
     control$initialpop <- DE[[iter]]$member$pop

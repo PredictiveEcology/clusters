@@ -16,8 +16,16 @@
   Filter(function(x) is.data.frame(x) && "host" %in% names(x), evaluations)
 
 ## Add `new` rows to the records in `file` (hostSpeed.rds, fitMemory.rds), dropping the rows of the same
-## `id` and those older than the window. One lock for the read and the write.
-.replaceRecords <- function(file, new, columns) {
+## `id` and those older than the window. One lock for the read and the write. Reading and rewriting the whole
+## shared file takes 2.9 s with 367k rows (8 s at a full window) while every worker waits, so a fit passes
+## `pending` (an environment, see .flushRecords()) to keep its rows in memory instead; the file is then
+## written when the fit flushes. The file's format is the same either way.
+.replaceRecords <- function(file, new, columns, pending = NULL) {
+  if (is.environment(pending)) {
+    kept <- pending[[file]]$new
+    pending[[file]] <- list(new = rbind(kept[!kept$id %in% new$id, , drop = FALSE], new), columns = columns)
+    return(invisible(NULL))
+  }
   .withReservationLock(file, {
     old <- if (file.exists(file)) tryCatch(readRDS(file), error = function(e) NULL)
     ## rows from before a column existed (e.g. `workers`, added in 0.0.65) get NA there
@@ -25,6 +33,19 @@
     old <- old[!old$id %in% new$id, columns, drop = FALSE]
     saveRDS(.hostSpeedRecent(rbind(old, new)), file)
   })
+}
+
+## Write the rows a fit kept in `pending` (see .replaceRecords()) into the shared files, one write per file,
+## under the lock, and empty `pending`. The result is what a write per record would have left. A fit that
+## dies loses the rows since its last flush. Never fails the fit.
+.flushRecords <- function(pending) {
+  for (file in ls(pending, all.names = TRUE)) {
+    entry <- pending[[file]]
+    rm(list = file, envir = pending)
+    tryCatch(.replaceRecords(file, entry$new, entry$columns),
+             error = function(e) warning("Could not record host speeds: ", conditionMessage(e), call. = FALSE))
+  }
+  invisible(NULL)
 }
 
 ## The workers every live cluster has booked on each host, named as the evaluation records name the hosts
@@ -50,8 +71,9 @@
 ## number): a chunk computed again, e.g. after a restart, replaces its earlier rows instead of adding a
 ## duplicate. `evaluations` is a list of `member$evaluations` data frames. `workers` is the workers this fit
 ## had on each host, `booked` the workers every cluster had booked there (see .bookedByNodename(); NA when
-## not known). Never fails the fit.
-.recordHostSpeed <- function(evaluations, id, booked = NULL, path = getOption("clusters.reservationsPath")) {
+## not known). `pending`: see .replaceRecords(). Never fails the fit.
+.recordHostSpeed <- function(evaluations, id, booked = NULL, path = getOption("clusters.reservationsPath"),
+                              pending = NULL) {
   tryCatch({
     evaluations <- .withHost(evaluations)
     if (!length(evaluations)) return(invisible(NULL))
@@ -62,7 +84,7 @@
     file <- .hostSpeedFile(path)
     new <- cbind(tab[setdiff(.hostSpeedColumns, c("time", "id"))], time = Sys.time(), id = id,
                  stringsAsFactors = FALSE)
-    .replaceRecords(file, new, .hostSpeedColumns)
+    .replaceRecords(file, new, .hostSpeedColumns, pending)
     invisible(new)
   }, error = function(e) {
     warning("Could not record host speeds: ", conditionMessage(e), call. = FALSE)

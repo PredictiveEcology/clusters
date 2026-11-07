@@ -26,8 +26,9 @@
 ## Append the memory of one chunk of evaluations (a list of `member$evaluations` data frames with `host`,
 ## `pid` and `peakGB`) to fitMemory.rds: one row per chunk, summarising its workers' peaks (each worker's
 ## largest reading). `id` names the chunk and replaces its earlier row (see .recordHostSpeed()). Never
-## fails the fit.
-.recordFitMemory <- function(evaluations, runName, id, path = getOption("clusters.reservationsPath")) {
+## fails the fit. `pending`: see .replaceRecords().
+.recordFitMemory <- function(evaluations, runName, id, path = getOption("clusters.reservationsPath"),
+                             pending = NULL) {
   tryCatch({
     evaluations <- Filter(function(x) is.data.frame(x) && all(c("host", "pid", "peakGB") %in% names(x)),
                           evaluations)
@@ -42,7 +43,7 @@
     runName <- if (length(runName) && nzchar(as.character(runName)[1])) as.character(runName)[1] else NA_character_
     new <- data.frame(runName = runName, id = id, time = Sys.time(), workers = length(peak),
                       memMedianGB = stats::median(peak), memMaxGB = max(peak), stringsAsFactors = FALSE)
-    .replaceRecords(.fitMemoryFile(path), new, .fitMemoryColumns)
+    .replaceRecords(.fitMemoryFile(path), new, .fitMemoryColumns, pending)
     invisible(new)
   }, error = function(e) {
     warning("Could not record fit memory: ", conditionMessage(e), call. = FALSE)

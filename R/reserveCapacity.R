@@ -7,7 +7,7 @@
 #' and a fit placed its workers on a host the predictions had already filled (2026-10-13).
 #' `reserveCapacity()` books such a job in the same ledger, under the same caps as a build (`.fitCapacity()`:
 #' every worker and other load within the host's threads less `options(clusters.keepFreeCores)`, and memory
-#' used plus the job's within `1 - options(clusters.memoryHeadroom)` of the host's; no headroom inside a Slurm job), so a build that follows
+#' used plus the job's within `1 - options(clusters.memoryHeadroom)` of the host's; neither inside a Slurm job), so a build that follows
 #' subtracts the job's cores and memory ([freeCoresLessReserved()]). It waits like a build waits, up to
 #' `waitSeconds` (`options(clusters.waitForCores)`), until the whole of `cores` and `memGB` fits on one of
 #' the `hosts`, probing every `interval` seconds, and then stops with the shortfall. Among several `hosts`

@@ -62,7 +62,7 @@ test_that("without a cgroup limit the job's memory is SLURM_MEM_PER_NODE (MB)", 
   expect_true(is.na(job$memLimitGB) && is.na(job$memAvailableGB))
 })
 
-test_that("41 CPUs and 200 GB of a 64-CPU node give at most 41 - keepFreeCores workers and 200 GB", {
+test_that("41 CPUs and 200 GB of a 64-CPU node give all 41 workers (no cores kept free in a job) and 200 GB", {
   withLedger()
   cg <- mockCgroup()
   withr::local_envvar(SLURM_JOB_ID = "77", SLURM_MEM_PER_NODE = NA)
@@ -75,15 +75,15 @@ test_that("41 CPUs and 200 GB of a 64-CPU node give at most 41 - keepFreeCores w
   ## other users' load on the node is not this job's
   expect_true(all(limited$loadavg == 0))
   nodes <- clusters:::.nodeTable("localhost", list(limited))
-  keep <- getOption("clusters.keepFreeCores", 2)
+  withr::local_options(clusters.keepFreeCores = 2)
   got <- suppressMessages(clusters:::.fitCapacity(nodes, total = 100, load_memory = "5min"))
-  expect_equal(got$free_est, 41 - keep)
+  expect_equal(got$free_est, 41)
   ## 12 GB workers: 180 GB available / 12 = 15 (a job keeps no memory headroom), fewer than the cores allow
   got <- suppressMessages(clusters:::.fitCapacity(nodes, total = 100, load_memory = "5min", memPerWorkerGB = 12))
   expect_equal(got$free_est, floor(180 / 12))
   ## the node as the probe saw it, unlimited, gave the job nothing (load 50 of 64) and counted the node's memory
   whole <- clusters:::.nodeTable("localhost", list(nodeCap()))
-  expect_lt(suppressMessages(clusters:::.fitCapacity(whole, total = 100, load_memory = "5min"))$free_est, 41 - keep)
+  expect_lt(suppressMessages(clusters:::.fitCapacity(whole, total = 100, load_memory = "5min"))$free_est, 41)
 })
 
 test_that("the job's own workers, in the ledger, still come off its allocation", {
@@ -94,7 +94,7 @@ test_that("the job's own workers, in the ledger, still come off its allocation",
   reserveCores(data.frame(host = "localhost", assign = 20L), id = clusters:::.newReservationId())
   got <- suppressMessages(clusters:::.fitCapacity(nodes, total = 100, load_memory = "5min"))
   expect_equal(got$reserved, 20L)
-  expect_equal(got$free_est, 41 - 2 - 20)
+  expect_equal(got$free_est, 41 - 20)
 })
 
 test_that("another job's booking on the same node is not this job's", {
@@ -108,7 +108,7 @@ test_that("another job's booking on the same node is not this job's", {
   withr::with_envvar(c(SLURM_JOB_ID = "77"), {
     got <- suppressMessages(clusters:::.fitCapacity(nodes, total = 100, load_memory = "5min"))
     expect_equal(got$reserved, 3L)
-    expect_equal(got$free_est, 41 - 2 - 3)
+    expect_equal(got$free_est, 41 - 3)
   })
   ## outside Slurm all three count, as before
   withr::with_envvar(c(SLURM_JOB_ID = NA), {

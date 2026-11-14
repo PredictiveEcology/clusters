@@ -55,7 +55,7 @@ while each generation's slowest evaluation finishes, so a host carrying 50 booke
 load of 30-35 (2026-10-02). Read as free, that gap was booked by every later build, until hosts
 with 48 threads carried 50-52 workers. So \code{free_est} is also capped at \code{cores_total} less every
 worker booked on the host, absorbed or not, and less \code{getOption("clusters.keepFreeCores", 2)} cores
-left for the host's other users, when \code{nodes} has \code{cores_total}.
+left for the host's other users (none inside a Slurm job), when \code{nodes} has \code{cores_total}.
 
 Memory is booked the same way. When \code{nodes} has \code{mem_free_gb} (the host's \code{MemAvailable}), each
 reservation's \code{memGB} is subtracted by the same unabsorbed share: a new cluster's workers have not grown

@@ -89,7 +89,7 @@ run fastest (\code{\link[=.speedAllocate]{.speedAllocate()}}: the hardware model
 \code{\link[=.hostSpeedFactor]{.hostSpeedFactor()}}), and optionally launches the final cluster with the computed worker counts.
 Every host keeps \code{options(clusters.keepFreeCores)} (default 2) of its threads free of all workers and
 other load, and \code{options(clusters.memoryHeadroom)} (default 0.1) of its memory (inside a Slurm job, which owns its
-CPUs and memory, none of the memory and all of its CPUs are free, so only \code{keepFreeCores} is kept); a running cluster asks
+CPUs and memory, keeps neither when its memory limit is known: all its CPUs and memory are free); a running cluster asks
 again by the same rule every \code{options(clusters.rebalanceEvery)} generations (see \code{\link[=.rebalanceFn]{.rebalanceFn()}}).
 
 This is intentionally minimal—no \code{master} argument, no diagnostics or fallbacks.

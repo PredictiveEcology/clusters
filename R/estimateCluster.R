@@ -10,7 +10,8 @@
 #' run fastest ([.speedAllocate()]: the hardware model [.workerSpeed()] times each host's measured speed,
 #' [.hostSpeedFactor()]), and optionally launches the final cluster with the computed worker counts.
 #' Every host keeps `options(clusters.keepFreeCores)` (default 2) of its threads free of all workers and
-#' other load, and `options(clusters.memoryHeadroom)` (default 0.1) of its memory; a running cluster asks
+#' other load, and `options(clusters.memoryHeadroom)` (default 0.1) of its memory (inside a Slurm job, which owns its
+#' CPUs and memory, keeps neither when its memory limit is known: all its CPUs and memory are free); a running cluster asks
 #' again by the same rule every `options(clusters.rebalanceEvery)` generations (see [.rebalanceFn()]).
 #'
 #' This is intentionally minimal—no `master` argument, no diagnostics or fallbacks.
@@ -44,7 +45,8 @@
 #'   `options(clusters.workerMemoryGB)` (another fit's record is never used); when that is unset (the
 #'   default) no host is capped by memory. For FireSense DEoptim workers 14 fits: peak memory was median 4.5 GB, 90th percentile about
 #'   6.5 GB, maximum 14.1 GB (457 workers on 15 hosts, 2026-10-09).
-#'   Every host keeps `options(clusters.memoryHeadroom)` (default 0.1) of its memory free.
+#'   Every host keeps `options(clusters.memoryHeadroom)` (default 0.1) of its memory free, except inside a Slurm job,
+#'   which keeps none (its allocation is its own).
 #'
 #' @return A list with:
 #' - `probe`: per-host capacity & load,
@@ -488,7 +490,7 @@ plan_psock_min <- function(
     loadavg     = attr(freeC, "loadavg"),
     mem_available_gb = tryCatch(.procMemoryGB("MemAvailable", "/proc/meminfo"), error = function(e) NA_real_),
     mem_total_gb     = tryCatch(.procMemoryGB("MemTotal", "/proc/meminfo"), error = function(e) NA_real_)
-  ), job, systemCores = attr(freeC, "maxCores"))
+  ), job)
 }
 
 ## The node table: one row per host from what each said of itself (`caps`, .probeHost()'s lists)
@@ -506,6 +508,7 @@ plan_psock_min <- function(
       loadavg_15  = unname(cap$loadavg["15min"]),
       mem_available_gb = if (is.null(cap$mem_available_gb)) NA_real_ else cap$mem_available_gb,
       mem_total_gb     = if (is.null(cap$mem_total_gb)) NA_real_ else cap$mem_total_gb,
+      in_slurm_job     = isTRUE(cap$inSlurmJob),   # see .limitToJob(); not a ledger column
       stringsAsFactors = FALSE
     )
   }, hosts, caps))
@@ -516,7 +519,7 @@ plan_psock_min <- function(
 ## workers go within these cores is .speedAllocate()'s, by speed.
 ##
 ## Cores: the probed free cores, less what other clusters booked (see freeCoresLessReserved()), and never
-## more than the host's threads less `getOption("clusters.keepFreeCores", 2)` less `busy`, the workers already
+## more than the host's threads less .keepFreeCores() (none in a Slurm job) less `busy`, the workers already
 ## on the host: other clusters' bookings or the load average, whichever is larger. That cap is hard, whatever
 ## the load window or the reservations say (2026-10-13: load that no cluster had booked was discounted by
 ## freeCores()'s fraction only, so a 16-thread host with 10 of other load could still be given 5 workers).
@@ -526,7 +529,7 @@ plan_psock_min <- function(
 ##
 ## Memory limits the cores too, when the memory per worker is known (`memPerWorkerGB`, see
 ## .memPerWorkerGB(); one number, or `c(median, max)`): a host keeps `getOption("clusters.memoryHeadroom", 0.1)`
-## of its memory free, and its workers are at most the largest n with `(n - 1) * median + max <= available
+## of its memory free (none inside a Slurm job, which owns its allocation), and its workers are at most the largest n with `(n - 1) * median + max <= available
 ## memory - headroom` (see .memBudgetGB()): what the host uses now plus the new workers stays within 0.9 of its memory. Available memory is the probed MemAvailable, less what other
 ## builds booked and their workers have not yet grown into (see freeCoresLessReserved()), plus what `own`
 ## workers use. `ram_lost` is the cores memory took away.
@@ -561,7 +564,7 @@ plan_psock_min <- function(
   ## the hard cap: every worker on the host, this cluster's and all other load, within the threads less the
   ## cores kept for the host's other users
   if (!is.null(nodes$cores_total)) {
-    cap <- pmax(as.numeric(nodes$cores_total) - getOption("clusters.keepFreeCores", 2) - nodes$busy, 0)
+    cap <- pmax(as.numeric(nodes$cores_total) - .keepFreeCores(nodes) - nodes$busy, 0)
     cap[is.na(cap)] <- Inf
     nodes$free_est <- pmin(nodes$free_est, cap)
   }
@@ -577,7 +580,8 @@ plan_psock_min <- function(
   nodes$speedFactor <- .hostSpeedFactor(nodes, speeds, beta = beta)
   nodes$ram_lost <- 0
   if (useMemory) {
-    headroom <- getOption("clusters.memoryHeadroom", 0.1) * as.numeric(nodes$mem_total_gb)
+    ## a host that is a Slurm job's own keeps none: its cgroup enforces the memory (see .limitToJob())
+    headroom <- ifelse(.inSlurmJob(nodes), 0, getOption("clusters.memoryHeadroom", 0.1)) * as.numeric(nodes$mem_total_gb)
     byMemory <- .memWorkersFitting(nodes$mem_free_gb - headroom, mem)
     capped <- !is.na(byMemory) & byMemory < floor(nodes$free_est)   # a host that cannot say is not capped
     nodes$ram_lost[capped] <- floor(nodes$free_est[capped]) - byMemory[capped]
@@ -591,6 +595,15 @@ plan_psock_min <- function(
   }
   nodes
 }
+
+## Which hosts (rows of a node table) are a Slurm job's own allocation (see .limitToJob()); FALSE for a table
+## without the column (built by tests or an older clusters)
+.inSlurmJob <- function(nodes)
+  if (is.null(nodes$in_slurm_job)) rep(FALSE, NROW(nodes)) else nodes$in_slurm_job %in% TRUE
+
+## The cores each host keeps free of workers for its other users: getOption("clusters.keepFreeCores", 2), none on
+## a Slurm job's own allocation, which has no other users
+.keepFreeCores <- function(nodes) ifelse(.inSlurmJob(nodes), 0, getOption("clusters.keepFreeCores", 2))
 
 #' How fast each worker on a host runs, relative to one worker alone
 #'

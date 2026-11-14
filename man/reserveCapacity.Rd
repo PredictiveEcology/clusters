@@ -66,7 +66,7 @@ long-running job in an ordinary R process -- a FireSense prediction is one SpaDE
 and a fit placed its workers on a host the predictions had already filled (2026-10-13).
 \code{reserveCapacity()} books such a job in the same ledger, under the same caps as a build (\code{.fitCapacity()}:
 every worker and other load within the host's threads less \code{options(clusters.keepFreeCores)}, and memory
-used plus the job's within \code{1 - options(clusters.memoryHeadroom)} of the host's), so a build that follows
+used plus the job's within \code{1 - options(clusters.memoryHeadroom)} of the host's; neither inside a Slurm job), so a build that follows
 subtracts the job's cores and memory (\code{\link[=freeCoresLessReserved]{freeCoresLessReserved()}}). It waits like a build waits, up to
 \code{waitSeconds} (\code{options(clusters.waitForCores)}), until the whole of \code{cores} and \code{memGB} fits on one of
 the \code{hosts}, probing every \code{interval} seconds, and then stops with the shortfall. Among several \code{hosts}

@@ -241,7 +241,7 @@ releaseCores <- function(id = NULL, pid = Sys.getpid(),
 #'   load of 30-35 (2026-10-02). Read as free, that gap was booked by every later build, until hosts
 #'   with 48 threads carried 50-52 workers. So `free_est` is also capped at `cores_total` less every
 #'   worker booked on the host, absorbed or not, and less `getOption("clusters.keepFreeCores", 2)` cores
-#'   left for the host's other users, when `nodes` has `cores_total`.
+#'   left for the host's other users (none inside a Slurm job), when `nodes` has `cores_total`.
 #'
 #'   Memory is booked the same way. When `nodes` has `mem_free_gb` (the host's `MemAvailable`), each
 #'   reservation's `memGB` is subtracted by the same unabsorbed share: a new cluster's workers have not grown
@@ -295,9 +295,9 @@ freeCoresLessReserved <- function(nodes,
     nodes$reserved_gb <- reservedGB
   }
   free <- as.numeric(nodes$free_est) - round(subtract, 3)
-  ## every host keeps getOption("clusters.keepFreeCores", 2) cores for its other users, whatever its load
+  ## every host keeps .keepFreeCores() cores for its other users, whatever its load (none in a Slurm job)
   if (!is.null(nodes$cores_total))
-    free <- pmin(free, as.numeric(nodes$cores_total) - getOption("clusters.keepFreeCores", 2) - reserved)
+    free <- pmin(free, as.numeric(nodes$cores_total) - .keepFreeCores(nodes) - reserved)
   nodes$free_est <- pmax(free, 0)
   nodes
 }

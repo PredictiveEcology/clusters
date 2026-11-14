@@ -53,14 +53,17 @@
 ## (`cores_total`) than the node has (`systemCores`) shares it, so its CPUs are all free (the cgroup keeps others off
 ## them; the node's load average is other jobs' and says nothing of them), and the node's load is not
 ## carried into `busy` (see .fitCapacity()). What the job's own clusters have booked is in the reservations
-## ledger, which counts it (see freeCoresLessReserved()). A job given every CPU is the node's: probed as before.
+## ledger, which counts it (see freeCoresLessReserved()).
+## A job owns its allocation (the cgroup enforces its memory and keeps others off its CPUs), so the headroom that
+## protects a shared workstation from other users' growth is not applied: `inSlurmJob` tells .fitCapacity() to keep
+## no memory headroom, and every CPU of the job is free, whether or not it is the whole node (what the job's own
+## clusters use is in the ledger, and the node's load average is the job's own, not other users').
 .limitToJob <- function(cap, job, systemCores) {
   if (is.null(job)) return(cap)
   ## cores_total is parallelly::availableCores(): the job's CPUs, read from Slurm and its cgroup
-  if (isTRUE(cap$cores_total < systemCores)) {
-    cap$free_est <- cap$cores_total
-    cap$loadavg[] <- 0
-  }
+  cap$free_est <- cap$cores_total
+  cap$loadavg[] <- 0
+  cap$inSlurmJob <- TRUE
   cap$mem_available_gb <- .minKnown(cap$mem_available_gb, job$memAvailableGB)
   cap$mem_total_gb <- .minKnown(cap$mem_total_gb, job$memLimitGB)
   cap

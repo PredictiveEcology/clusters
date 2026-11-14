@@ -65,7 +65,8 @@ median and largest worker. With no record for it, each worker is budgeted at
 \code{options(clusters.workerMemoryGB)} (another fit's record is never used); when that is unset (the
 default) no host is capped by memory. For FireSense DEoptim workers 14 fits: peak memory was median 4.5 GB, 90th percentile about
 6.5 GB, maximum 14.1 GB (457 workers on 15 hosts, 2026-10-09).
-Every host keeps \code{options(clusters.memoryHeadroom)} (default 0.1) of its memory free.}
+Every host keeps \code{options(clusters.memoryHeadroom)} (default 0.1) of its memory free, except inside a Slurm job,
+which keeps none (its allocation is its own).}
 }
 \value{
 A list with:
@@ -87,7 +88,8 @@ installs & loads \code{pkgsNeeded} in that user library, measures per-host capac
 run fastest (\code{\link[=.speedAllocate]{.speedAllocate()}}: the hardware model \code{\link[=.workerSpeed]{.workerSpeed()}} times each host's measured speed,
 \code{\link[=.hostSpeedFactor]{.hostSpeedFactor()}}), and optionally launches the final cluster with the computed worker counts.
 Every host keeps \code{options(clusters.keepFreeCores)} (default 2) of its threads free of all workers and
-other load, and \code{options(clusters.memoryHeadroom)} (default 0.1) of its memory; a running cluster asks
+other load, and \code{options(clusters.memoryHeadroom)} (default 0.1) of its memory (inside a Slurm job, which owns its
+CPUs and memory, none of the memory and all of its CPUs are free, so only \code{keepFreeCores} is kept); a running cluster asks
 again by the same rule every \code{options(clusters.rebalanceEvery)} generations (see \code{\link[=.rebalanceFn]{.rebalanceFn()}}).
 
 This is intentionally minimal—no \code{master} argument, no diagnostics or fallbacks.

@@ -490,7 +490,7 @@ plan_psock_min <- function(
     loadavg     = attr(freeC, "loadavg"),
     mem_available_gb = tryCatch(.procMemoryGB("MemAvailable", "/proc/meminfo"), error = function(e) NA_real_),
     mem_total_gb     = tryCatch(.procMemoryGB("MemTotal", "/proc/meminfo"), error = function(e) NA_real_)
-  ), job, systemCores = attr(freeC, "maxCores"))
+  ), job)
 }
 
 ## The node table: one row per host from what each said of itself (`caps`, .probeHost()'s lists)

@@ -30,7 +30,7 @@ test_that("outside Slurm there is no job allocation and the probe is unchanged",
   withr::local_envvar(SLURM_JOB_ID = NA, SLURM_MEM_PER_NODE = NA)
   expect_null(clusters:::.slurmAllocation())
   cap <- nodeCap()
-  expect_identical(clusters:::.limitToJob(cap, NULL, systemCores = 64L), cap)
+  expect_identical(clusters:::.limitToJob(cap, NULL), cap)
 })
 
 test_that("the allocation is read from Slurm's variables and the job's cgroup", {
@@ -67,7 +67,7 @@ test_that("41 CPUs and 200 GB of a 64-CPU node give at most 41 - keepFreeCores w
   cg <- mockCgroup()
   withr::local_envvar(SLURM_JOB_ID = "77", SLURM_MEM_PER_NODE = NA)
   job <- clusters:::.slurmAllocation(procCgroup = cg$proc, cgroupRoot = cg$root)
-  limited <- clusters:::.limitToJob(nodeCap(cores = 41L), job, systemCores = 64L)
+  limited <- clusters:::.limitToJob(nodeCap(cores = 41L), job)
   expect_equal(limited$cores_total, 41L)
   expect_lte(limited$cores_physical, 41)
   expect_lte(limited$mem_total_gb, 200)
@@ -90,7 +90,7 @@ test_that("the job's own workers, in the ledger, still come off its allocation",
   withLedger()
   withr::local_envvar(SLURM_JOB_ID = "77")
   job <- list(memLimitGB = 200, memAvailableGB = 200)
-  nodes <- clusters:::.nodeTable("localhost", list(clusters:::.limitToJob(nodeCap(cores = 41L), job, systemCores = 64L)))
+  nodes <- clusters:::.nodeTable("localhost", list(clusters:::.limitToJob(nodeCap(cores = 41L), job)))
   reserveCores(data.frame(host = "localhost", assign = 20L), id = clusters:::.newReservationId())
   got <- suppressMessages(clusters:::.fitCapacity(nodes, total = 100, load_memory = "5min"))
   expect_equal(got$reserved, 20L)
@@ -100,7 +100,7 @@ test_that("the job's own workers, in the ledger, still come off its allocation",
 test_that("another job's booking on the same node is not this job's", {
   withLedger()
   job <- list(memLimitGB = 200, memAvailableGB = 200)
-  nodes <- clusters:::.nodeTable("localhost", list(clusters:::.limitToJob(nodeCap(cores = 41L), job, systemCores = 64L)))
+  nodes <- clusters:::.nodeTable("localhost", list(clusters:::.limitToJob(nodeCap(cores = 41L), job)))
   withr::with_envvar(c(SLURM_JOB_ID = "88"),
                      reserveCores(data.frame(host = "localhost", assign = 20L), id = clusters:::.newReservationId()))
   ## a booking with no job (another version's, or outside Slurm) cannot be told apart and counts
@@ -123,13 +123,13 @@ test_that("a job given the whole node is its own: all its CPUs free, no memory h
   withr::local_envvar(SLURM_JOB_ID = "77", SLURM_MEM_PER_NODE = NA)
   job <- clusters:::.slurmAllocation(procCgroup = cg$proc, cgroupRoot = cg$root)
   cap <- nodeCap(avail = 480, load = 10)
-  got <- clusters:::.limitToJob(cap, job, systemCores = 64L)
+  got <- clusters:::.limitToJob(cap, job)
   expect_true(got$inSlurmJob)
   expect_equal(got$free_est, 64L)
   expect_true(all(got$loadavg == 0))
   expect_equal(got$mem_available_gb, 480)
   ## the same node with less memory free than the cgroup says (other processes) is not raised
-  expect_equal(clusters:::.limitToJob(nodeCap(avail = 100, load = 10), job, systemCores = 64L)$mem_available_gb, 100)
+  expect_equal(clusters:::.limitToJob(nodeCap(avail = 100, load = 10), job)$mem_available_gb, 100)
   ## the live probe outside Slurm
   withr::local_envvar(SLURM_JOB_ID = NA)
   cap <- clusters:::.probeHost("5min", 0.9)
@@ -144,8 +144,10 @@ test_that("inside a Slurm job 454 GB, 437 GB free and 10 GB workers hold 43 work
   capacity <- function(cap)
     suppressMessages(clusters:::.fitCapacity(clusters:::.nodeTable("localhost", list(cap)), total = 40,
                                              load_memory = "5min", memPerWorkerGB = 10))$free_est
-  expect_equal(capacity(clusters:::.limitToJob(cap, job, systemCores = 64L)), 43)
+  expect_equal(capacity(clusters:::.limitToJob(cap, job)), 43)
   ## the same numbers on a shared workstation: 437 - 10% of 454 = 391.6 GB holds 39
   expect_equal(capacity(cap), 39)
   expect_false("inSlurmJob" %in% names(cap))
+  ## a job whose memory limit is unknown is sized on the node's memory, which other jobs may share: headroom kept
+  expect_equal(capacity(clusters:::.limitToJob(cap, list(memLimitGB = NA_real_, memAvailableGB = NA_real_))), 39)
 })

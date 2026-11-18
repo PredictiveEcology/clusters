@@ -49,3 +49,18 @@ test_that("clusterSetup() builds the workers requestedWorkers() says (the planne
     expect_identical(suppressMessages(requestedWorkers(cores, 25)), c(10L, 7L, 25L)[i])
   }
 })
+
+test_that("clusterSetup() applies the cap once: hosts renamed to localhost are not cut again", {
+  ## 5 on this machine's ssh name + 5 "localhost", cap 6 on localhost: each is under the cap before the rename,
+  ## so 10 are asked for, as before requestedWorkers(); cutting again after the rename would give 6
+  withr::local_options(clusters.maxWorkersPerHost = c(localhost = 6))
+  seen <- NULL
+  testthat::local_mocked_bindings(
+    changeNodenameToLocalhost = function(cores) sub("^thisHost$", "localhost", cores),
+    plan_psock_min = function(hosts, total, ...) { seen <<- list(hosts = hosts, total = total); stop("planned") },
+    .package = "clusters")
+  suppressMessages(try(clusterSetup(cores = c(rep("thisHost", 5), rep("localhost", 5)), nCoresNeeded = 25,
+                                    logPath = tempdir(), libPath = .libPaths()[1],
+                                    objsNeeded = character(), pkgsNeeded = character()), silent = TRUE))
+  expect_identical(as.integer(seen$total), 10L)
+})

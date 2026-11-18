@@ -22,12 +22,17 @@
 #' requestedWorkers(rep("a", 30), 100)           # 30: a repeated host is that many workers
 requestedWorkers <- function(cores, nCoresNeeded = 100) {
   if (is.null(cores)) return(as.integer(nCoresNeeded))
-  cores <- .requestedHosts(cores)
-  as.integer(if (anyDuplicated(cores)) length(cores) else nCoresNeeded)
+  .workerTotal(.requestedHosts(cores), nCoresNeeded)
+}
+
+## The count for hosts already through .requestedHosts(): a host named more than once is that many workers,
+## else nCoresNeeded. clusterSetup() calls it on its own .requestedHosts() result, so the cap is applied once.
+.workerTotal <- function(hosts, nCoresNeeded) {
+  as.integer(if (anyDuplicated(hosts)) length(hosts) else nCoresNeeded)
 }
 
 ## `cores` as one host name per worker: a number repeats "localhost", each host is cut to its cap, and this
-## machine's ssh names become "localhost". Idempotent, so requestedWorkers() may be given its result.
+## machine's ssh names become "localhost".
 .requestedHosts <- function(cores) {
   if (is.numeric(cores)) cores <- rep("localhost", cores)
   changeNodenameToLocalhost(.trimToHostCap(cores))
@@ -130,7 +135,7 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
     # the project library -- and mirrored that to the hosts instead.
     plan <- plan_psock_min(
       hosts = coresUnique,
-      total = requestedWorkers(cores, nCoresNeeded),
+      total = .workerTotal(cores, nCoresNeeded),
       pkgsNeeded = pkgsNeeded,
       libPath = libPath,
       logPath = logPath,

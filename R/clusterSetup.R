@@ -1,3 +1,43 @@
+#' How many workers `clusterSetup()` asks for
+#'
+#' The count `clusterSetup()` gives the planner ([plan_psock_min()]) as its `total`, which becomes the
+#' population size `NP` when the cluster is built as asked. A caller that needs `NP` before the cluster
+#' exists (a start population, an emulator) calls this with the `cores` and `nCoresNeeded` it will pass.
+#' `clusterSetup()` calls it, so the rule is in one place.
+#'
+#' @details `cores` is first turned into one host name per worker: a single number is that many `"localhost"`
+#'   (`cores = 1L` is one host name), and each host is cut to `options(clusters.maxWorkersPerHost)` (with the
+#'   message `clusterSetup()` gives). Then, when a host is named more than once the count is the number of
+#'   names left, else it is `nCoresNeeded`. It is what is asked for: the planner can build fewer when a
+#'   host's free memory or cores, or the caps on other clusters' bookings, hold fewer.
+#'
+#' @param cores As in [clusterSetup()]: host names, or a number.
+#' @param nCoresNeeded As in [clusterSetup()].
+#' @return An integer: the number of workers requested; `nCoresNeeded` (as an integer) when `cores` is
+#'   `NULL`, as no cluster is built then.
+#' @export
+#' @examples
+#' requestedWorkers(40L, 100)                    # 40
+#' requestedWorkers(c("a", "b"), 100)            # 100: distinct hosts, planner places nCoresNeeded
+#' requestedWorkers(rep("a", 30), 100)           # 30: a repeated host is that many workers
+requestedWorkers <- function(cores, nCoresNeeded = 100) {
+  if (is.null(cores)) return(as.integer(nCoresNeeded))
+  .workerTotal(.requestedHosts(cores), nCoresNeeded)
+}
+
+## The count for hosts already through .requestedHosts(): a host named more than once is that many workers,
+## else nCoresNeeded. clusterSetup() calls it on its own .requestedHosts() result, so the cap is applied once.
+.workerTotal <- function(hosts, nCoresNeeded) {
+  as.integer(if (anyDuplicated(hosts)) length(hosts) else nCoresNeeded)
+}
+
+## `cores` as one host name per worker: a number repeats "localhost", each host is cut to its cap, and this
+## machine's ssh names become "localhost".
+.requestedHosts <- function(cores) {
+  if (is.numeric(cores)) cores <- rep("localhost", cores)
+  changeNodenameToLocalhost(.trimToHostCap(cores))
+}
+
 #' Setup a cluster for DEoptim
 #'
 #' This includes copying files over to unique(cores) machines, then loading all objects from disk in
@@ -27,7 +67,7 @@
 #' @param libPath The project library, or several (a dev library, then a stable one): the master copy. Each, except R's own, is mirrored to every host in order, and workers load from them.
 #' @param objsNeeded Character vector naming objects in `envir` to send to the workers.
 #' @param pkgsNeeded Character vector of packages the workers must be able to load. Hosts that cannot are reported by [verifyClusterHosts()].
-#' @param nCoresNeeded Integer; how many workers to aim for across all hosts.
+#' @param nCoresNeeded Integer; how many workers to aim for across all hosts. See [requestedWorkers()] for the count asked for.
 #' @param envir Environment holding `objsNeeded`; defaults to the caller's.
 #' @param runName The `runName` the fit will be given in [DEoptimIterative()]. A host gets at most as many
 #'   workers as its free memory holds, at the memory per worker that fit recorded the last time it ran; see
@@ -64,10 +104,6 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
   
   if (!is.null(cores)) {
     
-    
-    if (is.numeric(cores)) cores <- rep("localhost", cores)
-    cores <- .trimToHostCap(cores)
-    
     # Global range for ssh ports so there are not errors 
     #  e.g., Warning: remote port forwarding failed for listen port 11173
     # global_range <- 20000:40000
@@ -81,7 +117,7 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
     # This looks at .ssh/config, assumes that Host is used, with # comment character naming nodename
     #  e.g., "Host coco # A159576 n18 # Eliot Degradation"
     #  This should just skip and leave `cores` unchanged if that structure doesn't exist
-    cores <- changeNodenameToLocalhost(cores)
+    cores <- .requestedHosts(cores)
     
     if (FALSE) { # this is for NRCan network; extracts names of all nodes in the .ssh/config file
       sshLines <- readLines("~/.ssh/config")
@@ -99,7 +135,7 @@ clusterSetup <- function(messagePrefix = "DEoptim_",
     # the project library -- and mirrored that to the hosts instead.
     plan <- plan_psock_min(
       hosts = coresUnique,
-      total = if (anyDuplicated(cores)) length(cores) else nCoresNeeded,
+      total = .workerTotal(cores, nCoresNeeded),
       pkgsNeeded = pkgsNeeded,
       libPath = libPath,
       logPath = logPath,

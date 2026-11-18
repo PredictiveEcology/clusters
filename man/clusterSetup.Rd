@@ -47,7 +47,7 @@ cluster and no \code{NP}, \code{NP} is its number of rows.}
 
 \item{pkgsNeeded}{Character vector of packages the workers must be able to load. Hosts that cannot are reported by \code{\link[=verifyClusterHosts]{verifyClusterHosts()}}.}
 
-\item{nCoresNeeded}{Integer; how many workers to aim for across all hosts.}
+\item{nCoresNeeded}{Integer; how many workers to aim for across all hosts. See \code{\link[=requestedWorkers]{requestedWorkers()}} for the count asked for.}
 
 \item{envir}{Environment holding \code{objsNeeded}; defaults to the caller's.}
 
